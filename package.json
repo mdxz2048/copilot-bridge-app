@@ -1,0 +1,75 @@
+{
+  "name": "copilot-bridge-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Desktop profile switcher for ChatGPT Desktop and GitHub Copilot Bridge.",
+  "author": "Copilot Bridge",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.renderer.json && vite build && tsc -p tsconfig.electron.json",
+    "preview": "vite preview",
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.renderer.json && tsc -p tsconfig.electron.json",
+    "test": "npm run build && node --test test/profile-store.test.mjs",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "package:portable": "npm run prepare:runtime && npm run build && electron-builder --win portable",
+    "package:installer": "npm run prepare:runtime && npm run build && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "wait-on": "^9.1.0"
+  },
+  "dependencies": {
+    "@github/copilot": "^1.0.75",
+    "copilot-sdk-proxy": "file:../upstream-copilot-sdk-proxy",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "build": {
+    "appId": "com.copilotbridge.desktop",
+    "productName": "Copilot Bridge",
+    "files": [
+      "dist-renderer/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "asarUnpack": [
+      "node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/@github/copilot-win32-x64/copilot.exe",
+        "to": "copilot-runtime/copilot.exe"
+      },
+      {
+        "from": "resources/node-runtime/node.exe",
+        "to": "node-runtime/node.exe"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Copilot Bridge"
+    }
+  }
+}

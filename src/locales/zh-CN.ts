@@ -1,0 +1,17 @@
+export const zhCN = {
+  appName: "Copilot Bridge",
+  copilot: "GitHub Copilot",
+  disconnected: "未连接",
+  connect: "连接 GitHub Copilot",
+  connectHint: "连接你的 GitHub Copilot 账号后即可使用。",
+  chatgpt: "ChatGPT",
+  original: "原账号环境",
+  bridge: "Copilot 环境",
+  originalHint: "原来的账号、会话和工作目录保持不变。",
+  bridgeHint: "独立会话 · 独立工作区",
+  switchToBridge: "切换到 GitHub Copilot",
+  restoreOriginal: "恢复原账号",
+  ready: "Copilot Bridge 已就绪",
+  current: "当前使用",
+  details: "查看详情",
+};
