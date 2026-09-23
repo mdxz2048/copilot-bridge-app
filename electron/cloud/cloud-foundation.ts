@@ -24,6 +24,7 @@ export interface CloudServiceStatus {
   usageRequests: number | null;
   usageTokens: number | null;
   currentDevice: string;
+  currentDeviceId: string | null;
   accountManagementAvailable: boolean;
   subscriptionManagementAvailable: boolean;
   serviceStatus: "WAITING_FOR_CONTRACT" | "AVAILABLE" | "UNREACHABLE";
@@ -231,6 +232,7 @@ export class CloudFoundation {
       currentDevice: currentDevice?.status === "ACTIVE"
         ? `${deviceName} · 已激活`
         : deviceName,
+      currentDeviceId: currentDevice?.deviceId ?? null,
       accountManagementAvailable:
         configuration.accountManagementUrl !== null,
       subscriptionManagementAvailable:

@@ -90,10 +90,12 @@ export function CloudAccountSheet({
       {status?.account && (
         <>
           <h3>{copy.account}</h3>
-          <CloudValue label={copy.account} value={status.account} />
+          <p className="account-primary-value" title={status.account}>
+            {status.account}
+          </p>
 
-          <h3>{copy.plan}</h3>
-          <CloudValue label={copy.plan} value={status.plan ?? "—"} />
+          <h3>套餐</h3>
+          <p className="account-primary-value">{status.plan ?? "—"}</p>
           <CloudValue
             label={copy.subscription}
             value={subscriptionLabel(status.subscriptionStatus)}
@@ -103,10 +105,10 @@ export function CloudAccountSheet({
             value={formatDate(status.validUntil)}
           />
 
-          <h3>{copy.usage}</h3>
+          <h3>AI 用量</h3>
           <div className="account-usage">
             <div>
-              <span>{copy.usage}</span>
+              <span>本月</span>
               <strong>{`${String(status.usagePercent ?? 0)}%`}</strong>
             </div>
             <div
@@ -132,7 +134,23 @@ export function CloudAccountSheet({
           />
 
           <h3>{copy.device}</h3>
-          <CloudValue label={copy.device} value={status.currentDevice} />
+          <p className="account-primary-value">{status.currentDevice}</p>
+          {status.currentDeviceId && (
+            <div className="cloud-value">
+              <span>设备 ID</span>
+              <span className="copyable-value">
+                <strong>{maskDeviceId(status.currentDeviceId)}</strong>
+                <Button
+                  className="secondary compact"
+                  onClick={() =>
+                    void navigator.clipboard.writeText(status.currentDeviceId!)}
+                  type="button"
+                >
+                  复制
+                </Button>
+              </span>
+            </div>
+          )}
           <CloudValue
             label={copy.cloudStatus}
             value={
@@ -289,7 +307,7 @@ function accountState(status: CloudServiceStatus | null) {
     QUOTA_EXCEEDED: {
       title: copy.quotaExceeded,
       message: status?.currentPeriodEnd
-        ? `额度将在 ${formatDate(status.currentPeriodEnd)} 恢复。`
+        ? `额度将在${formatDate(status.currentPeriodEnd)}恢复。`
         : copy.quotaExceededMessage,
       symbol: "●",
       tone: "warning",
@@ -334,4 +352,8 @@ function formatPeriod(start: string | null, end: string | null): string {
     day: "numeric",
   });
   return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
+}
+
+function maskDeviceId(value: string): string {
+  return `${value.slice(0, 4).toUpperCase()}…${value.slice(-4).toUpperCase()}`;
 }

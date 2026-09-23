@@ -51,8 +51,13 @@ try {
           document.body.scrollWidth > document.body.clientWidth
           || document.body.scrollHeight > document.body.clientHeight,
         mainOverflow: main
-          ? main.scrollWidth > main.clientWidth
-            || main.scrollHeight > main.clientHeight
+          ? (
+              getComputedStyle(main).overflowX !== "hidden"
+              && main.scrollWidth > main.clientWidth
+            ) || (
+              getComputedStyle(main).overflowY !== "hidden"
+              && main.scrollHeight > main.clientHeight
+            )
           : true,
         bodyText: document.body.innerText,
       };

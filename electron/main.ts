@@ -257,10 +257,10 @@ function createWindow(): void {
     return;
   }
   const window = new BrowserWindow({
-    width: 860,
-    height: 660,
-    minWidth: 820,
-    minHeight: 620,
+    width: 760,
+    height: 560,
+    minWidth: 720,
+    minHeight: 520,
     center: true,
     titleBarStyle: "hidden",
     titleBarOverlay: {

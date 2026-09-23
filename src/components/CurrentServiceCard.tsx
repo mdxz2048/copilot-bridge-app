@@ -1,21 +1,26 @@
 import type {
   AppSettings,
+  BridgeModel,
   BridgeStatus,
   ChatGptStatus,
   CloudServiceStatus,
   ProfileStatus,
+  ReasoningEffort,
 } from "../bridge-api";
 import { zhCN } from "../locales/zh-CN";
+import { displayModel } from "../model-display";
 import { Button } from "./Button";
+import { Select, SelectRow } from "./Select";
 
 interface CurrentServiceCardProps {
-  busy: boolean;
   bridge: BridgeStatus | null;
+  busy: boolean;
   chatGpt: ChatGptStatus;
   cloud: CloudServiceStatus | null;
-  model: string;
+  models: BridgeModel[];
   profile: ProfileStatus | null;
-  service: AppSettings["backendMode"];
+  bridgeEnabled: boolean;
+  settings: AppSettings;
   onConnectLocal: () => void;
   onEnableChatGpt: () => void;
   onInstallChatGpt: () => void;
@@ -23,16 +28,18 @@ interface CurrentServiceCardProps {
   onOpenChatGpt: () => void;
   onRetryCloud: () => void;
   onSwitchService: () => void;
+  onUpdateSettings: (settings: AppSettings) => void;
 }
 
 export function CurrentServiceCard({
-  busy,
   bridge,
+  busy,
   chatGpt,
   cloud,
-  model,
+  models,
   profile,
-  service,
+  bridgeEnabled,
+  settings,
   onConnectLocal,
   onEnableChatGpt,
   onInstallChatGpt,
@@ -40,98 +47,140 @@ export function CurrentServiceCard({
   onOpenChatGpt,
   onRetryCloud,
   onSwitchService,
+  onUpdateSettings,
 }: CurrentServiceCardProps) {
   const copy = zhCN.product;
-  const isCloud = service === "REMOTE";
+  const isCloud = settings.backendMode === "REMOTE";
   const cloudReady = cloud?.authState === "AUTHENTICATED";
   const bridgeReady = bridge?.state === "ready";
   const serviceReady = isCloud ? cloudReady && bridgeReady : bridgeReady;
   const state = isCloud ? cloudStatePresentation(cloud) : localStatePresentation(bridge);
+  const selectedModel = settings.backendModel ?? models[0]?.id ?? "";
+  const selected = models.find((model) => model.id === selectedModel);
+  const modelOptions = models.map((model) => ({
+    value: model.id,
+    label: displayModel(model.id),
+  }));
+
+  if (!bridgeEnabled) {
+    return (
+      <section aria-labelledby="current-service-heading">
+        <h2 id="current-service-heading">AI 服务</h2>
+        <div className="card current-service-card bridge-disabled-card">
+          <div className="service-card-header">
+            <p className="service-name">ChatGPT 原账号</p>
+            <span className="service-state state-success">
+              <span aria-hidden="true">●</span>
+              当前使用
+            </span>
+          </div>
+          <p className="bridge-disabled-message">
+            Copilot Bridge 未启用，ChatGPT 保持原来的账号、会话和配置。
+          </p>
+          <div className="service-actions">
+            <Button
+              disabled={busy || chatGpt.state !== "INSTALLED"}
+              onClick={onOpenChatGpt}
+              type="button"
+            >
+              {chatGpt.state === "INSTALLED"
+                ? copy.openChatGpt
+                : copy.installChatGpt}
+            </Button>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section aria-labelledby="current-service-heading" className="service-section">
+    <section aria-labelledby="current-service-heading">
       <h2 id="current-service-heading">{copy.currentService}</h2>
       <div className="card current-service-card" aria-live="polite">
         <div className="service-card-header">
-          <div>
-            <p className="service-name">
-              {isCloud ? copy.cloudService : copy.localService}
-            </p>
-            <p className={`service-state state-${state.tone}`}>
+          <p className="service-name">
+            {isCloud ? copy.cloudService : copy.localService}
+          </p>
+          <div className="service-header-state">
+            <span className={`service-state state-${state.tone}`}>
               <span aria-hidden="true">{state.symbol}</span>
               {state.title}
-            </p>
+            </span>
+            {isCloud && cloud?.plan && <span className="plan-pill">{cloud.plan}</span>}
           </div>
-          {isCloud && cloud?.plan && (
-            <span className="plan-pill">{cloud.plan}</span>
-          )}
         </div>
 
-        {(isCloud ? cloudReady : bridgeReady) && (
-          <div className="service-details">
-            <div className="service-detail">
-              <span>{copy.currentModel}</span>
-              <strong>{model || "自动选择"}</strong>
-            </div>
-            {isCloud
-              ? (
-                <UsageSummary
-                  label={copy.cloudUsage}
-                  percent={cloud?.usagePercent}
-                  summary={cloud?.usage}
+        {serviceReady && selectedModel
+          ? (
+            <div className="service-controls">
+              <SelectRow label="模型">
+                <Select
+                  label="模型"
+                  onChange={(backendModel) =>
+                    onUpdateSettings({ ...settings, backendModel })}
+                  options={modelOptions}
+                  value={selectedModel}
                 />
-              )
-              : (
-                <p className="local-usage-note">
-                  {copy.localDescription}
-                  <span>{copy.localUsage}</span>
-                </p>
+              </SelectRow>
+              {selected?.supportsReasoningEffort && (
+                <SelectRow label="推理强度">
+                  <Select
+                    label="推理强度"
+                    onChange={(value) =>
+                      onUpdateSettings({
+                        ...settings,
+                        reasoningEffort:
+                          value === "auto" ? null : value as ReasoningEffort,
+                      })}
+                    options={[
+                      { value: "auto", label: "自动" },
+                      { value: "high", label: "高" },
+                    ]}
+                    value={settings.reasoningEffort ?? "auto"}
+                  />
+                </SelectRow>
               )}
-          </div>
-        )}
-
-        {!state.ready && (
-          <div className="service-message">
-            <p>{state.message}</p>
-            {isCloud
-              ? (
-                <Button
-                  className="secondary compact"
-                  disabled={busy}
-                  onClick={
-                    cloud?.authState === "SERVER_UNREACHABLE"
+            </div>
+          )
+          : (
+            <div className="service-message">
+              <p>{state.message}</p>
+              <Button
+                className="secondary compact"
+                disabled={busy}
+                onClick={
+                  isCloud
+                    ? cloud?.authState === "SERVER_UNREACHABLE"
                       ? onRetryCloud
                       : onOpenAccount
-                  }
-                  type="button"
-                >
-                  {cloud?.authState === "SERVER_UNREACHABLE"
+                    : onConnectLocal
+                }
+                type="button"
+              >
+                {isCloud
+                  ? cloud?.authState === "SERVER_UNREACHABLE"
                     ? zhCN.account.retry
-                    : cloudActionLabel(cloud)}
-                </Button>
-              )
-              : (
-                <Button
-                  className="secondary compact"
-                  disabled={busy}
-                  onClick={onConnectLocal}
-                  type="button"
-                >
-                  连接 GitHub Copilot
-                </Button>
-              )}
-          </div>
+                    : cloudActionLabel(cloud)
+                  : "连接 GitHub Copilot"}
+              </Button>
+            </div>
+          )}
+
+        {!isCloud && serviceReady && (
+          <p className="local-inline-note">
+            使用你自己的 GitHub Copilot，不消耗云服务 AI 用量。
+          </p>
         )}
 
-        <div className="chatgpt-context">
-          <span>
-            {profile?.activeProfile === "bridge"
-              ? copy.bridgeEnvironment
-              : copy.originalEnvironment}
-          </span>
-        </div>
-
         <div className="service-actions">
+          <Button
+            className="secondary"
+            disabled={busy}
+            onClick={onSwitchService}
+            type="button"
+          >
+            {copy.switchService}
+          </Button>
           <Button
             disabled={busy || (!serviceReady && chatGpt.state === "INSTALLED")}
             onClick={
@@ -149,155 +198,87 @@ export function CurrentServiceCard({
                 ? copy.openChatGpt
                 : copy.enableInChatGpt}
           </Button>
-          <Button
-            className="secondary"
-            disabled={busy}
-            onClick={onSwitchService}
-            type="button"
-          >
-            {copy.switchService}
-          </Button>
         </div>
       </div>
     </section>
   );
 }
 
-function UsageSummary({
-  label,
-  percent,
-  summary,
-}: {
-  label: string;
-  percent: number | null | undefined;
-  summary: string | null | undefined;
-}) {
-  const normalized = Math.max(0, Math.min(100, percent ?? 0));
-  return (
-    <div className="usage-summary">
-      <div>
-        <span>{label}</span>
-        <strong>{percent == null ? "—" : `${String(percent)}%`}</strong>
-      </div>
-      <div
-        aria-label={`${label} ${String(normalized)}%`}
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={normalized}
-        className="usage-track"
-        role="progressbar"
-      >
-        <span style={{ width: `${String(normalized)}%` }} />
-      </div>
-      {summary && <small>{summary}</small>}
-    </div>
-  );
-}
-
 function localStatePresentation(bridge: BridgeStatus | null) {
   if (bridge?.state === "ready") {
-    return {
-      ready: true,
-      symbol: "●",
-      title: zhCN.product.connected,
-      message: "",
-      tone: "success",
-    };
+    return { symbol: "●", title: "已连接", message: "", tone: "success" };
   }
   if (bridge?.state === "starting") {
     return {
-      ready: false,
       symbol: "◌",
-      title: zhCN.product.connecting,
+      title: "正在连接",
       message: "正在连接你的 GitHub Copilot。",
       tone: "neutral",
     };
   }
   if (bridge?.state === "failed") {
     return {
-      ready: false,
       symbol: "●",
-      title: zhCN.product.needsAttention,
+      title: "需要处理",
       message: "GitHub Copilot 连接需要重新处理。",
       tone: "danger",
     };
   }
   return {
-    ready: false,
     symbol: "○",
-    title: zhCN.product.notConnected,
+    title: "尚未连接",
     message: "连接你的 GitHub Copilot 账号后即可使用。",
     tone: "neutral",
   };
 }
 
 function cloudStatePresentation(cloud: CloudServiceStatus | null) {
-  switch (cloud?.authState) {
-    case "AUTHENTICATED":
-      return {
-        ready: true,
-        symbol: "●",
-        title: zhCN.product.connected,
-        message: "",
-        tone: "success",
-      };
-    case "AUTHENTICATING":
-      return {
-        ready: false,
-        symbol: "◌",
-        title: zhCN.account.authenticating,
-        message: "正在验证账号并准备云服务。",
-        tone: "neutral",
-      };
-    case "DEVICE_REVOKED":
-      return {
-        ready: false,
-        symbol: "●",
-        title: zhCN.account.deviceRevoked,
-        message: zhCN.account.deviceRevokedMessage,
-        tone: "danger",
-      };
-    case "SUBSCRIPTION_REQUIRED":
-      return {
-        ready: false,
-        symbol: "●",
-        title: zhCN.account.subscriptionRequired,
-        message: zhCN.account.subscriptionRequiredMessage,
-        tone: "warning",
-      };
-    case "SUBSCRIPTION_EXPIRED":
-      return {
-        ready: false,
-        symbol: "●",
-        title: zhCN.account.subscriptionExpired,
-        message: zhCN.account.subscriptionExpiredMessage,
-        tone: "warning",
-      };
-    case "QUOTA_EXCEEDED":
-      return {
-        ready: false,
-        symbol: "●",
-        title: zhCN.account.quotaExceeded,
-        message: zhCN.account.quotaExceededMessage,
-        tone: "warning",
-      };
-    case "SERVER_UNREACHABLE":
-      return {
-        ready: false,
-        symbol: "●",
-        title: zhCN.account.serverUnreachable,
-        message: zhCN.account.serverUnreachableMessage,
-        tone: "warning",
-      };
-    default:
-      return {
-        ready: false,
-        symbol: "○",
-        title: zhCN.account.signedOut,
-        message: zhCN.account.signedOutMessage,
-        tone: "neutral",
-      };
-  }
+  const presentations = {
+    AUTHENTICATED: { symbol: "●", title: "已连接", message: "", tone: "success" },
+    AUTHENTICATING: {
+      symbol: "◌",
+      title: zhCN.account.authenticating,
+      message: "正在验证账号并准备云服务。",
+      tone: "neutral",
+    },
+    DEVICE_REVOKED: {
+      symbol: "●",
+      title: zhCN.account.deviceRevoked,
+      message: zhCN.account.deviceRevokedMessage,
+      tone: "danger",
+    },
+    SUBSCRIPTION_REQUIRED: {
+      symbol: "●",
+      title: zhCN.account.subscriptionRequired,
+      message: zhCN.account.subscriptionRequiredMessage,
+      tone: "warning",
+    },
+    SUBSCRIPTION_EXPIRED: {
+      symbol: "●",
+      title: zhCN.account.subscriptionExpired,
+      message: zhCN.account.subscriptionExpiredMessage,
+      tone: "warning",
+    },
+    QUOTA_EXCEEDED: {
+      symbol: "●",
+      title: zhCN.account.quotaExceeded,
+      message: zhCN.account.quotaExceededMessage,
+      tone: "warning",
+    },
+    SERVER_UNREACHABLE: {
+      symbol: "●",
+      title: zhCN.account.serverUnreachable,
+      message: zhCN.account.serverUnreachableMessage,
+      tone: "warning",
+    },
+    SIGNED_OUT: {
+      symbol: "○",
+      title: zhCN.account.signedOut,
+      message: zhCN.account.signedOutMessage,
+      tone: "neutral",
+    },
+  } as const;
+  return presentations[cloud?.authState ?? "SIGNED_OUT"];
 }
 
 function cloudActionLabel(cloud: CloudServiceStatus | null): string {

@@ -69,6 +69,7 @@ export interface CloudServiceStatus {
   usageRequests: number | null;
   usageTokens: number | null;
   currentDevice: string;
+  currentDeviceId: string | null;
   accountManagementAvailable: boolean;
   subscriptionManagementAvailable: boolean;
   serviceStatus: "WAITING_FOR_CONTRACT" | "AVAILABLE" | "UNREACHABLE";

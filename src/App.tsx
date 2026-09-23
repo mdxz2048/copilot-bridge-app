@@ -11,6 +11,8 @@ import type {
   ProfileStatus,
 } from "./bridge-api";
 import { AppTitleBar } from "./components/AppTitleBar";
+import { AccountSummaryCard } from "./components/AccountSummaryCard";
+import { BridgeActivationBar } from "./components/BridgeActivationBar";
 import { Button } from "./components/Button";
 import { CloudAccountSheet } from "./components/CloudAccountSheet";
 import { CurrentServiceCard } from "./components/CurrentServiceCard";
@@ -260,6 +262,22 @@ export function App() {
     }
   };
 
+  const setBridgeEnabled = async (enabled: boolean) => {
+    if (enabled) {
+      if (bridge?.state !== "ready") {
+        showError(
+          new Error("AI service unavailable"),
+          "请先连接当前 AI 服务，再启用 Copilot Bridge。",
+        );
+        setServicesOpen(true);
+        return;
+      }
+      setSetupOpen(true);
+      return;
+    }
+    await switchProfile("original");
+  };
+
   const openDiagnostics = async () => {
     try {
       setDiagnostics(await window.copilotBridge.getDiagnostics());
@@ -282,12 +300,38 @@ export function App() {
     <main>
       <AppTitleBar onSettings={() => setSettingsOpen(true)} />
 
+      <BridgeActivationBar
+        busy={busy}
+        onChange={(enabled) => void setBridgeEnabled(enabled)}
+        profile={profile}
+      />
+
+      <AccountSummaryCard
+        busy={busy}
+        cloud={cloud}
+        onLogin={() => {
+          setActivateCloudAfterLogin(false);
+          setCloudOpen(true);
+        }}
+        onOpenDetails={() => {
+          setCloudOpen(true);
+          void refreshCloud();
+        }}
+        onRenew={() =>
+          void window.copilotBridge.manageCloudSubscription().catch(
+            (error: unknown) => showError(error, "无法打开订阅管理页面。"),
+          )}
+        onUseCloud={() => void switchService("REMOTE")}
+        service={settings.backendMode}
+      />
+
       <CurrentServiceCard
         bridge={bridge}
+        bridgeEnabled={profile?.activeProfile === "bridge"}
         busy={busy}
         chatGpt={chatGpt}
         cloud={cloud}
-        model={currentModel}
+        models={models}
         onConnectLocal={() => void startLocalLogin()}
         onEnableChatGpt={() => setSetupOpen(true)}
         onInstallChatGpt={() => {
@@ -299,7 +343,8 @@ export function App() {
         onRetryCloud={() => void refreshCloud()}
         onSwitchService={() => setServicesOpen(true)}
         profile={profile}
-        service={settings.backendMode}
+        settings={settings}
+        onUpdateSettings={(next) => void persistSettings(next)}
       />
 
       <footer className="status-bar">
@@ -344,19 +389,9 @@ export function App() {
       {settingsOpen && (
         <ProductSettingsSheet
           bridge={bridge}
-          cloud={cloud}
-          models={models}
           onClose={() => setSettingsOpen(false)}
           onDiagnostics={() => void openDiagnostics()}
-          onOpenAccount={() => {
-            setSettingsOpen(false);
-            setCloudOpen(true);
-            void refreshCloud();
-          }}
-          onOpenServices={() => {
-            setSettingsOpen(false);
-            setServicesOpen(true);
-          }}
+          onManageChatGpt={() => void window.copilotBridge.launchChatGpt()}
           onRestartBridge={() =>
             void window.copilotBridge.restartBridge().then(setBridge)}
           onUpdate={(next) => void persistSettings(next)}

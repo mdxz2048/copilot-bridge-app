@@ -1,13 +1,9 @@
 import type {
   AppSettings,
-  BridgeModel,
   BridgeStatus,
-  CloudServiceStatus,
   ProfileStatus,
-  ReasoningEffort,
 } from "../bridge-api";
 import { zhCN } from "../locales/zh-CN";
-import { displayModel } from "../model-display";
 import { Button } from "./Button";
 import { Select, SelectRow } from "./Select";
 import { Sheet } from "./Sheet";
@@ -15,45 +11,26 @@ import { Toggle } from "./Toggle";
 
 interface ProductSettingsSheetProps {
   bridge: BridgeStatus | null;
-  cloud: CloudServiceStatus | null;
-  models: BridgeModel[];
   profile: ProfileStatus | null;
   settings: AppSettings;
   onClose: () => void;
   onDiagnostics: () => void;
-  onOpenAccount: () => void;
-  onOpenServices: () => void;
+  onManageChatGpt: () => void;
   onRestartBridge: () => void;
   onUpdate: (settings: AppSettings) => void;
 }
 
 export function ProductSettingsSheet({
   bridge,
-  cloud,
-  models,
   profile,
   settings,
   onClose,
   onDiagnostics,
-  onOpenAccount,
-  onOpenServices,
+  onManageChatGpt,
   onRestartBridge,
   onUpdate,
 }: ProductSettingsSheetProps) {
   const copy = zhCN.settings;
-  const selectedModel = settings.backendModel ?? models[0]?.id ?? "";
-  const selected = models.find((model) => model.id === selectedModel);
-  const modelOptions = models.map((model) => ({
-    value: model.id,
-    label: displayModel(model.id),
-  }));
-  const reasoningOptions = [
-    { value: "low", label: zhCN.common.low },
-    { value: "medium", label: zhCN.common.medium },
-    { value: "high", label: zhCN.common.high },
-    { value: "xhigh", label: zhCN.common.xhigh },
-  ] as const;
-
   return (
     <Sheet onClose={onClose} title={copy.title}>
       <div className="sheet-header">
@@ -63,56 +40,6 @@ export function ProductSettingsSheet({
         </Button>
       </div>
 
-      <h3>{copy.aiService}</h3>
-      <div className="settings-row">
-        <span>
-          {settings.backendMode === "REMOTE"
-            ? zhCN.product.cloudService
-            : zhCN.product.localService}
-        </span>
-        <Button className="secondary compact" onClick={onOpenServices} type="button">
-          {copy.changeService}
-        </Button>
-      </div>
-
-      <h3>{copy.accountService}</h3>
-      <div className="settings-row">
-        <span>
-          {cloud?.authState === "AUTHENTICATED"
-            ? `${cloud.account ?? ""} · ${cloud.plan ?? ""}`
-            : zhCN.account.signedOut}
-        </span>
-        <Button className="secondary compact" onClick={onOpenAccount} type="button">
-          {copy.viewAccount}
-        </Button>
-      </div>
-
-      <h3>{copy.modelReasoning}</h3>
-      {selectedModel && (
-        <SelectRow label={copy.model}>
-          <Select
-            label={copy.model}
-            onChange={(backendModel) => onUpdate({ ...settings, backendModel })}
-            options={modelOptions}
-            value={selectedModel}
-          />
-        </SelectRow>
-      )}
-      {selected?.supportsReasoningEffort && (
-        <SelectRow label={copy.reasoning}>
-          <Select
-            label={copy.reasoning}
-            onChange={(reasoningEffort) =>
-              onUpdate({
-                ...settings,
-                reasoningEffort: reasoningEffort as ReasoningEffort,
-              })}
-            options={reasoningOptions}
-            value={settings.reasoningEffort ?? "high"}
-          />
-        </SelectRow>
-      )}
-
       <h3>{copy.chatGpt}</h3>
       <div className="settings-row">
         <span>{copy.environment}</span>
@@ -120,20 +47,14 @@ export function ProductSettingsSheet({
           {profile?.activeProfile === "bridge" ? copy.bridge : copy.original}
         </strong>
       </div>
+      <div className="settings-row">
+        <span>管理 ChatGPT</span>
+        <Button className="secondary compact" onClick={onManageChatGpt} type="button">
+          打开
+        </Button>
+      </div>
 
       <h3>{copy.startupTray}</h3>
-      <SelectRow label={copy.theme}>
-        <Select
-          label={copy.theme}
-          onChange={(theme) => onUpdate({ ...settings, theme })}
-          options={[
-            { value: "system", label: copy.systemTheme },
-            { value: "light", label: copy.lightTheme },
-            { value: "dark", label: copy.darkTheme },
-          ]}
-          value={settings.theme}
-        />
-      </SelectRow>
       <div className="settings-row">
         <span>{copy.autoLaunch}</span>
         <Toggle
@@ -161,21 +82,38 @@ export function ProductSettingsSheet({
         />
       </div>
 
-      <h3>{copy.diagnostics}</h3>
+      <h3>外观</h3>
+      <SelectRow label={copy.theme}>
+        <Select
+          label={copy.theme}
+          onChange={(theme) => onUpdate({ ...settings, theme })}
+          options={[
+            { value: "system", label: copy.systemTheme },
+            { value: "light", label: copy.lightTheme },
+            { value: "dark", label: copy.darkTheme },
+          ]}
+          value={settings.theme}
+        />
+      </SelectRow>
+
+      <h3>高级</h3>
       <div className="settings-row">
-        <span>
-          {bridge?.state === "ready"
-            ? `● ${zhCN.product.serviceNormal}`
-            : `○ ${zhCN.product.needsAttention}`}
-        </span>
-        <div className="inline-actions">
-          <Button className="secondary compact" onClick={onRestartBridge} type="button">
-            {zhCN.product.restartBridge}
-          </Button>
-          <Button className="secondary compact" onClick={onDiagnostics} type="button">
-            {copy.openDiagnostics}
-          </Button>
-        </div>
+        <span>Bridge 状态</span>
+        <Button className="secondary compact" onClick={onRestartBridge} type="button">
+          {bridge?.state === "ready" ? "重新启动" : "尝试启动"}
+        </Button>
+      </div>
+      <div className="settings-row">
+        <span>{copy.diagnostics}</span>
+        <Button className="secondary compact" onClick={onDiagnostics} type="button">
+          查看
+        </Button>
+      </div>
+
+      <h3>关于</h3>
+      <div className="settings-row">
+        <span>Copilot Bridge</span>
+        <strong>v0.1.0</strong>
       </div>
     </Sheet>
   );
