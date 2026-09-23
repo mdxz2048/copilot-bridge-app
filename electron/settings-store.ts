@@ -2,15 +2,29 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type BackendMode = "LOCAL" | "REMOTE";
+export type ThemeMode = "system" | "light" | "dark";
 
 export interface AppSettings {
   backendModel: string | null;
   reasoningEffort: ReasoningEffort | null;
+  autoLaunch: boolean;
+  minimizeToTray: boolean;
+  autoBridgeStart: boolean;
+  backendMode: BackendMode;
+  theme: ThemeMode;
+  onboardingCompleted: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   backendModel: null,
   reasoningEffort: null,
+  autoLaunch: true,
+  minimizeToTray: true,
+  autoBridgeStart: true,
+  backendMode: "LOCAL",
+  theme: "system",
+  onboardingCompleted: false,
 };
 
 export class SettingsStore {
@@ -26,6 +40,12 @@ export class SettingsStore {
       return {
         backendModel: typeof parsed.backendModel === "string" ? parsed.backendModel : null,
         reasoningEffort: isReasoningEffort(parsed.reasoningEffort) ? parsed.reasoningEffort : null,
+        autoLaunch: parsed.autoLaunch !== false,
+        minimizeToTray: parsed.minimizeToTray !== false,
+        autoBridgeStart: parsed.autoBridgeStart !== false,
+        backendMode: parsed.backendMode === "REMOTE" ? "REMOTE" : "LOCAL",
+        theme: parsed.theme === "light" || parsed.theme === "dark" ? parsed.theme : "system",
+        onboardingCompleted: parsed.onboardingCompleted !== false,
       };
     } catch (error: unknown) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {

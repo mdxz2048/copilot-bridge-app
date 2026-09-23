@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AppSettings } from "./settings-store.js";
+import type { RemoteBridgeServer } from "./cloud/remote-bridge-server.js";
 
 export interface BridgeStatus {
   state: "stopped" | "starting" | "ready" | "failed";
@@ -24,6 +25,7 @@ export class BridgeManager {
   private readonly runtimePath: string;
   private readonly workingDirectory: string;
   private readonly port: number;
+  private readonly remoteBridge: RemoteBridgeServer | null;
 
   constructor(
     userDataPath: string,
@@ -32,6 +34,7 @@ export class BridgeManager {
     runtimePath: string,
     workingDirectory: string,
     port = 8787,
+    remoteBridge: RemoteBridgeServer | null = null,
   ) {
     this.userDataPath = userDataPath;
     this.proxyEntrypoint = proxyEntrypoint;
@@ -39,6 +42,7 @@ export class BridgeManager {
     this.runtimePath = runtimePath;
     this.workingDirectory = workingDirectory;
     this.port = port;
+    this.remoteBridge = remoteBridge;
     this.status = {
       state: "stopped",
       message: "Copilot Bridge 未启动",
@@ -51,6 +55,23 @@ export class BridgeManager {
   }
 
   async start(settings: AppSettings): Promise<BridgeStatus> {
+    if (settings.backendMode === "REMOTE") {
+      if (!this.remoteBridge) {
+        this.status = {
+          ...this.status,
+          state: "failed",
+          message: "Cloud Bridge 尚未配置。",
+        };
+        return this.status;
+      }
+      if (this.process) await this.stopLocal();
+      const remote = await this.remoteBridge.start();
+      this.status = { ...remote };
+      return this.status;
+    }
+    if (this.remoteBridge?.getStatus().state !== "stopped") {
+      await this.remoteBridge?.stop();
+    }
     if (this.process) return this.status;
     this.status = { ...this.status, state: "starting", message: "正在启动 Copilot Bridge…" };
     this.processOutput = "";
@@ -111,14 +132,19 @@ export class BridgeManager {
   }
 
   async stop(): Promise<BridgeStatus> {
+    await this.stopLocal();
+    await this.remoteBridge?.stop();
+    this.status = { ...this.status, state: "stopped", message: "Copilot Bridge 未启动" };
+    return this.status;
+  }
+
+  private async stopLocal(): Promise<void> {
     const child = this.process;
     this.process = null;
     if (child && child.exitCode === null) {
       child.kill();
       await waitForExit(child, 3_000);
     }
-    this.status = { ...this.status, state: "stopped", message: "Copilot Bridge 未启动" };
-    return this.status;
   }
 
   async restart(settings: AppSettings): Promise<BridgeStatus> {
@@ -127,6 +153,9 @@ export class BridgeManager {
   }
 
   async models(): Promise<BridgeModel[]> {
+    if (this.remoteBridge?.getStatus().state === "ready") {
+      return this.remoteBridge.models();
+    }
     if (!(await this.isHealthy())) {
       throw new Error("Copilot Bridge 当前不可用。");
     }

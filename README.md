@@ -25,6 +25,21 @@ portable EXE。
 
 ## 变更记录
 
+### 开发中（未发布）
+
+- 限制 Copilot Bridge 为单实例运行；重复启动时聚焦现有主窗口。
+- 在底部状态栏显示低干扰版本号。
+- 新增 Windows AppX / Microsoft Store ChatGPT Desktop 检测。
+- 新增官方 Microsoft Store 安装入口与 `winget msstore` 安装流程。
+- 新增 Original Profile 的 `UNINITIALIZED`、`READY`、`CUSTOM` 状态。
+- 新增 Custom `CODEX_HOME` 保存与恢复测试。
+- 新增契约化 Cloud 模式：集中式 `CloudClient`、Windows Credential Manager
+  TokenStore、稳定随机设备 UUID、Server 模型目录、账号与服务 UI，以及
+  localhost Remote Bridge。
+- Cloud Mock E2E 已覆盖登录、设备、订阅、用量、JSON/SSE Responses、
+  read/edit/shell 本地工具 continuation 和错误状态。Cloud Base URL 通过环境
+  配置注入；现有 Local Copilot 与 Tool Bridge 保持可用。
+
 ### 0.1.0
 
 - 新增 NSIS Windows 安装程序。

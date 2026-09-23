@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.renderer.json && tsc -p tsconfig.electron.json",
-    "test": "npm run build && node --test test/profile-store.test.mjs",
+    "test": "npm run build && node --test test/profile-store.test.mjs test/cloud-foundation.test.mjs test/service-switcher.test.mjs",
+    "test:cloud-e2e": "npm run build && node scripts/cloud-e2e-harness.mjs",
+    "test:installed-production": "node scripts/installed-production-e2e.mjs",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "package:portable": "npm run prepare:runtime && npm run build && electron-builder --win portable",
     "package:installer": "npm run prepare:runtime && npm run build && electron-builder --win nsis"
@@ -34,7 +36,8 @@
     "@github/copilot": "^1.0.75",
     "copilot-sdk-proxy": "file:../upstream-copilot-sdk-proxy",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
   },
   "build": {
     "appId": "com.copilotbridge.desktop",
