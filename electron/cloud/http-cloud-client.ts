@@ -1,9 +1,10 @@
-import type { z } from "zod";
+import { z } from "zod";
 import {
   AccountSchema,
   ClientConfigSchema,
   DeviceInfoSchema,
   DeviceListSchema,
+  DeviceV2Schema,
   ErrorResponseSchema,
   LoginRequestSchema,
   LoginResponseSchema,
@@ -11,23 +12,50 @@ import {
   LogoutResponseSchema,
   MeResponseSchema,
   ModelListSchema,
+  ModelV2Schema,
   RefreshResponseSchema,
+  ReferralApplyV2Schema,
+  ReferralCodeV2Schema,
+  ReferralRecordV2Schema,
+  ReferralSummaryV2Schema,
+  RegisterRequestV2Schema,
   RegisterDeviceResponseSchema,
+  RegisterV2ResponseSchema,
   ResponseRequestSchema,
   SubscriptionResponseSchema,
+  UsageSettlementV2Schema,
   UsageSchema,
+  UsageSummaryV2Schema,
+  WalletSummaryV2Schema,
+  WalletTransactionV2Schema,
   type Account,
   type ClientConfig,
   type Device,
   type DeviceInfo,
+  type DeviceV2,
   type LoginRequest,
   type LoginResponse,
   type LatestReleaseResponse,
   type ModelList,
+  type ModelV2,
+  type ProviderConnectionV2,
+  type ProviderV2,
+  type ReferralCodeV2,
+  type ReferralRecordV2,
+  type ReferralSummaryV2,
+  type RegisterRequestV2,
   type ResponseRequest,
   type SubscriptionResponse,
   type Usage,
+  type UsageSettlementV2,
+  type UsageSummaryV2,
   type User,
+  type WalletSummaryV2,
+  type WalletTransactionV2,
+  MeV2Schema,
+  ProviderConnectionV2Schema,
+  ProviderV2Schema,
+  type MeV2,
 } from "./contract.js";
 import type {
   CloudClient,
@@ -63,6 +91,18 @@ export class HttpCloudClient implements CloudClient {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.defaultHeaders = new Headers(options.defaultHeaders);
     this.fetch = options.fetch ?? globalThis.fetch;
+  }
+
+  async register(request: RegisterRequestV2): Promise<User> {
+    const response = await this.requestJson(
+      "/api/v1/auth/register",
+      RegisterV2ResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(RegisterRequestV2Schema.parse(request)),
+      },
+    );
+    return response.user;
   }
 
   async login(request: LoginRequest): Promise<LoginResponse> {
@@ -174,6 +214,168 @@ export class HttpCloudClient implements CloudClient {
     );
   }
 
+  getMeV2(): Promise<MeV2> {
+    return this.authenticatedJson("/api/v1/me", MeV2Schema);
+  }
+
+  getWallet(): Promise<WalletSummaryV2> {
+    return this.authenticatedJson(
+      "/api/v1/me/wallet",
+      WalletSummaryV2Schema,
+    );
+  }
+
+  async listWalletTransactions(): Promise<WalletTransactionV2[]> {
+    const response = await this.authenticatedJson(
+      "/api/v1/me/wallet/transactions",
+      z.object({ data: z.array(WalletTransactionV2Schema) }),
+    );
+    return response.data;
+  }
+
+  getUsageV2(): Promise<UsageSummaryV2> {
+    return this.authenticatedJson("/api/v1/me/usage", UsageSummaryV2Schema);
+  }
+
+  getUsageByResponse(responseId: string): Promise<UsageSettlementV2> {
+    const id = z.string().regex(/^resp_[a-f0-9]{32}$/).parse(responseId);
+    return this.authenticatedJson(
+      `/api/v1/usage/responses/${encodeURIComponent(id)}`,
+      UsageSettlementV2Schema,
+    );
+  }
+
+  async listDevicesV2(): Promise<DeviceV2[]> {
+    const response = await this.authenticatedJson(
+      "/api/v1/me/devices",
+      z.object({ data: z.array(DeviceV2Schema) }),
+    );
+    return response.data;
+  }
+
+  async renameDevice(id: string, deviceName: string): Promise<DeviceV2> {
+    const response = await this.authenticatedJson(
+      `/api/v1/devices/${encodeURIComponent(z.uuid().parse(id))}`,
+      z.object({ device: DeviceV2Schema }),
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          deviceName: z.string().trim().min(1).max(120).parse(deviceName),
+        }),
+      },
+    );
+    return response.device;
+  }
+
+  async revokeDevice(id: string): Promise<DeviceV2> {
+    const response = await this.authenticatedJson(
+      `/api/v1/devices/${encodeURIComponent(z.uuid().parse(id))}/revoke`,
+      z.object({ device: DeviceV2Schema }),
+      { method: "POST" },
+    );
+    return response.device;
+  }
+
+  async listProviders(): Promise<ProviderV2[]> {
+    const response = await this.authenticatedJson(
+      "/api/v1/providers",
+      z.object({ data: z.array(ProviderV2Schema) }),
+    );
+    return response.data;
+  }
+
+  getProvider(id: string): Promise<ProviderV2> {
+    return this.authenticatedJson(
+      `/api/v1/providers/${encodeURIComponent(z.uuid().parse(id))}`,
+      ProviderV2Schema,
+    );
+  }
+
+  async listProviderModels(id: string): Promise<ModelV2[]> {
+    const response = await this.authenticatedJson(
+      `/api/v1/providers/${encodeURIComponent(z.uuid().parse(id))}/models`,
+      z.object({ data: z.array(ModelV2Schema) }),
+    );
+    return response.data;
+  }
+
+  async listProviderConnections(): Promise<ProviderConnectionV2[]> {
+    const response = await this.authenticatedJson(
+      "/api/v1/me/provider-connections",
+      z.object({ data: z.array(ProviderConnectionV2Schema) }),
+    );
+    return response.data;
+  }
+
+  createProviderConnection(request: {
+    providerId: string;
+    label: string;
+    apiKey: string;
+  }): Promise<ProviderConnectionV2> {
+    return this.authenticatedJson(
+      "/api/v1/me/provider-connections",
+      ProviderConnectionV2Schema,
+      {
+        method: "POST",
+        body: JSON.stringify(z.object({
+          providerId: z.uuid(),
+          label: z.string().trim().min(1).max(120),
+          apiKey: z.string().min(8).max(4096),
+        }).parse(request)),
+      },
+    );
+  }
+
+  deleteProviderConnection(id: string): Promise<{
+    id: string;
+    status: "DISABLED";
+  }> {
+    return this.authenticatedJson(
+      `/api/v1/me/provider-connections/${encodeURIComponent(z.uuid().parse(id))}`,
+      z.object({ id: z.uuid(), status: z.literal("DISABLED") }),
+      { method: "DELETE" },
+    );
+  }
+
+  getReferralCode(): Promise<ReferralCodeV2> {
+    return this.authenticatedJson(
+      "/api/v1/referral/code",
+      ReferralCodeV2Schema,
+    );
+  }
+
+  applyReferral(code: string): Promise<{
+    id: string;
+    status: string;
+    riskReviewRequired: boolean;
+  }> {
+    return this.authenticatedJson(
+      "/api/v1/referral/apply",
+      ReferralApplyV2Schema,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          code: z.string().trim().min(8).max(24).parse(code),
+        }),
+      },
+    );
+  }
+
+  getReferralSummary(): Promise<ReferralSummaryV2> {
+    return this.authenticatedJson(
+      "/api/v1/referral/stats",
+      ReferralSummaryV2Schema,
+    );
+  }
+
+  async getReferralHistory(): Promise<ReferralRecordV2[]> {
+    const response = await this.authenticatedJson(
+      "/api/v1/referral/history",
+      z.object({ data: z.array(ReferralRecordV2Schema) }),
+    );
+    return response.data;
+  }
+
   async listModels(): Promise<ModelList> {
     return this.authenticatedJson("/v1/models", ModelListSchema, {}, true);
   }
@@ -195,7 +397,12 @@ export class HttpCloudClient implements CloudClient {
         method: "POST",
         body: JSON.stringify(body),
         signal: options.signal,
-        headers: { "X-Client-Thread-ID": options.threadId },
+        headers: {
+          "X-Client-Thread-ID": options.threadId,
+          ...(options.providerConnectionId && {
+            "X-Provider-Connection-ID": options.providerConnectionId,
+          }),
+        },
       },
       true,
     );
@@ -316,7 +523,8 @@ async function responseError(response: Response): Promise<CloudError> {
     parsed.data.error.message,
     {
       httpStatus: response.status,
-      requestId: parsed.data.error.requestId,
+      requestId:
+        parsed.data.error.request_id ?? parsed.data.error.requestId,
     },
   );
 }

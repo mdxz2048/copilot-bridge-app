@@ -1,111 +1,90 @@
-import type {
-  AppSettings,
-  BridgeStatus,
-  CloudServiceStatus,
-} from "../bridge-api";
-import { zhCN } from "../locales/zh-CN";
+import type { AIProvider, AIProviderId } from "../domain/product-models";
 import { Button } from "./Button";
 import { Sheet } from "./Sheet";
 
-interface ServiceSelectionSheetProps {
-  busy: boolean;
-  bridge: BridgeStatus | null;
-  cloud: CloudServiceStatus | null;
-  current: AppSettings["backendMode"];
-  onClose: () => void;
-  onSelect: (target: AppSettings["backendMode"]) => void;
-}
-
 export function ServiceSelectionSheet({
   busy,
-  bridge,
-  cloud,
-  current,
   onClose,
   onSelect,
-}: ServiceSelectionSheetProps) {
-  const copy = zhCN.services;
+  providers,
+}: {
+  busy: boolean;
+  onClose: () => void;
+  onSelect: (provider: AIProviderId) => void;
+  providers: AIProvider[];
+}) {
   return (
-    <Sheet onClose={onClose} title={copy.title}>
+    <Sheet onClose={onClose} title="选择 AI 服务">
       <div className="sheet-header">
-        <span>{copy.title}</span>
+        <span>选择 AI 服务</span>
         <Button className="secondary" onClick={onClose} type="button">
-          {zhCN.common.close}
+          取消
         </Button>
       </div>
-
-      <div className="service-choice-list">
-        <article className="service-choice">
-          <div className="choice-heading">
-            <div>
-              <span className="recommendation">{copy.recommended}</span>
-              <h3>{copy.cloudTitle}</h3>
-            </div>
-            {current === "REMOTE" && (
-              <span className="active-pill">{copy.active}</span>
-            )}
-          </div>
-          <p>{copy.cloudDescription}</p>
-          <p className="choice-status">
-            {cloud?.authState === "AUTHENTICATED"
-              ? `${cloud.plan ?? "Cloud"} · ${zhCN.product.serviceNormal}`
-              : cloudStatusLabel(cloud)}
-          </p>
-          <Button
-            disabled={busy || current === "REMOTE"}
-            onClick={() => onSelect("REMOTE")}
-            type="button"
-          >
-            {busy ? copy.switching : copy.useCloud}
-          </Button>
-        </article>
-
-        <div className="choice-divider" />
-
-        <article className="service-choice">
-          <div className="choice-heading">
-            <h3>{copy.localTitle}</h3>
-            {current === "LOCAL" && (
-              <span className="active-pill">{copy.active}</span>
-            )}
-          </div>
-          <p>{copy.localDescription}</p>
-          <p className="choice-status">
-            {current === "LOCAL"
-              ? bridge?.state === "ready"
-                ? zhCN.product.connected
-                : zhCN.product.notConnected
-              : copy.checkOnSwitch}
-          </p>
-          <Button
-            className="secondary"
-            disabled={busy || current === "LOCAL"}
-            onClick={() => onSelect("LOCAL")}
-            type="button"
-          >
-            {busy ? copy.switching : copy.useLocal}
-          </Button>
-        </article>
+      <div className="provider-choice-list">
+        {providers.map((provider) => (
+          <ProviderChoice
+            busy={busy}
+            key={provider.id}
+            onSelect={() => onSelect(provider.id)}
+            provider={provider}
+          />
+        ))}
       </div>
     </Sheet>
   );
 }
 
-function cloudStatusLabel(cloud: CloudServiceStatus | null): string {
-  switch (cloud?.authState) {
-    case "AUTHENTICATING":
-      return zhCN.account.authenticating;
-    case "DEVICE_REVOKED":
-      return zhCN.account.deviceRevoked;
-    case "SUBSCRIPTION_REQUIRED":
-      return zhCN.account.subscriptionRequired;
-    case "SUBSCRIPTION_EXPIRED":
-      return zhCN.account.subscriptionExpired;
-    case "QUOTA_EXCEEDED":
-      return zhCN.account.quotaExceeded;
-    case "SERVER_UNREACHABLE":
-      return zhCN.account.serverUnreachable;
-    default:
-      return zhCN.account.signedOut;
+function ProviderChoice({
+  busy,
+  onSelect,
+  provider,
+}: {
+  busy: boolean;
+  onSelect: () => void;
+  provider: AIProvider;
+}) {
+  return (
+    <article className={`provider-choice ${provider.active ? "active" : ""}`}>
+      <div className="provider-choice-main">
+        <span className="provider-radio" aria-hidden="true">
+          {provider.active ? "●" : "○"}
+        </span>
+        <div>
+          <strong>{provider.name}</strong>
+          <p>{provider.description}</p>
+          <small>{providerStateLabel(provider)}</small>
+        </div>
+      </div>
+      <Button
+        className="secondary compact"
+        disabled={busy || provider.active || !provider.available}
+        onClick={onSelect}
+        type="button"
+      >
+        {provider.active
+          ? "当前使用"
+          : provider.available
+            ? "选择"
+            : "尚未开放"}
+      </Button>
+    </article>
+  );
+}
+
+function providerStateLabel(provider: AIProvider): string {
+  switch (provider.connection) {
+    case "connected":
+      return "已连接";
+    case "connecting":
+      return "正在连接";
+    case "unavailable":
+      return "当前不可用";
+    case "auth_expired":
+      return "认证已失效";
+    case "error":
+      return "需要处理";
+    case "not_configured":
+      return provider.available ? "尚未配置" : "等待服务支持";
   }
 }

@@ -35,6 +35,7 @@ export async function performServiceSwitch(
     ...previous,
     backendMode: target,
     backendModel: null,
+    providerConnectionId: null,
   };
 
   try {

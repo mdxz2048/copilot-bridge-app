@@ -12,6 +12,7 @@ export interface AppSettings {
   minimizeToTray: boolean;
   autoBridgeStart: boolean;
   backendMode: BackendMode;
+  providerConnectionId: string | null;
   theme: ThemeMode;
   onboardingCompleted: boolean;
 }
@@ -23,6 +24,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   minimizeToTray: true,
   autoBridgeStart: true,
   backendMode: "LOCAL",
+  providerConnectionId: null,
   theme: "system",
   onboardingCompleted: false,
 };
@@ -44,6 +46,10 @@ export class SettingsStore {
         minimizeToTray: parsed.minimizeToTray !== false,
         autoBridgeStart: parsed.autoBridgeStart !== false,
         backendMode: parsed.backendMode === "REMOTE" ? "REMOTE" : "LOCAL",
+        providerConnectionId:
+          typeof parsed.providerConnectionId === "string"
+            ? parsed.providerConnectionId
+            : null,
         theme: parsed.theme === "light" || parsed.theme === "dark" ? parsed.theme : "system",
         onboardingCompleted: parsed.onboardingCompleted !== false,
       };

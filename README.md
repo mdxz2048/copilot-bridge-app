@@ -39,6 +39,11 @@ portable EXE。
 - Cloud Mock E2E 已覆盖登录、设备、订阅、用量、JSON/SSE Responses、
   read/edit/shell 本地工具 continuation 和错误状态。Cloud Base URL 通过环境
   配置注入；现有 Local Copilot 与 Tool Bridge 保持可用。
+- 新增 Desktop UI/UX V2：独立的 ChatGPT Bridge 总开关、轻量账户状态、
+  Provider/Model 分层、服务切换确认、模型与推理强度主界面操作、详细设备
+  流程和 760×560 紧凑窗口。
+- Custom API、本地模型、剩余点数、邀请奖励与设备凭据已建立客户端接口，
+  但在 Server Contract 正式提供前不会在生产环境伪造或启用。
 
 ### 0.1.0
 

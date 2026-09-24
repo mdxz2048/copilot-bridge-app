@@ -33,6 +33,7 @@ export interface RemoteBridgeStatus {
 export class RemoteBridgeServer {
   private readonly client: CloudClient;
   private readonly onCloudError?: (error: unknown) => void;
+  private readonly getProviderConnectionId?: () => Promise<string | null>;
   private readonly port: number;
   private readonly calls = new Map<string, RemoteConversation>();
   private server: Server | null = null;
@@ -42,10 +43,12 @@ export class RemoteBridgeServer {
     client: CloudClient,
     port = 8787,
     onCloudError?: (error: unknown) => void,
+    getProviderConnectionId?: () => Promise<string | null>,
   ) {
     this.client = client;
     this.port = port;
     this.onCloudError = onCloudError;
+    this.getProviderConnectionId = getProviderConnectionId;
     this.status = {
       state: "stopped",
       message: "Cloud Bridge 未启动",
@@ -197,6 +200,7 @@ export class RemoteBridgeServer {
     const transport = await this.client.createResponse(request, {
       threadId: conversation.threadId,
       signal: abort.signal,
+      providerConnectionId: await this.getProviderConnectionId?.(),
     });
     if (transport.contentType.includes("text/event-stream")) {
       await this.relayStream(transport.response, outgoing, conversation);

@@ -7,6 +7,7 @@ import type {
   ProfileStatus,
   ReasoningEffort,
 } from "../bridge-api";
+import type { AIProvider } from "../domain/product-models";
 import { zhCN } from "../locales/zh-CN";
 import { displayModel } from "../model-display";
 import { Button } from "./Button";
@@ -20,6 +21,7 @@ interface CurrentServiceCardProps {
   models: BridgeModel[];
   profile: ProfileStatus | null;
   bridgeEnabled: boolean;
+  provider: AIProvider;
   settings: AppSettings;
   onConnectLocal: () => void;
   onEnableChatGpt: () => void;
@@ -39,6 +41,7 @@ export function CurrentServiceCard({
   models,
   profile,
   bridgeEnabled,
+  provider,
   settings,
   onConnectLocal,
   onEnableChatGpt,
@@ -50,7 +53,7 @@ export function CurrentServiceCard({
   onUpdateSettings,
 }: CurrentServiceCardProps) {
   const copy = zhCN.product;
-  const isCloud = settings.backendMode === "REMOTE";
+  const isCloud = provider.id !== "github-copilot";
   const cloudReady = cloud?.authState === "AUTHENTICATED";
   const bridgeReady = bridge?.state === "ready";
   const serviceReady = isCloud ? cloudReady && bridgeReady : bridgeReady;
@@ -99,14 +102,13 @@ export function CurrentServiceCard({
       <div className="card current-service-card" aria-live="polite">
         <div className="service-card-header">
           <p className="service-name">
-            {isCloud ? copy.cloudService : copy.localService}
+            {provider.name}
           </p>
           <div className="service-header-state">
             <span className={`service-state state-${state.tone}`}>
               <span aria-hidden="true">{state.symbol}</span>
               {state.title}
             </span>
-            {isCloud && cloud?.plan && <span className="plan-pill">{cloud.plan}</span>}
           </div>
         </div>
 

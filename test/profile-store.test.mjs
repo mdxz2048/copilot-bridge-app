@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ProfileStore } from "../dist-electron/profile-store.js";
-import { parseDeviceFlowOutput } from "../dist-electron/copilot-auth.js";
+import {
+  authStatusForExit,
+  parseDeviceFlowOutput,
+} from "../dist-electron/copilot-auth.js";
 import { SettingsStore } from "../dist-electron/settings-store.js";
 
 class MemoryUserEnvironment {
@@ -29,6 +32,15 @@ test("extracts only public device-flow details from official runtime output", ()
       verificationUrl: "https://github.com/login/device",
     },
   );
+});
+
+test("maps GitHub Device Flow completion states without treating login as entitlement", () => {
+  assert.deepEqual(authStatusForExit(0, ""), {
+    state: "success",
+    message: "GitHub Copilot 已连接。",
+  });
+  assert.equal(authStatusForExit(1, "device code expired").state, "expired");
+  assert.equal(authStatusForExit(1, "network failed").state, "network_error");
 });
 
 test("shows onboarding only for a new settings store", async () => {

@@ -22,6 +22,10 @@ import { ProductSettingsSheet } from "./components/ProductSettingsSheet";
 import { ServiceSelectionSheet } from "./components/ServiceSelectionSheet";
 import { zhCN } from "./locales/zh-CN";
 import { displayModel } from "./model-display";
+import {
+  buildProviders,
+  type AIProviderId,
+} from "./domain/product-models";
 
 const DEFAULT_SETTINGS: AppSettings = {
   backendModel: null,
@@ -30,6 +34,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   minimizeToTray: true,
   autoBridgeStart: true,
   backendMode: "LOCAL",
+  providerConnectionId: null,
   theme: "system",
   onboardingCompleted: false,
 };
@@ -61,7 +66,13 @@ export function App() {
   const [installOpen, setInstallOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [activateCloudAfterLogin, setActivateCloudAfterLogin] = useState(false);
+  const [activateLocalAfterLogin, setActivateLocalAfterLogin] = useState(false);
   const [restartDismissed, setRestartDismissed] = useState(false);
+  const [pendingProvider, setPendingProvider] = useState<AIProviderId | null>(null);
+  const [copilotPreflightOpen, setCopilotPreflightOpen] = useState(false);
+  const [customApiOpen, setCustomApiOpen] = useState(false);
+  const [customApiLabel, setCustomApiLabel] = useState("我的 DeepSeek");
+  const [customApiKey, setCustomApiKey] = useState("");
 
   const refreshApp = async () => {
     try {
@@ -102,9 +113,14 @@ export function App() {
     void window.copilotBridge.getAppVersion().then(setVersion);
     const removeAuth = window.copilotBridge.onCopilotLoginStatus((next) => {
       setAuth(next);
-      if (next.state === "completed") {
+      if (next.state === "success") {
         window.setTimeout(() => setLoginOpen(false), 800);
-        void refreshApp();
+        if (activateLocalAfterLogin) {
+          setActivateLocalAfterLogin(false);
+          void switchService("LOCAL");
+        } else {
+          void refreshApp();
+        }
       }
     });
     const removeBridge = window.copilotBridge.onBridgeStatus((next) => {
@@ -164,7 +180,11 @@ export function App() {
   };
 
   const switchService = async (target: AppSettings["backendMode"]) => {
-    if (target === settings.backendMode) {
+    if (
+      target === settings.backendMode
+      && bridge?.state === "ready"
+      && !(target === "REMOTE" && settings.providerConnectionId)
+    ) {
       setServicesOpen(false);
       return;
     }
@@ -190,7 +210,17 @@ export function App() {
       );
     } catch (error) {
       showError(error, "AI 服务切换失败，已恢复之前的服务。");
-      if (target === "LOCAL") setLoginOpen(true);
+      if (target === "LOCAL") {
+        const unavailable = error instanceof Error
+          && /没有可用模型|no available model/i.test(error.message);
+        setAuth({
+          state: unavailable ? "no_subscription" : "network_error",
+          message: unavailable
+            ? "未检测到可用的 GitHub Copilot 订阅。"
+            : "GitHub Copilot 暂时无法连接。",
+        });
+        setLoginOpen(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -211,6 +241,24 @@ export function App() {
       }
     } catch (error) {
       showError(error, "登录失败，请检查账号信息后重试。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const registerCloud = async (request: {
+    email: string;
+    password: string;
+    referralCode?: string;
+  }) => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await window.copilotBridge.registerCloud(request);
+      setNotice("账号创建成功。登录并完成套餐设置后即可使用云服务。");
+    } catch (error) {
+      showError(error, "注册失败，请检查账号和邀请码后重试。");
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -295,6 +343,52 @@ export function App() {
       settings.backendMode === "LOCAL"
       || cloud?.authState === "AUTHENTICATED"
     );
+  const providers = buildProviders(settings, cloud, bridge, models);
+  const currentProvider = providers.find((provider) => provider.active)!;
+  const targetProvider = providers.find(
+    (provider) => provider.id === pendingProvider,
+  );
+
+  const activateCustomApi = async () => {
+    const provider = providers.find(
+      (item) => item.id === "custom-api",
+    );
+    if (!provider) return;
+    const connection = cloud?.providerConnections.find(
+      (item) => item.status === "ACTIVE",
+    );
+    setBusy(true);
+    try {
+      if (connection) {
+        const result = await window.copilotBridge.activateCloudProvider(
+          connection.id,
+        );
+        setSettings(result.settings);
+        setBridge(result.bridge);
+        setModels(result.models);
+      } else {
+        const result = await window.copilotBridge.connectCloudProvider({
+            providerId: cloud!.providers.find(
+              (item) => item.code.toUpperCase() === "DEEPSEEK",
+            )!.id,
+            label: customApiLabel,
+            apiKey: customApiKey,
+          });
+        setSettings(result.settings);
+        setBridge(result.bridge);
+        setModels(result.models);
+        setCloud(result.status);
+      }
+      setCustomApiKey("");
+      setCustomApiOpen(false);
+      setPendingProvider(null);
+      setNotice("✓ 已切换到我的 API");
+    } catch (error) {
+      showError(error, "API Key 验证失败，未切换当前服务。");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <main>
@@ -343,6 +437,7 @@ export function App() {
         onRetryCloud={() => void refreshCloud()}
         onSwitchService={() => setServicesOpen(true)}
         profile={profile}
+        provider={currentProvider}
         settings={settings}
         onUpdateSettings={(next) => void persistSettings(next)}
       />
@@ -377,13 +472,157 @@ export function App() {
 
       {servicesOpen && (
         <ServiceSelectionSheet
-          bridge={bridge}
           busy={busy}
-          cloud={cloud}
-          current={settings.backendMode}
           onClose={() => setServicesOpen(false)}
-          onSelect={(target) => void switchService(target)}
+          onSelect={(provider) => {
+            setServicesOpen(false);
+            if (provider === "custom-api") {
+              const connection = cloud?.providerConnections.find(
+                (item) => item.status === "ACTIVE",
+              );
+              if (connection) {
+                setPendingProvider(provider);
+              } else {
+                setCustomApiOpen(true);
+              }
+              return;
+            }
+            if (provider === "github-copilot" && bridge?.state !== "ready") {
+              setPendingProvider(provider);
+              setCopilotPreflightOpen(true);
+              return;
+            }
+            setPendingProvider(provider);
+          }}
+          providers={providers}
         />
+      )}
+
+      {pendingProvider && targetProvider && !copilotPreflightOpen && (
+        <Modal
+          onClose={() => setPendingProvider(null)}
+          title="切换 AI 服务"
+        >
+          <p>将从：</p>
+          <p className="switch-provider-name">{currentProvider.name}</p>
+          <p>切换到：</p>
+          <p className="switch-provider-name">{targetProvider.name}</p>
+          <p>切换后，ChatGPT 的新请求将使用新的 AI 服务。</p>
+          <div className="modal-actions">
+            <Button
+              className="secondary"
+              onClick={() => setPendingProvider(null)}
+              type="button"
+            >
+              取消
+            </Button>
+            <Button
+              onClick={() => {
+                if (pendingProvider === "custom-api") {
+                  void activateCustomApi();
+                } else {
+                  const target = pendingProvider === "bridge-cloud"
+                    ? "REMOTE"
+                    : "LOCAL";
+                  setPendingProvider(null);
+                  void switchService(target);
+                }
+              }}
+              type="button"
+            >
+              切换
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {copilotPreflightOpen && (
+        <Modal
+          onClose={() => {
+            setCopilotPreflightOpen(false);
+            setPendingProvider(null);
+          }}
+          title="使用你的 GitHub Copilot"
+        >
+          <p>当前设备尚未连接 GitHub Copilot。</p>
+          <p>你是否已经订阅 GitHub Copilot？</p>
+          <div className="modal-actions">
+            <Button
+              className="secondary"
+              onClick={() => {
+                setCopilotPreflightOpen(false);
+                setPendingProvider(null);
+                setServicesOpen(true);
+              }}
+              type="button"
+            >
+              我还没有
+            </Button>
+            <Button
+              onClick={() => {
+                setCopilotPreflightOpen(false);
+                setPendingProvider(null);
+                setActivateLocalAfterLogin(true);
+                void startLocalLogin();
+              }}
+              type="button"
+            >
+              我已订阅
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {customApiOpen && (
+        <Modal
+          onClose={() => {
+            setCustomApiOpen(false);
+            setCustomApiKey("");
+          }}
+          title="连接我的 API"
+        >
+          <p>
+            当前 Server Contract 支持经过服务端验证和加密存储的 DeepSeek
+            API Key。Desktop 不会保存或回显你的 Key。
+          </p>
+          <div className="cloud-login-fields">
+            <label>
+              <span>连接名称</span>
+              <input
+                onChange={(event) => setCustomApiLabel(event.target.value)}
+                value={customApiLabel}
+              />
+            </label>
+            <label>
+              <span>API Key</span>
+              <input
+                autoComplete="off"
+                onChange={(event) => setCustomApiKey(event.target.value)}
+                type="password"
+                value={customApiKey}
+              />
+            </label>
+          </div>
+          <div className="modal-actions">
+            <Button
+              className="secondary"
+              onClick={() => {
+                setCustomApiOpen(false);
+                setCustomApiKey("");
+              }}
+              type="button"
+            >
+              取消
+            </Button>
+            <Button
+              disabled={busy || customApiKey.length < 8 || !customApiLabel.trim()}
+              onClick={() => void activateCustomApi()}
+              type="button"
+            >
+              验证并使用
+            </Button>
+          </div>
+        </Modal>
       )}
 
       {settingsOpen && (
@@ -405,6 +644,7 @@ export function App() {
           busy={busy}
           onClose={() => setCloudOpen(false)}
           onLogin={(credentials) => void loginCloud(credentials)}
+          onRegister={registerCloud}
           onLogout={() =>
             void runCloudAction(
               () => window.copilotBridge.logoutCloud(),
@@ -427,6 +667,13 @@ export function App() {
               setBusy,
               showError,
             )}
+          onRevokeDevice={(id) =>
+            void runCloudAction(
+              () => window.copilotBridge.revokeCloudDevice(id),
+              setCloud,
+              setBusy,
+              showError,
+            )}
           onUseLocal={() => void switchService("LOCAL")}
           status={cloud}
         />
@@ -435,9 +682,49 @@ export function App() {
       {loginOpen && (
         <Modal onClose={() => setLoginOpen(false)} title="连接 GitHub Copilot">
           <p>{auth.message}</p>
-          {auth.deviceCode && <code>{auth.deviceCode}</code>}
-          {auth.state === "completed" && (
+          <ol className="auth-steps">
+            <li className={authStepDone(auth.state, 1) ? "done" : ""}>
+              ① 登录 GitHub
+            </li>
+            <li className={authStepDone(auth.state, 2) ? "done" : ""}>
+              ② 完成设备授权
+            </li>
+            <li className={authStepDone(auth.state, 3) ? "done" : ""}>
+              ③ 自动检测 Copilot
+            </li>
+          </ol>
+          {auth.deviceCode && (
+            <div className="device-code-actions">
+              <code>{auth.deviceCode}</code>
+              <Button
+                className="secondary compact"
+                onClick={() => void navigator.clipboard.writeText(auth.deviceCode!)}
+                type="button"
+              >
+                复制验证码
+              </Button>
+              {auth.verificationUrl && (
+                <Button
+                  className="secondary compact"
+                  onClick={() =>
+                    void window.copilotBridge.openCopilotVerification(
+                      auth.verificationUrl!,
+                    )}
+                  type="button"
+                >
+                  打开 GitHub 授权
+                </Button>
+              )}
+            </div>
+          )}
+          {auth.state === "success" && (
             <p className="success-message">✓ GitHub Copilot 已连接</p>
+          )}
+          {auth.state === "no_subscription" && (
+            <div className="auth-warning">
+              <strong>GitHub 已连接</strong>
+              <p>但当前账号未检测到可用的 GitHub Copilot 订阅。</p>
+            </div>
           )}
           <div className="modal-actions">
             <Button
@@ -609,4 +896,19 @@ function friendlyError(error: unknown, fallback: string): string {
     return zhCN.account.serverUnreachableMessage;
   }
   return fallback;
+}
+
+function authStepDone(state: AuthStatus["state"], step: number): boolean {
+  const progress: Record<AuthStatus["state"], number> = {
+    idle: 0,
+    requesting_code: 0,
+    waiting_for_user: 1,
+    verifying: 2,
+    success: 3,
+    no_subscription: 3,
+    expired: 1,
+    network_error: 0,
+    cancelled: 0,
+  };
+  return progress[state] >= step;
 }

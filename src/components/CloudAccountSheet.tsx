@@ -12,10 +12,16 @@ interface CloudAccountSheetProps {
   status: CloudServiceStatus | null;
   onClose: () => void;
   onLogin: (credentials: { email: string; password: string }) => void;
+  onRegister: (request: {
+    email: string;
+    password: string;
+    referralCode?: string;
+  }) => Promise<void>;
   onLogout: () => void;
   onManageAccount: () => void;
   onManageSubscription: () => void;
   onRefresh: () => void;
+  onRevokeDevice: (id: string) => void;
   onUseLocal: () => void;
 }
 
@@ -24,16 +30,24 @@ export function CloudAccountSheet({
   status,
   onClose,
   onLogin,
+  onRegister,
   onLogout,
   onManageAccount,
   onManageSubscription,
   onRefresh,
+  onRevokeDevice,
   onUseLocal,
 }: CloudAccountSheetProps) {
   const copy = zhCN.account;
   const authenticated = status?.authState === "AUTHENTICATED";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+  const [view, setView] = useState<
+    "account" | "devices" | "referral" | "usage"
+  >("account");
   const state = accountState(status);
   const normalizedUsage = Math.max(
     0,
@@ -43,22 +57,67 @@ export function CloudAccountSheet({
   return (
     <Sheet onClose={onClose} title={copy.title}>
       <div className="sheet-header">
-        <span>{copy.title}</span>
+        <span>{view === "devices" ? "我的设备" : "我的账户"}</span>
         <Button className="secondary" onClick={onClose} type="button">
           {zhCN.common.close}
         </Button>
       </div>
 
-      <div className={`account-state state-panel-${state.tone}`}>
-        <strong>
-          <span aria-hidden="true">{state.symbol}</span>
-          {state.title}
-        </strong>
-        <p>{state.message}</p>
-      </div>
+      {view === "devices"
+        ? (
+          <DeviceList
+            currentDeviceId={status?.currentDeviceId ?? null}
+            devices={status?.devices ?? []}
+            onBack={() => setView("account")}
+            onRevoke={onRevokeDevice}
+          />
+        )
+        : view === "referral"
+          ? (
+            <ReferralDetail
+              history={status?.referralHistory ?? []}
+              onBack={() => setView("account")}
+              referral={status?.referral ?? null}
+            />
+          )
+          : view === "usage"
+            ? (
+              <UsageDetail
+                onBack={() => setView("account")}
+                transactions={status?.walletTransactions ?? []}
+              />
+            )
+        : (
+          <>
+            <div className={`account-state state-panel-${state.tone}`}>
+              <strong>
+                <span aria-hidden="true">{state.symbol}</span>
+                {state.title}
+              </strong>
+              <p>{state.message}</p>
+            </div>
 
-      {!authenticated && status?.authState === "SIGNED_OUT" && (
+            {!authenticated && status?.authState === "SIGNED_OUT" && (
         <div className="cloud-login-fields">
+          <div className="cloud-auth-mode">
+            <Button
+              className={authMode === "login" ? "compact" : "secondary compact"}
+              onClick={() => setAuthMode("login")}
+              type="button"
+            >
+              登录
+            </Button>
+            <Button
+              className={authMode === "register" ? "compact" : "secondary compact"}
+              onClick={() => setAuthMode("register")}
+              type="button"
+            >
+              注册
+            </Button>
+          </div>
+          {registrationComplete && (
+            <p className="form-success">注册成功，请登录并完成套餐设置。</p>
+          )}
           <label>
             <span>{copy.email}</span>
             <input
@@ -71,24 +130,59 @@ export function CloudAccountSheet({
           <label>
             <span>{copy.password}</span>
             <input
-              autoComplete="current-password"
+              autoComplete={
+                authMode === "register" ? "new-password" : "current-password"
+              }
               onChange={(event) => setPassword(event.target.value)}
               type="password"
               value={password}
             />
           </label>
+          {authMode === "register" && (
+            <label>
+              <span>邀请码（选填）</span>
+              <input
+                autoComplete="off"
+                onChange={(event) => setReferralCode(event.target.value)}
+                value={referralCode}
+              />
+            </label>
+          )}
           <Button
-            disabled={busy || !email || !password}
-            onClick={() => onLogin({ email, password })}
+            disabled={
+              busy
+              || !email
+              || !password
+              || (authMode === "register" && password.length < 12)
+            }
+            onClick={() => {
+              if (authMode === "login") {
+                onLogin({ email, password });
+                return;
+              }
+              void onRegister({
+                email,
+                password,
+                ...(referralCode.trim() && {
+                  referralCode: referralCode.trim(),
+                }),
+              }).then(() => {
+                setPassword("");
+                setRegistrationComplete(true);
+                setAuthMode("login");
+              }).catch(() => {
+                // The parent displays the contract error in the app notice.
+              });
+            }}
             type="button"
           >
-            {copy.login}
+            {authMode === "login" ? copy.login : "创建账号"}
           </Button>
         </div>
-      )}
+            )}
 
-      {status?.account && (
-        <>
+            {status?.account && (
+              <>
           <h3>{copy.account}</h3>
           <p className="account-primary-value" title={status.account}>
             {status.account}
@@ -105,11 +199,15 @@ export function CloudAccountSheet({
             value={formatDate(status.validUntil)}
           />
 
-          <h3>AI 用量</h3>
+          <h3>AI 点数</h3>
           <div className="account-usage">
             <div>
-              <span>本月</span>
-              <strong>{`${String(status.usagePercent ?? 0)}%`}</strong>
+              <span>本月已用</span>
+              <strong>
+                {status.usagePointsUsed == null
+                  ? "—"
+                  : `${formatPoints(status.usagePointsUsed)} 点`}
+              </strong>
             </div>
             <div
               aria-label={`${copy.usage} ${String(normalizedUsage)}%`}
@@ -122,7 +220,9 @@ export function CloudAccountSheet({
               <span style={{ width: `${String(normalizedUsage)}%` }} />
             </div>
             <small>
-              {`${String(status.usageRequests ?? 0)} 次请求 · ${String(status.usageTokens ?? 0)} tokens`}
+              {status.remainingPoints == null
+                ? "剩余点数待服务端提供"
+                : `剩余 ${formatPoints(status.remainingPoints)} 点`}
             </small>
           </div>
           <CloudValue
@@ -134,7 +234,14 @@ export function CloudAccountSheet({
           />
 
           <h3>{copy.device}</h3>
-          <p className="account-primary-value">{status.currentDevice}</p>
+          <button
+            className="account-link-row"
+            onClick={() => setView("devices")}
+            type="button"
+          >
+            <span>{`${String(status.devices.length)} 台设备`}</span>
+            <strong>查看 ›</strong>
+          </button>
           {status.currentDeviceId && (
             <div className="cloud-value">
               <span>设备 ID</span>
@@ -160,23 +267,176 @@ export function CloudAccountSheet({
                 : state.title
             }
           />
+          <h3>邀请奖励</h3>
+          <button
+            className="account-link-row"
+            disabled={!status.referral}
+            onClick={() => setView("referral")}
+            type="button"
+          >
+            <span>
+              {status.referral
+                ? `${status.referral.rewarded} 个有效邀请 · ${formatPoints(status.referral.pointsEarned)} 点`
+                : "暂无邀请数据"}
+            </span>
+            <strong>查看 ›</strong>
+          </button>
+          <h3>账单与使用记录</h3>
+          <button
+            className="account-link-row"
+            onClick={() => setView("usage")}
+            type="button"
+          >
+            <span>{`${status.walletTransactions.length} 条记录`}</span>
+            <strong>查看 ›</strong>
+          </button>
+        </>
+            )}
+
+            <AccountActions
+              busy={busy}
+              onLogout={onLogout}
+              onManageAccount={onManageAccount}
+              onManageSubscription={onManageSubscription}
+              onRefresh={onRefresh}
+              onUseLocal={onUseLocal}
+              state={status?.authState ?? "SIGNED_OUT"}
+              accountAvailable={status?.accountManagementAvailable === true}
+              subscriptionAvailable={
+                status?.subscriptionManagementAvailable === true
+              }
+            />
+          </>
+        )}
+    </Sheet>
+  );
+}
+
+function DeviceList({
+  currentDeviceId,
+  devices,
+  onBack,
+  onRevoke,
+}: {
+  currentDeviceId: string | null;
+  devices: CloudServiceStatus["devices"];
+  onBack: () => void;
+  onRevoke: (id: string) => void;
+}) {
+  return (
+    <div className="device-list">
+      <Button className="secondary compact" onClick={onBack} type="button">
+        ‹ 返回账户
+      </Button>
+      {devices.length === 0
+        ? <p className="empty-detail">暂无设备数据。</p>
+        : devices.map((device) => (
+          <article className="device-row" key={device.id}>
+            <div>
+              <strong>
+                {device.status === "ACTIVE" ? "●" : "○"}
+                {` ${device.name}`}
+              </strong>
+              <span>
+                {device.platform}
+                {device.deviceId === currentDeviceId ? " · 当前设备" : ""}
+              </span>
+            </div>
+            <div className="device-row-action">
+              <span>{formatLastSeen(device.lastSeenAt)}</span>
+              {!device.current && device.status === "ACTIVE" && (
+                <Button
+                  className="secondary compact"
+                  onClick={() => onRevoke(device.id)}
+                  type="button"
+                >
+                  移除此设备
+                </Button>
+              )}
+            </div>
+          </article>
+        ))}
+    </div>
+  );
+}
+
+function ReferralDetail({
+  history,
+  onBack,
+  referral,
+}: {
+  history: CloudServiceStatus["referralHistory"];
+  onBack: () => void;
+  referral: CloudServiceStatus["referral"];
+}) {
+  return (
+    <div className="detail-view">
+      <Button className="secondary compact" onClick={onBack} type="button">
+        ‹ 返回账户
+      </Button>
+      {referral && (
+        <>
+          <h3>你的邀请码</h3>
+          <div className="copy-code">
+            <code>{referral.code}</code>
+            <Button
+              className="secondary compact"
+              onClick={() => void navigator.clipboard.writeText(referral.code)}
+              type="button"
+            >
+              复制邀请码
+            </Button>
+          </div>
+          <div className="detail-stats">
+            <CloudValue label="已邀请" value={String(referral.registered)} />
+            <CloudValue label="有效邀请" value={String(referral.rewarded)} />
+            <CloudValue
+              label="累计奖励"
+              value={`${formatPoints(referral.pointsEarned)} 点`}
+            />
+          </div>
         </>
       )}
+      <h3>邀请记录</h3>
+      {history.length === 0
+        ? <p className="empty-detail">暂无邀请记录。</p>
+        : history.map((record) => (
+          <div className="history-row" key={record.id}>
+            <span>{formatDate(record.registeredAt)}</span>
+            <strong>{referralStatusLabel(record.status)}</strong>
+          </div>
+        ))}
+    </div>
+  );
+}
 
-      <AccountActions
-        busy={busy}
-        onLogout={onLogout}
-        onManageAccount={onManageAccount}
-        onManageSubscription={onManageSubscription}
-        onRefresh={onRefresh}
-        onUseLocal={onUseLocal}
-        state={status?.authState ?? "SIGNED_OUT"}
-        accountAvailable={status?.accountManagementAvailable === true}
-        subscriptionAvailable={
-          status?.subscriptionManagementAvailable === true
-        }
-      />
-    </Sheet>
+function UsageDetail({
+  onBack,
+  transactions,
+}: {
+  onBack: () => void;
+  transactions: CloudServiceStatus["walletTransactions"];
+}) {
+  return (
+    <div className="detail-view">
+      <Button className="secondary compact" onClick={onBack} type="button">
+        ‹ 返回账户
+      </Button>
+      <h3>点数记录</h3>
+      {transactions.length === 0
+        ? <p className="empty-detail">暂无点数记录。</p>
+        : transactions.map((transaction) => (
+          <div className="history-row" key={transaction.id}>
+            <div>
+              <strong>{walletTypeLabel(transaction.type)}</strong>
+              <span>{formatDate(transaction.createdAt)}</span>
+            </div>
+            <strong className={transaction.points >= 0 ? "positive" : ""}>
+              {`${transaction.points >= 0 ? "+" : ""}${formatPoints(transaction.points)} 点`}
+            </strong>
+          </div>
+        ))}
+    </div>
   );
 }
 
@@ -356,4 +616,45 @@ function formatPeriod(start: string | null, end: string | null): string {
 
 function maskDeviceId(value: string): string {
   return `${value.slice(0, 4).toUpperCase()}…${value.slice(-4).toUpperCase()}`;
+}
+
+function formatPoints(value: number): string {
+  return new Intl.NumberFormat("zh-CN", {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatLastSeen(value: string | null): string {
+  if (!value) return "尚未活跃";
+  const elapsed = Date.now() - new Date(value).getTime();
+  if (elapsed < 5 * 60_000) return "刚刚活跃";
+  if (elapsed < 24 * 60 * 60_000) {
+    return `${String(Math.max(1, Math.floor(elapsed / 3_600_000)))} 小时前`;
+  }
+  return `${String(Math.max(1, Math.floor(elapsed / 86_400_000)))} 天前`;
+}
+
+function referralStatusLabel(
+  status: CloudServiceStatus["referralHistory"][number]["status"],
+): string {
+  return {
+    REGISTERED: "已注册",
+    PENDING: "待审核",
+    QUALIFIED: "已达成",
+    REWARDED: "已奖励",
+    REJECTED: "未通过",
+  }[status];
+}
+
+function walletTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    PURCHASE: "购买点数",
+    SUBSCRIPTION_GRANT: "套餐发放",
+    REFERRAL_REWARD: "邀请奖励",
+    USAGE: "AI 使用",
+    REFUND: "退款",
+    EXPIRATION: "点数到期",
+    ADMIN_ADJUSTMENT: "账户调整",
+  };
+  return labels[type] ?? "点数变动";
 }

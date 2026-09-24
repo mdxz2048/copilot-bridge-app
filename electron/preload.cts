@@ -4,6 +4,11 @@ import type { BridgeModel, BridgeStatus } from "./bridge-manager.js";
 import type { AppSettings } from "./settings-store.js";
 import type { ChatGptStatus } from "./chatgpt-manager.js";
 import type { CloudServiceStatus } from "./cloud/cloud-foundation.js";
+import type {
+  RegisterRequestV2,
+  UsageSettlementV2,
+  User,
+} from "./cloud/contract.js";
 
 interface Diagnostics {
   appVersion: string;
@@ -26,6 +31,8 @@ contextBridge.exposeInMainWorld("copilotBridge", {
   restartSystem: (): Promise<void> => ipcRenderer.invoke("system:restart"),
   startCopilotLogin: (): Promise<void> => ipcRenderer.invoke("oauth:start"),
   cancelCopilotLogin: (): Promise<void> => ipcRenderer.invoke("oauth:cancel"),
+  openCopilotVerification: (url: string): Promise<void> =>
+    ipcRenderer.invoke("oauth:open-verification", url),
   onCopilotLoginStatus: (handler: (status: AuthStatus) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: AuthStatus) => handler(status);
     ipcRenderer.on("oauth:status", listener);
@@ -44,6 +51,8 @@ contextBridge.exposeInMainWorld("copilotBridge", {
   }> => ipcRenderer.invoke("service:switch", target),
   getCloudStatus: (): Promise<CloudServiceStatus> =>
     ipcRenderer.invoke("cloud:status"),
+  registerCloud: (request: RegisterRequestV2): Promise<User> =>
+    ipcRenderer.invoke("cloud:register", request),
   loginCloud: (
     credentials: { email: string; password: string },
   ): Promise<CloudServiceStatus> =>
@@ -56,6 +65,25 @@ contextBridge.exposeInMainWorld("copilotBridge", {
     ipcRenderer.invoke("cloud:manage-account"),
   manageCloudSubscription: (): Promise<void> =>
     ipcRenderer.invoke("cloud:manage-subscription"),
+  revokeCloudDevice: (id: string): Promise<CloudServiceStatus> =>
+    ipcRenderer.invoke("cloud:device-revoke", id),
+  renameCloudDevice: (
+    request: { id: string; deviceName: string },
+  ): Promise<CloudServiceStatus> =>
+    ipcRenderer.invoke("cloud:device-rename", request),
+  applyReferral: (code: string): Promise<CloudServiceStatus> =>
+    ipcRenderer.invoke("cloud:referral-apply", code),
+  getCloudUsageSettlement: (
+    responseId: string,
+  ): Promise<UsageSettlementV2> =>
+    ipcRenderer.invoke("cloud:usage-settlement", responseId),
+  connectCloudProvider: (
+    request: { providerId: string; label: string; apiKey: string },
+  ) => ipcRenderer.invoke("cloud:provider-connect", request),
+  disconnectCloudProvider: (id: string): Promise<CloudServiceStatus> =>
+    ipcRenderer.invoke("cloud:provider-disconnect", id),
+  activateCloudProvider: (id: string) =>
+    ipcRenderer.invoke("cloud:provider-activate", id),
   onCloudStatus: (
     handler: (status: CloudServiceStatus) => void,
   ): (() => void) => {

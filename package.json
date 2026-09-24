@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.renderer.json && tsc -p tsconfig.electron.json",
     "test": "npm run build && node --test test/profile-store.test.mjs test/cloud-foundation.test.mjs test/service-switcher.test.mjs",
     "test:cloud-e2e": "npm run build && node scripts/cloud-e2e-harness.mjs",
+    "test:cloud-v2-production": "npm run build && node scripts/cloud-v2-production-probe.mjs",
     "test:installed-production": "node scripts/installed-production-e2e.mjs",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "package:portable": "npm run prepare:runtime && npm run build && electron-builder --win portable",

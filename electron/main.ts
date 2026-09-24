@@ -86,11 +86,21 @@ const cloudFoundation = new CloudFoundation(
   cloudConfiguration,
   cloudDeviceIdentity,
 );
-const remoteBridge = new RemoteBridgeServer(cloudClient, 8787, (error) => {
-  void cloudFoundation.handleRequestError(error).then((status) => {
-    broadcast("cloud:status", status);
-  });
-});
+const remoteBridge = new RemoteBridgeServer(
+  cloudClient,
+  8787,
+  (error) => {
+    void cloudFoundation.handleRequestError(error).then(async (status) => {
+      if (status.authState === "DEVICE_REVOKED") {
+        await cloudTokens.clear();
+        const bridge = await remoteBridge.stop();
+        broadcast("bridge:status", bridge);
+      }
+      broadcast("cloud:status", status);
+    });
+  },
+  async () => (await settingsStore.read()).providerConnectionId,
+);
 const bridgeManager = new BridgeManager(
   app.getPath("userData"),
   proxyEntrypoint,
@@ -199,6 +209,37 @@ async function switchAiService(
     return result;
   } catch (error) {
     broadcast("bridge:status", bridgeManager.getStatus());
+    refreshTray();
+    throw error;
+  }
+}
+
+async function activateProviderConnection(connectionId: string): Promise<{
+  settings: AppSettings;
+  bridge: ReturnType<BridgeManager["getStatus"]>;
+  models: Awaited<ReturnType<BridgeManager["models"]>>;
+}> {
+  const previous = await settingsStore.read();
+  const next: AppSettings = {
+    ...previous,
+    backendMode: "REMOTE",
+    backendModel: null,
+    providerConnectionId: connectionId,
+  };
+  try {
+    const bridge = await bridgeManager.restart(next);
+    if (bridge.state !== "ready") throw new Error(bridge.message);
+    const models = await bridgeManager.models();
+    if (models.length === 0) throw new Error("当前 API 没有可用模型。");
+    next.backendModel = models[0]!.id;
+    await settingsStore.write(next);
+    currentSettings = next;
+    broadcast("bridge:status", bridge);
+    refreshTray();
+    return { settings: next, bridge, models };
+  } catch (error) {
+    const rollback = await bridgeManager.restart(previous);
+    broadcast("bridge:status", rollback);
     refreshTray();
     throw error;
   }
@@ -368,6 +409,10 @@ app.whenReady().then(async () => {
     (_event, target: AppSettings["backendMode"]) => switchAiService(target),
   );
   ipcMain.handle("cloud:status", () => cloudFoundation.getStatus());
+  ipcMain.handle("cloud:register", (
+    _event,
+    request: { email: string; password: string; referralCode?: string },
+  ) => cloudFoundation.register(request));
   ipcMain.handle("cloud:login", async (
     _event,
     credentials: { email: string; password: string },
@@ -406,6 +451,59 @@ app.whenReady().then(async () => {
     }
     await shell.openExternal(configuration.subscriptionManagementUrl);
   });
+  ipcMain.handle("cloud:device-revoke", async (_event, id: string) => {
+    const status = await cloudFoundation.revokeDevice(id);
+    broadcast("cloud:status", status);
+    return status;
+  });
+  ipcMain.handle("cloud:device-rename", async (
+    _event,
+    request: { id: string; deviceName: string },
+  ) => {
+    const status = await cloudFoundation.renameDevice(
+      request.id,
+      request.deviceName,
+    );
+    broadcast("cloud:status", status);
+    return status;
+  });
+  ipcMain.handle("cloud:referral-apply", async (_event, code: string) => {
+    const status = await cloudFoundation.applyReferral(code);
+    broadcast("cloud:status", status);
+    return status;
+  });
+  ipcMain.handle("cloud:usage-settlement", (_event, responseId: string) =>
+    cloudFoundation.getUsageSettlement(responseId));
+  ipcMain.handle("cloud:provider-connect", async (
+    _event,
+    request: { providerId: string; label: string; apiKey: string },
+  ) => {
+    const { connection, status } =
+      await cloudFoundation.createProviderConnection(request);
+    try {
+      const activated = await activateProviderConnection(connection.id);
+      broadcast("cloud:status", status);
+      return { status, ...activated };
+    } catch (error) {
+      await cloudFoundation.deleteProviderConnection(connection.id);
+      throw error;
+    }
+  });
+  ipcMain.handle("cloud:provider-activate", (_event, id: string) =>
+    activateProviderConnection(id));
+  ipcMain.handle("cloud:provider-disconnect", async (_event, id: string) => {
+    const status = await cloudFoundation.deleteProviderConnection(id);
+    const current = await settingsStore.read();
+    if (current.providerConnectionId === id) {
+      const next = { ...current, providerConnectionId: null };
+      await settingsStore.write(next);
+      currentSettings = next;
+      const bridge = await bridgeManager.restart(next);
+      broadcast("bridge:status", bridge);
+    }
+    broadcast("cloud:status", status);
+    return status;
+  });
   ipcMain.handle("settings:get", () => settingsStore.read());
   ipcMain.handle("settings:update", async (_event, next: AppSettings) => {
     const previous = await settingsStore.read();
@@ -440,7 +538,7 @@ app.whenReady().then(async () => {
       runtimePath,
       (status) => {
         sendAuthStatus(status);
-        if (status.state === "completed") {
+        if (status.state === "success") {
           void startBridge();
         }
       },
@@ -450,6 +548,16 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("oauth:cancel", () => {
     authController?.cancel();
+  });
+  ipcMain.handle("oauth:open-verification", async (_event, value: string) => {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:"
+      || (url.hostname !== "github.com" && !url.hostname.endsWith(".github.com"))
+    ) {
+      throw new Error("无效的 GitHub 授权地址。");
+    }
+    await shell.openExternal(url.toString());
   });
 
   ensureTray();

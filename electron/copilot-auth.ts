@@ -2,7 +2,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-export type AuthState = "idle" | "starting" | "waiting" | "completed" | "failed";
+export type AuthState =
+  | "idle"
+  | "requesting_code"
+  | "waiting_for_user"
+  | "verifying"
+  | "success"
+  | "no_subscription"
+  | "expired"
+  | "network_error"
+  | "cancelled";
 
 export interface AuthStatus {
   state: AuthState;
@@ -35,6 +44,25 @@ export function parseDeviceFlowOutput(output: string): Pick<AuthStatus, "deviceC
   };
 }
 
+export function authStatusForExit(
+  code: number | null,
+  output: string,
+): AuthStatus {
+  if (code === 0) {
+    return { state: "success", message: "GitHub Copilot 已连接。" };
+  }
+  if (/expired/i.test(output)) {
+    return {
+      state: "expired",
+      message: "设备验证码已过期，请重新开始。",
+    };
+  }
+  return {
+    state: "network_error",
+    message: "GitHub Copilot 登录未完成。",
+  };
+}
+
 export class CopilotAuthController {
   private process: ChildProcessWithoutNullStreams | null = null;
   private output = "";
@@ -60,7 +88,10 @@ export class CopilotAuthController {
 
     this.output = "";
     this.verificationUrlOpened = false;
-    this.onStatus({ state: "starting", message: "Starting GitHub Copilot sign-in..." });
+    this.onStatus({
+      state: "requesting_code",
+      message: "正在向 GitHub 请求设备验证码…",
+    });
     this.process = spawn(this.runtimePath, ["login"], {
       windowsHide: true,
       stdio: "pipe",
@@ -69,20 +100,23 @@ export class CopilotAuthController {
     this.process.stderr.on("data", (chunk: Buffer) => this.consumeOutput(chunk.toString()));
     this.process.on("error", (error) => {
       this.process = null;
-      this.onStatus({ state: "failed", message: error.message });
+      this.onStatus({ state: "network_error", message: error.message });
     });
     this.process.on("exit", (code) => {
       this.process = null;
-      this.onStatus(
-        code === 0
-          ? { state: "completed", message: "GitHub Copilot sign-in completed." }
-          : { state: "failed", message: "GitHub Copilot sign-in did not complete." },
-      );
+      if (code === 0) {
+        this.onStatus({
+          state: "verifying",
+          message: "GitHub 已授权，正在检测 Copilot 订阅…",
+        });
+      }
+      this.onStatus(authStatusForExit(code, this.output));
     });
   }
 
   cancel(): void {
     this.process?.kill();
+    this.onStatus({ state: "cancelled", message: "已取消 GitHub Copilot 登录。" });
   }
 
   private consumeOutput(chunk: string): void {
@@ -93,11 +127,11 @@ export class CopilotAuthController {
       void this.openBrowser(parsed.verificationUrl);
     }
     this.onStatus({
-      state: "waiting",
+      state: parsed.deviceCode ? "waiting_for_user" : "requesting_code",
       ...parsed,
       message: parsed.deviceCode
-        ? "Enter the displayed device code in your browser to authorize Copilot Bridge."
-        : "Waiting for the official GitHub Copilot sign-in flow.",
+        ? "请在 GitHub 授权页面输入设备验证码。"
+        : "正在等待 GitHub 返回设备验证码。",
     });
   }
 }

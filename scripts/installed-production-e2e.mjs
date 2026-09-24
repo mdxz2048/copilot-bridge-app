@@ -10,8 +10,8 @@ const executable = process.env.COPILOT_BRIDGE_INSTALLED_EXE
     "Copilot Bridge",
     "Copilot Bridge.exe",
   );
-const email = requiredEnvironment("COPILOT_BRIDGE_E2E_EMAIL");
-const password = requiredEnvironment("COPILOT_BRIDGE_E2E_PASSWORD");
+const email = process.env.COPILOT_BRIDGE_E2E_EMAIL?.trim() || null;
+const password = process.env.COPILOT_BRIDGE_E2E_PASSWORD || null;
 const keepRunning =
   process.env.COPILOT_BRIDGE_INSTALLED_E2E_KEEP_RUNNING === "1";
 const useDefaultUserData =
@@ -41,6 +41,7 @@ if (userData) {
       minimizeToTray: false,
       autoBridgeStart: false,
       backendMode: "LOCAL",
+      providerConnectionId: null,
       theme: "system",
       onboardingCompleted: true,
     }, null, 2)}\n`,
@@ -87,12 +88,21 @@ try {
 
   const login = before.authState === "AUTHENTICATED"
     ? before
-    : await cdp.evaluate(
-        `window.copilotBridge.loginCloud(${JSON.stringify({ email, password })})`,
-      );
+    : email && password
+      ? await cdp.evaluate(
+          `window.copilotBridge.loginCloud(${JSON.stringify({ email, password })})`,
+        )
+      : (() => {
+          throw new Error(
+            "COPILOT_BRIDGE_E2E_EMAIL and COPILOT_BRIDGE_E2E_PASSWORD are required when the installed profile is signed out",
+          );
+        })();
   results.login = pass(
-    login.authState === "AUTHENTICATED" && login.account === email,
+    login.authState === "AUTHENTICATED"
+      && (!email || login.account === email),
   );
+  results.contract = pass(login.contractVersion === "2.1.0");
+  results.account = pass(Boolean(login.account));
   results.device = pass(login.currentDevice.includes("已激活"));
   results.subscription = pass(
     login.plan === "Pro" && login.subscriptionStatus === "ACTIVE",
@@ -152,6 +162,22 @@ try {
   results.models = pass(
     models.some((model) => model.id === "mock/mock-chat"),
   );
+  const cloudBefore = await cdp.evaluate(
+    "window.copilotBridge.refreshCloud()",
+  );
+  results.provider = pass(
+    cloudBefore.providers.some((provider) =>
+      provider.models.some((model) => model.publicId === "mock/mock-chat")
+    ),
+  );
+  results.wallet = pass(
+    cloudBefore.remainingPoints === 10_000
+      && cloudBefore.usageV2?.pointsCharged >= 0,
+  );
+  results.referral = pass(
+    typeof cloudBefore.referral?.code === "string"
+      && cloudBefore.referral.code.length >= 8,
+  );
 
   const textResponse = await fetch("http://127.0.0.1:8787/v1/responses", {
     method: "POST",
@@ -167,6 +193,29 @@ try {
     textResponse.ok
       && textPayload.status === "completed"
       && responseText(textPayload).includes("Installed production text E2E"),
+  );
+  let settlement = null;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    settlement = await cdp.evaluate(
+      `window.copilotBridge.getCloudUsageSettlement(${
+        JSON.stringify(textPayload.id)
+      })`,
+    );
+    if (settlement.usage) break;
+    await delay(200);
+  }
+  const responseUsage = textPayload.usage ?? {};
+  results.shadow = pass(
+    responseUsage.points_rated > 0
+      && responseUsage.points_charged === 0
+      && responseUsage.points === 0
+      && responseUsage.billing_mode === "SHADOW",
+  );
+  results.settlement = pass(
+    settlement?.request?.responseId === textPayload.id
+      && settlement?.usage?.pointsRated === responseUsage.points_rated
+      && settlement?.usage?.pointsCharged === 0
+      && settlement?.usage?.billingStatus === "SHADOW",
   );
 
   const streamResponse = await fetch("http://127.0.0.1:8787/v1/responses", {
@@ -194,16 +243,7 @@ try {
 
   await cdp.evaluate(
     `(() => {
-      document.querySelector('button[aria-label="设置"]')?.click();
-      return true;
-    })()`,
-  );
-  await delay(200);
-  await cdp.evaluate(
-    `(() => {
-      [...document.querySelectorAll('button')]
-        .find((button) => button.textContent?.includes('查看账号与服务'))
-        ?.click();
+      document.querySelector('.account-status-button')?.click();
       return true;
     })()`,
   );
@@ -211,12 +251,14 @@ try {
   const accountUi = await cdp.evaluate(
     "document.querySelector('.sheet')?.innerText ?? ''",
   );
+  evidence.accountUi = accountUi;
   results.accountUi = pass(
-    accountUi.includes(email)
+    accountUi.includes(login.account)
       && accountUi.includes("Pro")
       && accountUi.includes("有效")
-      && accountUi.includes("已激活")
-      && accountUi.includes("管理账号"),
+      && accountUi.includes("台设备")
+      && accountUi.includes("管理账号")
+      && !accountUi.includes("已扣除"),
   );
   if (screenshotDirectory) {
     await cdp.captureScreenshot(
@@ -228,6 +270,16 @@ try {
     "window.copilotBridge.refreshCloud()",
   );
   results.refresh = pass(refreshed.authState === "AUTHENTICATED");
+  results.walletUnchanged = pass(
+    refreshed.remainingPoints === cloudBefore.remainingPoints
+      && settlement?.wallet?.balance === cloudBefore.remainingPoints,
+  );
+  results.usage = pass(
+    refreshed.usageV2?.requests >= cloudBefore.usageV2?.requests
+      && refreshed.usageV2?.pointsRated > cloudBefore.usageV2?.pointsRated
+      && refreshed.usageV2?.pointsCharged
+        === cloudBefore.usageV2?.pointsCharged,
+  );
 
   evidence.app = {
     executable,
@@ -243,6 +295,16 @@ try {
   };
   evidence.models = models.map((model) => model.id);
   evidence.bridge = bridge;
+  evidence.shadow = {
+    responseId: textPayload.id,
+    requestId: responseUsage.request_id ?? null,
+    pointsRated: responseUsage.points_rated ?? null,
+    pointsCharged: responseUsage.points_charged ?? null,
+    billingStatus: responseUsage.billing_mode ?? null,
+    walletBefore: cloudBefore.remainingPoints,
+    walletAfter: refreshed.remainingPoints,
+    settlement,
+  };
 } finally {
   cdp?.close();
   if (!keepRunning) {

@@ -28,7 +28,16 @@ export interface Diagnostics {
 }
 
 export interface AuthStatus {
-  state: "idle" | "starting" | "waiting" | "completed" | "failed";
+  state:
+    | "idle"
+    | "requesting_code"
+    | "waiting_for_user"
+    | "verifying"
+    | "success"
+    | "no_subscription"
+    | "expired"
+    | "network_error"
+    | "cancelled";
   deviceCode?: string;
   verificationUrl?: string;
   message: string;
@@ -56,6 +65,7 @@ export type CloudAuthState =
   | "SERVER_UNREACHABLE";
 
 export interface CloudServiceStatus {
+  contractVersion: "2.1.0";
   authState: CloudAuthState;
   contractReady: boolean;
   account: string | null;
@@ -68,12 +78,121 @@ export interface CloudServiceStatus {
   usagePercent: number | null;
   usageRequests: number | null;
   usageTokens: number | null;
+  usagePointsUsed: number | null;
+  remainingPoints: number | null;
   currentDevice: string;
   currentDeviceId: string | null;
+  devices: Array<{
+    id: string;
+    deviceId: string;
+    name: string;
+    platform: string;
+    status: "ACTIVE" | "REVOKED" | "BLOCKED";
+    activatedAt: string;
+    lastSeenAt: string | null;
+    current: boolean;
+  }>;
+  walletTransactions: Array<{
+    id: string;
+    type: string;
+    points: number;
+    balanceAfter: number;
+    referenceType: string;
+    referenceId: string;
+    createdAt: string;
+  }>;
+  usageV2: {
+    requests: number;
+    pointsRated: number;
+    pointsCharged: number;
+    legacy: Record<string, unknown> | null;
+  } | null;
+  referral: {
+    code: string;
+    registered: number;
+    rewarded: number;
+    pointsEarned: number;
+  } | null;
+  referralHistory: Array<{
+    id: string;
+    status: "REGISTERED" | "PENDING" | "QUALIFIED" | "REWARDED" | "REJECTED";
+    registeredAt: string;
+    qualifiedAt: string | null;
+  }>;
+  providers: Array<{
+    id: string;
+    code: string;
+    name: string;
+    ownership: "MANAGED";
+    status: "ACTIVE" | "DISABLED";
+    models: Array<{
+      id: string;
+      publicId: string;
+      displayName: string;
+      capabilities: {
+        tools: boolean;
+        vision: boolean;
+        reasoning: boolean;
+        streaming: boolean;
+      };
+    }>;
+  }>;
+  providerConnections: Array<{
+    id: string;
+    providerId: string;
+    ownership: "BYOS";
+    status: "ACTIVE" | "DISABLED";
+    label: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }>;
   accountManagementAvailable: boolean;
   subscriptionManagementAvailable: boolean;
   serviceStatus: "WAITING_FOR_CONTRACT" | "AVAILABLE" | "UNREACHABLE";
   message: string;
+}
+
+export interface CloudUser {
+  id: string;
+  email: string;
+  role: "USER" | "ADMIN";
+  status: "ACTIVE" | "DISABLED" | "EXPIRED";
+}
+
+export interface CloudUsageSettlement {
+  request: {
+    id: string;
+    responseId: string | null;
+    status:
+      | "CREATED"
+      | "STARTED"
+      | "COMPLETED"
+      | "CLIENT_DISCONNECTED"
+      | "PROVIDER_ERROR";
+    billingPolicy: string;
+    createdAt: string;
+    completedAt: string | null;
+  };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedInputTokens: number;
+    reasoningTokens: number;
+    pointsRated: number;
+    pointsCharged: number;
+    billingStatus:
+      | "SETTLED"
+      | "SHADOW"
+      | "UNPAID"
+      | "NO_USAGE"
+      | "METERING_ERROR"
+      | "UNRATED";
+    rateCardVersionId: string | null;
+  } | null;
+  wallet: {
+    balance: number;
+    unit: "AI_POINT";
+  };
 }
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
@@ -85,6 +204,7 @@ export interface AppSettings {
   minimizeToTray: boolean;
   autoBridgeStart: boolean;
   backendMode: "LOCAL" | "REMOTE";
+  providerConnectionId: string | null;
   theme: "system" | "light" | "dark";
   onboardingCompleted: boolean;
 }
@@ -106,6 +226,7 @@ declare global {
       restartSystem(): Promise<void>;
       startCopilotLogin(): Promise<void>;
       cancelCopilotLogin(): Promise<void>;
+      openCopilotVerification(url: string): Promise<void>;
       onCopilotLoginStatus(handler: (status: AuthStatus) => void): () => void;
       getBridgeStatus(): Promise<BridgeStatus>;
       startBridge(): Promise<BridgeStatus>;
@@ -115,6 +236,11 @@ declare global {
         target: AppSettings["backendMode"],
       ): Promise<ServiceSwitchResult>;
       getCloudStatus(): Promise<CloudServiceStatus>;
+      registerCloud(request: {
+        email: string;
+        password: string;
+        referralCode?: string;
+      }): Promise<CloudUser>;
       loginCloud(credentials: {
         email: string;
         password: string;
@@ -123,6 +249,27 @@ declare global {
       refreshCloud(): Promise<CloudServiceStatus>;
       manageCloudAccount(): Promise<void>;
       manageCloudSubscription(): Promise<void>;
+      revokeCloudDevice(id: string): Promise<CloudServiceStatus>;
+      renameCloudDevice(request: {
+        id: string;
+        deviceName: string;
+      }): Promise<CloudServiceStatus>;
+      applyReferral(code: string): Promise<CloudServiceStatus>;
+      getCloudUsageSettlement(
+        responseId: string,
+      ): Promise<CloudUsageSettlement>;
+      connectCloudProvider(request: {
+        providerId: string;
+        label: string;
+        apiKey: string;
+      }): Promise<{
+        status: CloudServiceStatus;
+        settings: AppSettings;
+        bridge: BridgeStatus;
+        models: BridgeModel[];
+      }>;
+      disconnectCloudProvider(id: string): Promise<CloudServiceStatus>;
+      activateCloudProvider(id: string): Promise<ServiceSwitchResult>;
       onCloudStatus(handler: (status: CloudServiceStatus) => void): () => void;
       getSettings(): Promise<AppSettings>;
       updateSettings(settings: AppSettings): Promise<AppSettings>;

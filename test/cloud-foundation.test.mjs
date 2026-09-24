@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ import {
 import {
   authStateForCloudError,
   CloudError,
+  cloudErrorPolicy,
 } from "../dist-electron/cloud/cloud-error.js";
 import {
   PendingCloudConfigurationProvider,
@@ -23,7 +24,17 @@ import {
 } from "../dist-electron/cloud/cloud-config.js";
 import { CloudFoundation } from "../dist-electron/cloud/cloud-foundation.js";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
+import {
+  CLOUD_CONTRACT_VERSION,
+  ResponseSchema,
+  UsageSettlementV2Schema,
+} from "../dist-electron/cloud/contract.js";
+import { HttpCloudClient } from "../dist-electron/cloud/http-cloud-client.js";
 import { MockCloudClient } from "../dist-electron/cloud/mock-cloud-client.js";
+import {
+  ContractProductAccountApi,
+  MockProductAccountApi,
+} from "../dist-electron/cloud/product-account-api.js";
 import { withSingleTokenRefreshRetry } from "../dist-electron/cloud/retry.js";
 import {
   cloudCredentialTarget,
@@ -51,6 +62,106 @@ test("defines every required Cloud auth state and enforces transitions", () => {
     () => machine.transition("QUOTA_EXCEEDED"),
     /Invalid Cloud auth transition/,
   );
+});
+
+test("parses Contract 2.1.0 Shadow usage without treating rated points as charged", () => {
+  assert.equal(CLOUD_CONTRACT_VERSION, "2.1.0");
+  const response = ResponseSchema.parse({
+    id: "resp_0123456789abcdef0123456789abcdef",
+    object: "response",
+    status: "completed",
+    model: "mock/mock-chat",
+    output: [],
+    usage: {
+      input_tokens: 8,
+      output_tokens: 4,
+      total_tokens: 12,
+      points: 0,
+      points_rated: 1,
+      points_charged: 0,
+      remaining_points: 10_000,
+      request_id: "11111111-1111-4111-8111-111111111111",
+      billing_mode: "SHADOW",
+    },
+  });
+  const settlement = UsageSettlementV2Schema.parse({
+    request: {
+      id: "11111111-1111-4111-8111-111111111111",
+      responseId: response.id,
+      status: "COMPLETED",
+      billingPolicy: "SHADOW",
+      createdAt: "2026-09-24T00:00:00.000Z",
+      completedAt: "2026-09-24T00:00:01.000Z",
+    },
+    usage: {
+      inputTokens: 8,
+      outputTokens: 4,
+      cachedInputTokens: 0,
+      reasoningTokens: 0,
+      pointsRated: 1,
+      pointsCharged: 0,
+      billingStatus: "SHADOW",
+      rateCardVersionId: "22222222-2222-4222-8222-222222222222",
+    },
+    wallet: { balance: 10_000, unit: "AI_POINT" },
+  });
+
+  assert.equal(response.usage.points_rated, 1);
+  assert.equal(response.usage.points_charged, 0);
+  assert.equal(response.usage.billing_mode, "SHADOW");
+  assert.equal(settlement.usage.billingStatus, "SHADOW");
+  assert.equal(settlement.usage.pointsRated, 1);
+  assert.equal(settlement.usage.pointsCharged, 0);
+  assert.equal(
+    response.usage.remaining_points,
+    settlement.wallet.balance,
+    "SHADOW requests must leave the wallet unchanged",
+  );
+});
+
+test("sends optional referralCode in the Contract 2.1.0 registration request", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-register-"));
+  try {
+    let requestBody = null;
+    const client = new HttpCloudClient({
+      baseUrl: "https://cloud.example.test",
+      tokens: new CloudTokenSession(
+        new WindowsCredentialManagerTokenStore(new MemoryCredentialManager()),
+      ),
+      devices: new DeviceIdentityStore(
+        join(directory, "device.json"),
+        "0.1.0",
+      ),
+      fetch: async (input, init) => {
+        assert.equal(
+          String(input),
+          "https://cloud.example.test/api/v1/auth/register",
+        );
+        requestBody = JSON.parse(String(init?.body));
+        return Response.json({
+          user: {
+            id: "11111111-1111-4111-8111-111111111111",
+            email: "new-user@example.test",
+            role: "USER",
+            status: "ACTIVE",
+          },
+        }, { status: 201 });
+      },
+    });
+
+    await client.register({
+      email: "new-user@example.test",
+      password: "TwelveChars!",
+      referralCode: "REFCODE1",
+    });
+    assert.deepEqual(requestBody, {
+      email: "new-user@example.test",
+      password: "TwelveChars!",
+      referralCode: "REFCODE1",
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("separates production, development override, and loopback test Cloud configuration", () => {
@@ -135,6 +246,29 @@ test("maps only stable Cloud errors to auth states", () => {
   assert.equal(
     authStateForCloudError(new CloudError("UNMAPPED", "unknown")),
     null,
+  );
+});
+
+test("centralizes V2 business error actions", () => {
+  assert.deepEqual(
+    cloudErrorPolicy(new CloudError("INSUFFICIENT_POINTS", "points")),
+    {
+      authState: "QUOTA_EXCEEDED",
+      action: "ADD_POINTS",
+      retryable: false,
+    },
+  );
+  assert.equal(
+    cloudErrorPolicy(
+      new CloudError("PROVIDER_AUTH_REQUIRED", "provider"),
+    ).action,
+    "RECONNECT_PROVIDER",
+  );
+  assert.equal(
+    cloudErrorPolicy(
+      new CloudError("COPILOT_NOT_ENTITLED", "copilot"),
+    ).action,
+    "CHANGE_PROVIDER",
   );
 });
 
@@ -287,19 +421,35 @@ test("drives foundation auth state from stable Cloud errors", async () => {
 test("deduplicates concurrent account refreshes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-refresh-"));
   try {
-    const account = {
-      user: {
+    const me = {
+      account: {
         id: "11111111-1111-4111-8111-111111111111",
         email: "desktop@example.test",
-        role: "USER",
         status: "ACTIVE",
       },
       subscription: null,
-      plan: null,
-      devices: [],
-      usage: null,
+      wallet: { balance: 0, unit: "AI_POINT" },
+      activeDevices: 0,
     };
-    const client = new MockCloudClient().respond("getAccount", account);
+    const client = new MockCloudClient()
+      .respond("getMeV2", me)
+      .respond("listDevicesV2", [])
+      .respond("listWalletTransactions", [])
+      .respond("getUsageV2", {
+        requests: 0,
+        pointsRated: 0,
+        pointsCharged: 0,
+        legacy: null,
+      })
+      .respond("getReferralSummary", {
+        code: "TESTCODE",
+        registered: 0,
+        rewarded: 0,
+        pointsEarned: 0,
+      })
+      .respond("getReferralHistory", [])
+      .respond("listProviderConnections", [])
+      .respond("listProviders", []);
     const foundation = new CloudFoundation(
       client,
       new ReadyCloudConfigurationProvider(),
@@ -312,9 +462,86 @@ test("deduplicates concurrent account refreshes", async () => {
       foundation.refresh(),
     ]);
     assert.equal(
-      client.calls.filter((call) => call.method === "getAccount").length,
+      client.calls.filter((call) => call.method === "getMeV2").length,
       1,
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("login wins an overlapping stale authentication error", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-login-race-"));
+  try {
+    let finishLogin;
+    const loginBarrier = new Promise((resolve) => {
+      finishLogin = resolve;
+    });
+    const me = {
+      account: {
+        id: "11111111-1111-4111-8111-111111111111",
+        email: "desktop@example.test",
+        status: "ACTIVE",
+      },
+      subscription: null,
+      wallet: { balance: 0, unit: "AI_POINT" },
+      activeDevices: 1,
+    };
+    const client = new MockCloudClient()
+      .respond("registerDevice", {
+        id: "22222222-2222-4222-8222-222222222222",
+        deviceId: "33333333-3333-4333-8333-333333333333",
+        deviceName: "Desktop",
+        platform: "win32",
+        status: "ACTIVE",
+        createdAt: "2026-09-24T00:00:00.000Z",
+        updatedAt: "2026-09-24T00:00:00.000Z",
+      })
+      .respond("getMeV2", me)
+      .respond("listDevicesV2", [])
+      .respond("listWalletTransactions", [])
+      .respond("getUsageV2", {
+        requests: 0,
+        pointsRated: 0,
+        pointsCharged: 0,
+        legacy: null,
+      })
+      .respond("getReferralSummary", {
+        code: "TESTCODE",
+        registered: 0,
+        rewarded: 0,
+        pointsEarned: 0,
+      })
+      .respond("getReferralHistory", [])
+      .respond("listProviderConnections", [])
+      .respond("listProviders", []);
+    client.login = async (request) => {
+      client.calls.push({ method: "login", request });
+      await loginBarrier;
+      return {
+        accessToken: "access",
+        refreshToken: "refresh",
+        expiresIn: 900,
+        tokenType: "Bearer",
+      };
+    };
+    const foundation = new CloudFoundation(
+      client,
+      new ReadyCloudConfigurationProvider(),
+      new DeviceIdentityStore(join(directory, "device.json"), "0.1.0"),
+    );
+
+    const login = foundation.login({
+      email: "desktop@example.test",
+      password: "not-persisted",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await foundation.handleRequestError(
+      new CloudError("UNAUTHORIZED", "stale request"),
+    );
+    finishLogin();
+
+    assert.equal((await login).authState, "AUTHENTICATED");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -335,6 +562,7 @@ test("MockCloudClient records opaque operations without defining DTOs", async ()
       },
     }],
   });
+
   assert.equal((await client.listModels()).data[0].id, "mock/mock-chat");
   assert.deepEqual(client.calls, [{
     method: "listModels",
@@ -346,6 +574,56 @@ test("MockCloudClient records opaque operations without defining DTOs", async ()
     pending.createResponse(),
     CloudContractUnavailableError,
   );
+});
+
+test("keeps V2 product account APIs behind replaceable adapters", async () => {
+  const me = {
+    account: {
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "desktop@example.test",
+      status: "ACTIVE",
+    },
+    subscription: null,
+    wallet: { balance: 88, unit: "AI_POINT" },
+    activeDevices: 1,
+  };
+  const snapshot = {
+    me,
+    wallet: me.wallet,
+    usage: {
+      requests: 1,
+      pointsRated: 12,
+      pointsCharged: 12,
+      legacy: null,
+    },
+    devices: [],
+    walletTransactions: [],
+    referral: {
+      code: "TESTCODE",
+      registered: 0,
+      rewarded: 0,
+      pointsEarned: 0,
+    },
+    referralHistory: [],
+    providers: [],
+    providerConnections: [],
+  };
+  const cloud = new MockCloudClient()
+    .respond("getMeV2", me)
+    .respond("getWallet", snapshot.wallet)
+    .respond("getUsageV2", snapshot.usage)
+    .respond("listDevicesV2", [])
+    .respond("listWalletTransactions", [])
+    .respond("getReferralSummary", snapshot.referral)
+    .respond("getReferralHistory", [])
+    .respond("listProviders", [])
+    .respond("listProviderConnections", []);
+  const adapter = new ContractProductAccountApi(cloud);
+  assert.deepEqual(await adapter.getSnapshot(), snapshot);
+
+  const mock = new MockProductAccountApi();
+  mock.snapshot = snapshot;
+  assert.deepEqual(await mock.getSnapshot(), snapshot);
 });
 
 class MemoryCredentialManager {

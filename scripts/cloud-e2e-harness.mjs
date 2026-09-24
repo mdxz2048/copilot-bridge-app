@@ -8,8 +8,10 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { CloudFoundation } from "../dist-electron/cloud/cloud-foundation.js";
 import { HttpCloudClient } from "../dist-electron/cloud/http-cloud-client.js";
+import {
+  authStateForCloudError,
+} from "../dist-electron/cloud/cloud-error.js";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
 import { RemoteBridgeServer } from "../dist-electron/cloud/remote-bridge-server.js";
 import {
@@ -51,22 +53,6 @@ const client = new HttpCloudClient({
   devices: deviceStore,
   timeoutMs: requestTimeoutMs,
 });
-const configuration = {
-  async get() {
-    return {
-      contractStatus: "READY",
-      runtimeMode: e2eMode,
-      gatewayBaseUrl: baseUrl,
-      accountManagementUrl: e2eMode === "PRODUCTION"
-        ? "https://ai.mddxz.top/dashboard"
-        : null,
-      subscriptionManagementUrl: e2eMode === "PRODUCTION"
-        ? "https://ai.mddxz.top/dashboard/subscription"
-        : null,
-    };
-  },
-};
-const foundation = new CloudFoundation(client, configuration, deviceStore);
 const bridge = new RemoteBridgeServer(client, 0);
 const results = {};
 const evidence = {};
@@ -86,10 +72,14 @@ try {
   ).get();
   results.deviceStable = pass(initialDevice.deviceId === restartedDevice.deviceId);
 
-  const loginStatus = await foundation.login({ email, password });
+  const loginStatus = await client.login({
+    email,
+    password,
+    device: initialDevice,
+  });
   const storedAfterLogin = await tokenStore.readRefreshToken();
   results.auth = pass(
-    loginStatus.authState === "AUTHENTICATED"
+    loginStatus.user.email === email
       && tokenSession.getAccessToken() !== null
       && storedAfterLogin !== null,
   );
@@ -321,7 +311,11 @@ try {
     tokenSession.getAccessToken() === null
       && await tokenStore.readRefreshToken() === null,
   );
-  await foundation.login({ email, password });
+  await client.login({
+    email,
+    password,
+    device: initialDevice,
+  });
 
   if (e2eMode === "TEST") {
     results.subscriptionExpired = await verifyControlledError(
@@ -475,14 +469,9 @@ async function verifyRevokedDevice() {
     devices: revokedDevices,
     timeoutMs: requestTimeoutMs,
   });
-  const revokedFoundation = new CloudFoundation(
-    revokedClient,
-    configuration,
-    revokedDevices,
-  );
   try {
-    await revokedFoundation.login({ email, password });
     const identity = await revokedDevices.get();
+    await revokedClient.login({ email, password, device: identity });
     const device = (await revokedClient.listDevices()).find(
       (item) => item.deviceId === identity.deviceId,
     );
@@ -500,16 +489,15 @@ async function verifyRevokedDevice() {
     if (!revoke.ok) throw new Error(await revoke.text());
     let revokedCode = null;
     try {
-      await revokedFoundation.refresh();
+      await revokedClient.getAccount();
     } catch (error) {
       revokedCode = error && typeof error === "object" && "code" in error
         ? error.code
         : null;
     }
-    const status = await revokedFoundation.getStatus();
     return pass(
       revokedCode === "DEVICE_REVOKED"
-        && status.authState === "DEVICE_REVOKED",
+        && authStateForCloudError({ code: revokedCode }) === "DEVICE_REVOKED",
     );
   } finally {
     await revokedStore.deleteRefreshToken();
@@ -524,14 +512,9 @@ async function verifyControlledError(wireCode, expectedState) {
     timeoutMs: requestTimeoutMs,
     defaultHeaders: { "X-Mock-Error-Code": wireCode },
   });
-  const controlledFoundation = new CloudFoundation(
-    controlledClient,
-    configuration,
-    deviceStore,
-  );
   let actualCode = null;
   try {
-    await controlledFoundation.refresh();
+    await controlledClient.getAccount();
   } catch (error) {
     actualCode = error && typeof error === "object" && "code" in error
       ? error.code
@@ -539,7 +522,7 @@ async function verifyControlledError(wireCode, expectedState) {
   }
   return pass(
     actualCode === wireCode
-      && (await controlledFoundation.getStatus()).authState === expectedState,
+      && authStateForCloudError({ code: actualCode }) === expectedState,
   );
 }
 

@@ -9,6 +9,7 @@ const previous = {
   minimizeToTray: true,
   autoBridgeStart: true,
   backendMode: "LOCAL",
+  providerConnectionId: null,
   theme: "system",
   onboardingCompleted: true,
 };

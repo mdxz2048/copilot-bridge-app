@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const CLOUD_CONTRACT_VERSION = "2.1.0";
+
 export const DeviceInfoSchema = z.object({
   deviceId: z.uuid(),
   deviceName: z.string().min(1).max(120),
@@ -29,7 +31,7 @@ export const LoginRequestSchema = z.object({
   device: DeviceInfoSchema,
 });
 
-export const LoginResponseSchema = z.object({
+const GatewayV1LoginResponseSchema = z.object({
   accessToken: z.string(),
   refreshToken: z.string(),
   expiresIn: z.literal(1800),
@@ -48,30 +50,81 @@ export const RefreshResponseSchema = z.object({
 });
 
 export const ErrorCodeSchema = z.enum([
-  "UNAUTHORIZED",
-  "TOKEN_EXPIRED",
+  "ACCOUNT_DISABLED",
+  "AUTH_REQUIRED",
+  "BILLING_REVIEW_REQUIRED",
+  "CANNOT_DISABLE_SELF",
+  "CLIENT_THREAD_ID_REQUIRED",
+  "COPILOT_NOT_ENTITLED",
+  "CSRF_REJECTED",
+  "DEVICE_LIMIT_REACHED",
   "DEVICE_NOT_REGISTERED",
   "DEVICE_REVOKED",
-  "DEVICE_LIMIT_REACHED",
-  "ACCOUNT_DISABLED",
-  "SUBSCRIPTION_REQUIRED",
-  "SUBSCRIPTION_EXPIRED",
-  "MODEL_NOT_ALLOWED",
-  "MONTHLY_QUOTA_EXCEEDED",
-  "RATE_LIMITED",
-  "PROVIDER_UNAVAILABLE",
-  "MODEL_UNAVAILABLE",
+  "EMAIL_IN_USE",
+  "FORBIDDEN",
   "GATEWAY_TIMEOUT",
-  "CLIENT_THREAD_ID_REQUIRED",
-  "VALIDATION_ERROR",
+  "IDEMPOTENCY_CONFLICT",
+  "INSUFFICIENT_POINTS",
   "INTERNAL_ERROR",
+  "INVALID_CREDENTIALS",
+  "INVALID_POINTS",
+  "INVALID_PROVIDER_CONNECTION",
+  "INVALID_REFERRAL_CODE",
+  "MODEL_NOT_ALLOWED",
+  "MODEL_NOT_AVAILABLE",
+  "MODEL_PROVIDER_MISMATCH",
+  "MODEL_UNAVAILABLE",
+  "MONTHLY_QUOTA_EXCEEDED",
+  "NOT_FOUND",
+  "ORDER_NOT_PAYABLE",
+  "PAYMENT_PROVIDER_NOT_CONNECTED",
+  "PLAN_NOT_FOUND",
+  "PLAN_REQUIRED",
+  "PROVIDER_AUTH_REQUIRED",
+  "PROVIDER_CONNECTION_UNAVAILABLE",
+  "PROVIDER_UNAVAILABLE",
+  "RATE_CARD_EXISTS",
+  "RATE_CARD_FUTURE_SCHEDULE_NOT_SUPPORTED",
+  "RATE_CARD_NOT_DRAFT",
+  "RATE_CARD_UNAVAILABLE",
+  "RATE_LIMITED",
+  "REFERRAL_CODE_UNAVAILABLE",
+  "REFERRAL_NOT_ELIGIBLE",
+  "REFERRAL_NOT_REVIEWABLE",
+  "REQUEST_NOT_FOUND",
+  "ROLLOVER_POLICY_INVALID",
+  "SUBSCRIPTION_EXPIRED",
+  "SUBSCRIPTION_NOT_FOUND",
+  "SUBSCRIPTION_REQUIRED",
+  "TOKEN_EXPIRED",
+  "UNAUTHORIZED",
+  "VALIDATION_ERROR",
+  "WALLET_LEDGER_MISMATCH",
+  "WALLET_LIMIT_REACHED",
 ]);
 
+export const ErrorResponseV2Schema = z.object({
+  error: z.object({
+    code: ErrorCodeSchema,
+    message: z.string(),
+    requestId: z.string(),
+    request_id: z.string(),
+  }).refine((error) => error.request_id === error.requestId),
+});
 export const ErrorResponseSchema = z.object({
   error: z.object({
     code: ErrorCodeSchema,
     message: z.string(),
     requestId: z.string(),
+    request_id: z.string().optional(),
+  }).superRefine((error, context) => {
+    if (error.request_id && error.request_id !== error.requestId) {
+      context.addIssue({
+        code: "custom",
+        message: "request_id must equal requestId",
+        path: ["request_id"],
+      });
+    }
   }),
 });
 
@@ -226,8 +279,14 @@ export const ResponseSchema = z.object({
     input_tokens: z.number().int(),
     output_tokens: z.number().int(),
     total_tokens: z.number().int(),
-  }),
-});
+    points: z.number().int().nonnegative().optional(),
+    points_rated: z.number().int().nonnegative().optional(),
+    points_charged: z.number().int().nonnegative().optional(),
+    remaining_points: z.number().int().nonnegative().optional(),
+    request_id: z.uuid().optional(),
+    billing_mode: z.enum(["SHADOW", "ENFORCED"]).optional(),
+  }).passthrough(),
+}).passthrough();
 
 export const ClientConfigSchema = z.object({
   minimumVersion: z.string(),
@@ -245,7 +304,181 @@ export const SubscriptionResponseSchema = z.object({
 });
 export const LogoutResponseSchema = z.object({ ok: z.boolean() });
 
+const V2InstantSchema = z.iso.datetime({ offset: true });
+export const BillingModeV2Schema = z.enum(["OFF", "SHADOW", "ENFORCED"]);
+export const RegisterRequestV2Schema = z.object({
+  email: z.email(),
+  password: z.string().min(12).max(256),
+  referralCode: z.string().trim().min(8).max(24).optional(),
+});
+export const AccountSummaryV2Schema = z.object({
+  id: z.uuid(),
+  email: z.email(),
+  status: z.enum(["ACTIVE", "DISABLED", "EXPIRED"]),
+});
+export const SubscriptionSummaryV2Schema = z.object({
+  id: z.uuid(),
+  status: z.enum([
+    "TRIAL",
+    "ACTIVE",
+    "PAST_DUE",
+    "CANCELED",
+    "EXPIRED",
+    "SUSPENDED",
+  ]),
+  planCode: z.string(),
+  periodStart: V2InstantSchema,
+  periodEnd: V2InstantSchema,
+  monthlyPoints: z.number().int().nonnegative(),
+  maxDevices: z.number().int().nonnegative(),
+  rolloverPolicy: z.enum(["NONE", "UNLIMITED"]),
+}).nullable();
+export const WalletSummaryV2Schema = z.object({
+  balance: z.number().int().nonnegative(),
+  unit: z.literal("AI_POINT"),
+});
+export const DeviceV2Schema = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+  deviceId: z.uuid(),
+  deviceName: z.string(),
+  platform: z.string(),
+  osVersion: z.string(),
+  appVersion: z.string(),
+  status: z.enum(["ACTIVE", "REVOKED", "BLOCKED"]),
+  activatedAt: V2InstantSchema,
+  lastSeenAt: V2InstantSchema.nullable(),
+  updatedAt: V2InstantSchema,
+});
+export const DeviceCredentialV2Schema = z.object({
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresIn: z.literal(1800),
+  user: AccountSummaryV2Schema.extend({
+    role: z.enum(["USER", "ADMIN"]),
+  }),
+  device: DeviceV2Schema,
+});
+export const LoginResponseSchema = z.union([
+  DeviceCredentialV2Schema,
+  GatewayV1LoginResponseSchema,
+]);
+export const MeV2Schema = z.object({
+  account: AccountSummaryV2Schema,
+  subscription: SubscriptionSummaryV2Schema,
+  wallet: WalletSummaryV2Schema,
+  activeDevices: z.number().int().nonnegative(),
+});
+export const ProviderV2Schema = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  name: z.string(),
+  ownership: z.literal("MANAGED"),
+  status: z.enum(["ACTIVE", "DISABLED"]),
+});
+export const ProviderConnectionV2Schema = z.object({
+  id: z.uuid(),
+  providerId: z.uuid(),
+  ownership: z.literal("BYOS"),
+  status: z.enum(["ACTIVE", "DISABLED"]),
+  label: z.string(),
+  createdAt: V2InstantSchema.optional(),
+  updatedAt: V2InstantSchema.optional(),
+});
+export const ModelV2Schema = z.object({
+  id: z.uuid(),
+  publicId: z.string(),
+  displayName: z.string(),
+  capabilities: z.object({
+    tools: z.boolean(),
+    vision: z.boolean(),
+    reasoning: z.boolean(),
+    streaming: z.boolean(),
+  }),
+});
+export const UsageSummaryV2Schema = z.object({
+  requests: z.number().int().nonnegative(),
+  pointsRated: z.number().int().nonnegative(),
+  pointsCharged: z.number().int().nonnegative(),
+  legacy: z.record(z.string(), z.unknown()).nullable(),
+});
+export const UsageRecordV2Schema = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  reasoningTokens: z.number().int().nonnegative(),
+  pointsRated: z.number().int().nonnegative(),
+  pointsCharged: z.number().int().nonnegative(),
+  billingStatus: z.enum([
+    "SETTLED",
+    "SHADOW",
+    "UNPAID",
+    "NO_USAGE",
+    "METERING_ERROR",
+    "UNRATED",
+  ]),
+  rateCardVersionId: z.uuid().nullable(),
+});
+export const ReferralSummaryV2Schema = z.object({
+  code: z.string(),
+  registered: z.number().int().nonnegative(),
+  rewarded: z.number().int().nonnegative(),
+  pointsEarned: z.number().int().nonnegative(),
+});
+export const ReferralRecordV2Schema = z.object({
+  id: z.uuid(),
+  status: z.enum([
+    "REGISTERED",
+    "PENDING",
+    "QUALIFIED",
+    "REWARDED",
+    "REJECTED",
+  ]),
+  registeredAt: V2InstantSchema,
+  qualifiedAt: V2InstantSchema.nullable(),
+});
+export const WalletTransactionV2Schema = z.object({
+  id: z.uuid(),
+  type: z.string(),
+  points: z.number().int(),
+  balanceAfter: z.number().int().nonnegative(),
+  referenceType: z.string(),
+  referenceId: z.string(),
+  createdAt: V2InstantSchema,
+});
+export const AiRequestV2Schema = z.object({
+  id: z.uuid(),
+  responseId: z.string().nullable(),
+  status: z.enum([
+    "CREATED",
+    "STARTED",
+    "COMPLETED",
+    "CLIENT_DISCONNECTED",
+    "PROVIDER_ERROR",
+  ]),
+  billingPolicy: z.string(),
+  createdAt: V2InstantSchema,
+  completedAt: V2InstantSchema.nullable(),
+});
+export const UsageSettlementV2Schema = z.object({
+  request: AiRequestV2Schema,
+  usage: UsageRecordV2Schema.nullable(),
+  wallet: WalletSummaryV2Schema,
+});
+export const RegisterV2ResponseSchema = z.object({
+  user: UserSchema,
+});
+export const ReferralCodeV2Schema = z.object({
+  code: z.string(),
+  status: z.string(),
+});
+export const ReferralApplyV2Schema = z.object({
+  id: z.uuid(),
+  status: z.string(),
+  riskReviewRequired: z.boolean(),
+});
 export type DeviceInfo = z.infer<typeof DeviceInfoSchema>;
+export type RegisterRequestV2 = z.infer<typeof RegisterRequestV2Schema>;
 export type User = z.infer<typeof UserSchema>;
 export type Device = z.infer<typeof DeviceSchema>;
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
@@ -269,3 +502,24 @@ export type ResponseRequest = z.input<typeof ResponseRequestSchema>;
 export type ResponseResult = z.infer<typeof ResponseSchema>;
 export type OutputItem = z.infer<typeof OutputItemSchema>;
 export type ClientConfig = z.infer<typeof ClientConfigSchema>;
+export type AccountSummaryV2 = z.infer<typeof AccountSummaryV2Schema>;
+export type SubscriptionSummaryV2 = z.infer<
+  typeof SubscriptionSummaryV2Schema
+>;
+export type WalletSummaryV2 = z.infer<typeof WalletSummaryV2Schema>;
+export type DeviceV2 = z.infer<typeof DeviceV2Schema>;
+export type MeV2 = z.infer<typeof MeV2Schema>;
+export type ProviderV2 = z.infer<typeof ProviderV2Schema>;
+export type ProviderConnectionV2 = z.infer<
+  typeof ProviderConnectionV2Schema
+>;
+export type ModelV2 = z.infer<typeof ModelV2Schema>;
+export type UsageSummaryV2 = z.infer<typeof UsageSummaryV2Schema>;
+export type UsageRecordV2 = z.infer<typeof UsageRecordV2Schema>;
+export type ReferralSummaryV2 = z.infer<typeof ReferralSummaryV2Schema>;
+export type ReferralRecordV2 = z.infer<typeof ReferralRecordV2Schema>;
+export type WalletTransactionV2 = z.infer<
+  typeof WalletTransactionV2Schema
+>;
+export type UsageSettlementV2 = z.infer<typeof UsageSettlementV2Schema>;
+export type ReferralCodeV2 = z.infer<typeof ReferralCodeV2Schema>;
