@@ -178,6 +178,15 @@ export const UsageSchema = z.object({
     z.literal(100),
   ]),
 });
+export const UsageHistoryRecordSchema = z.object({
+  id: z.uuid(),
+  status: z.string(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+  usageCredit: z.string(),
+  createdAt: z.iso.datetime(),
+});
 
 export const AccountSchema = z.object({
   user: UserSchema,
@@ -492,6 +501,7 @@ export type SubscriptionResponse = z.infer<
   typeof SubscriptionResponseSchema
 >;
 export type Usage = z.infer<typeof UsageSchema>;
+export type UsageHistoryRecord = z.infer<typeof UsageHistoryRecordSchema>;
 export type Model = z.infer<typeof ModelSchema>;
 export type ModelList = z.infer<typeof ModelListSchema>;
 export type Release = z.infer<typeof ReleaseSchema>;

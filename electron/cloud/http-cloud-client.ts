@@ -25,6 +25,7 @@ import {
   SubscriptionResponseSchema,
   UsageSettlementV2Schema,
   UsageSchema,
+  UsageHistoryRecordSchema,
   UsageSummaryV2Schema,
   WalletSummaryV2Schema,
   WalletTransactionV2Schema,
@@ -47,6 +48,7 @@ import {
   type ResponseRequest,
   type SubscriptionResponse,
   type Usage,
+  type UsageHistoryRecord,
   type UsageSettlementV2,
   type UsageSummaryV2,
   type User,
@@ -203,6 +205,14 @@ export class HttpCloudClient implements CloudClient {
     return this.authenticatedJson("/api/v1/usage/current", UsageSchema);
   }
 
+  async getUsageHistory(): Promise<UsageHistoryRecord[]> {
+    const response = await this.authenticatedJson(
+      "/api/v1/usage/history",
+      z.object({ data: z.array(UsageHistoryRecordSchema) }),
+    );
+    return response.data;
+  }
+
   getClientConfig(): Promise<ClientConfig> {
     return this.requestJson("/api/v1/client/config", ClientConfigSchema);
   }
@@ -241,6 +251,14 @@ export class HttpCloudClient implements CloudClient {
     const id = z.string().regex(/^resp_[a-f0-9]{32}$/).parse(responseId);
     return this.authenticatedJson(
       `/api/v1/usage/responses/${encodeURIComponent(id)}`,
+      UsageSettlementV2Schema,
+    );
+  }
+
+  getUsageByRequest(requestId: string): Promise<UsageSettlementV2> {
+    const id = z.uuid().parse(requestId);
+    return this.authenticatedJson(
+      `/api/v1/usage/requests/${encodeURIComponent(id)}`,
       UsageSettlementV2Schema,
     );
   }

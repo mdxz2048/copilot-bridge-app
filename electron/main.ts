@@ -85,6 +85,7 @@ const cloudFoundation = new CloudFoundation(
   cloudClient,
   cloudConfiguration,
   cloudDeviceIdentity,
+  app.getVersion(),
 );
 const remoteBridge = new RemoteBridgeServer(
   cloudClient,
@@ -100,6 +101,10 @@ const remoteBridge = new RemoteBridgeServer(
     });
   },
   async () => (await settingsStore.read()).providerConnectionId,
+  async (target) => {
+    const { status } = await cloudFoundation.reconcileResponse(target);
+    broadcast("cloud:status", status);
+  },
 );
 const bridgeManager = new BridgeManager(
   app.getPath("userData"),
@@ -182,8 +187,23 @@ async function startBridge(): Promise<void> {
 
 async function refreshCloudStatus(): Promise<void> {
   try {
-    broadcast("cloud:status", await cloudFoundation.refresh());
-  } catch {
+    const status = await cloudFoundation.refresh();
+    broadcast("cloud:status", status);
+    const settings = await settingsStore.read();
+    if (
+      settings.backendMode === "REMOTE"
+      && status.serviceStatus !== "AVAILABLE"
+    ) {
+      const bridge = await bridgeManager.stop();
+      broadcast("bridge:status", bridge);
+      refreshTray();
+    }
+  } catch (error) {
+    logDiagnostic(
+      `Cloud status refresh failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
     broadcast("cloud:status", await cloudFoundation.getStatus());
   }
 }
@@ -450,6 +470,15 @@ app.whenReady().then(async () => {
       throw new Error("当前环境未配置订阅管理页面。");
     }
     await shell.openExternal(configuration.subscriptionManagementUrl);
+  });
+  ipcMain.handle("cloud:open-release", async () => {
+    const { release } = await cloudClient.getLatestRelease();
+    if (!release) throw new Error("当前没有可下载的新版本。");
+    const url = new URL(release.downloadUrl);
+    if (url.protocol !== "https:") {
+      throw new Error("Server 返回了不安全的下载地址。");
+    }
+    await shell.openExternal(url.toString());
   });
   ipcMain.handle("cloud:device-revoke", async (_event, id: string) => {
     const status = await cloudFoundation.revokeDevice(id);

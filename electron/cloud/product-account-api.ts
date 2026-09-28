@@ -7,6 +7,7 @@ import type {
   ReferralRecordV2,
   ReferralSummaryV2,
   UsageSummaryV2,
+  UsageHistoryRecord,
   WalletSummaryV2,
   WalletTransactionV2,
 } from "./contract.js";
@@ -15,6 +16,7 @@ export interface ProductAccountSnapshot {
   me: MeV2;
   wallet: WalletSummaryV2;
   usage: UsageSummaryV2;
+  usageHistory: UsageHistoryRecord[];
   devices: DeviceV2[];
   walletTransactions: WalletTransactionV2[];
   referral: ReferralSummaryV2;
@@ -38,6 +40,7 @@ export class ContractProductAccountApi implements ProductAccountApi {
     const me = await this.cloud.getMeV2();
     const wallet = await this.cloud.getWallet();
     const usage = await this.cloud.getUsageV2();
+    const usageHistory = await this.cloud.getUsageHistory();
     const devices = await this.cloud.listDevicesV2();
     const walletTransactions = await this.cloud.listWalletTransactions();
     const referral = await this.cloud.getReferralSummary();
@@ -48,6 +51,7 @@ export class ContractProductAccountApi implements ProductAccountApi {
       me,
       wallet,
       usage,
+      usageHistory,
       devices,
       walletTransactions,
       referral,

@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld("copilotBridge", {
     ipcRenderer.invoke("cloud:manage-account"),
   manageCloudSubscription: (): Promise<void> =>
     ipcRenderer.invoke("cloud:manage-subscription"),
+  openCloudRelease: (): Promise<void> =>
+    ipcRenderer.invoke("cloud:open-release"),
   revokeCloudDevice: (id: string): Promise<CloudServiceStatus> =>
     ipcRenderer.invoke("cloud:device-revoke", id),
   renameCloudDevice: (

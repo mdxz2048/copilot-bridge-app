@@ -18,6 +18,7 @@ import type {
   ResponseRequest,
   SubscriptionResponse,
   Usage,
+  UsageHistoryRecord,
   UsageSettlementV2,
   UsageSummaryV2,
   User,
@@ -48,6 +49,7 @@ export interface CloudClient {
   listDevices(): Promise<Device[]>;
   getSubscription(): Promise<SubscriptionResponse>;
   getUsage(): Promise<Usage>;
+  getUsageHistory(): Promise<UsageHistoryRecord[]>;
   getClientConfig(): Promise<ClientConfig>;
   listModels(): Promise<ModelList>;
   createResponse(
@@ -60,6 +62,7 @@ export interface CloudClient {
   listWalletTransactions(): Promise<WalletTransactionV2[]>;
   getUsageV2(): Promise<UsageSummaryV2>;
   getUsageByResponse(responseId: string): Promise<UsageSettlementV2>;
+  getUsageByRequest(requestId: string): Promise<UsageSettlementV2>;
   listDevicesV2(): Promise<DeviceV2[]>;
   renameDevice(id: string, deviceName: string): Promise<DeviceV2>;
   revokeDevice(id: string): Promise<DeviceV2>;
@@ -132,6 +135,7 @@ export class PendingCloudClient implements CloudClient {
   getUsage(): Promise<never> {
     return this.unavailable();
   }
+  getUsageHistory(): Promise<never> { return this.unavailable(); }
 
   getClientConfig(): Promise<never> {
     return this.unavailable();
@@ -156,6 +160,7 @@ export class PendingCloudClient implements CloudClient {
   listWalletTransactions(): Promise<never> { return this.unavailable(); }
   getUsageV2(): Promise<never> { return this.unavailable(); }
   getUsageByResponse(): Promise<never> { return this.unavailable(); }
+  getUsageByRequest(): Promise<never> { return this.unavailable(); }
   listDevicesV2(): Promise<never> { return this.unavailable(); }
   renameDevice(): Promise<never> { return this.unavailable(); }
   revokeDevice(): Promise<never> { return this.unavailable(); }

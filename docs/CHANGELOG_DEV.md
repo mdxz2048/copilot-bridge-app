@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added runtime settlement reconciliation for JSON and SSE completion, plus
+  request/response lookup recovery when a stream ends without a final frame.
+- Added automatic post-response Wallet, Usage, ledger, and request-history
+  refresh without refetching unrelated devices/providers/referrals.
+- Added Server Client Config, maintenance/minimum-version gates, release
+  checks, and a safe HTTPS update action.
+- Added legacy Server Usage History as non-token user-facing request history.
 - Added a repository-owned, pinned MIT `copilot-sdk-proxy` source snapshot so
   GitHub clones do not depend on a neighboring working tree.
 - Moved project documentation into the App repository and added a portable
@@ -14,6 +21,10 @@
 
 ### Changed
 
+- Provider and metering errors now preserve the authenticated Cloud account
+  and expose their Server-defined retry/reconnect/switch action to the UI.
+- Cached public Client Config/Release state prevents status polling from
+  triggering Server rate limits.
 - Replaced `file:../upstream-copilot-sdk-proxy` with
   `file:vendor/copilot-sdk-proxy`.
 - Updated Cloud contract/version checks from `2.1.0` to `2.2.0`.

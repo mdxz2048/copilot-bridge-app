@@ -394,6 +394,34 @@ export function App() {
     <main>
       <AppTitleBar onSettings={() => setSettingsOpen(true)} />
 
+      {cloud && cloud.updateState !== "CURRENT" && (
+        <div className="product-alert" role="status">
+          <span>
+            {cloud.updateState === "MAINTENANCE"
+              ? "云服务正在维护，本地 GitHub Copilot 仍可使用。"
+              : cloud.updateState === "REQUIRED"
+                ? "需要更新 Copilot Bridge 后才能继续使用云服务。"
+                : `Copilot Bridge ${
+                    cloud.latestRelease?.version
+                    ?? cloud.clientConfig?.latestVersion
+                    ?? ""
+                  } 已发布。`}
+          </span>
+          {cloud.latestRelease && cloud.updateState !== "MAINTENANCE" && (
+            <Button
+              className="secondary compact"
+              onClick={() =>
+                void window.copilotBridge.openCloudRelease().catch(
+                  (error: unknown) => showError(error, "无法打开更新下载页面。"),
+                )}
+              type="button"
+            >
+              查看更新
+            </Button>
+          )}
+        </div>
+      )}
+
       <BridgeActivationBar
         busy={busy}
         onChange={(enabled) => void setBridgeEnabled(enabled)}
@@ -434,6 +462,10 @@ export function App() {
         }}
         onOpenAccount={() => setCloudOpen(true)}
         onOpenChatGpt={() => void window.copilotBridge.launchChatGpt()}
+        onOpenRelease={() =>
+          void window.copilotBridge.openCloudRelease().catch(
+            (error: unknown) => showError(error, "无法打开更新下载页面。"),
+          )}
         onRetryCloud={() => void refreshCloud()}
         onSwitchService={() => setServicesOpen(true)}
         profile={profile}

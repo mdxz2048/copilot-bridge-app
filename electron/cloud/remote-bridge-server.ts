@@ -24,6 +24,18 @@ interface RemoteConversation {
   tools: FunctionTool[];
 }
 
+export interface CloudResponseSettlementTarget {
+  responseId: string | null;
+  requestId: string | null;
+  recovery: boolean;
+}
+
+interface StreamLifecycle {
+  responseId: string | null;
+  requestId: string | null;
+  completed: boolean;
+}
+
 export interface RemoteBridgeStatus {
   state: "stopped" | "starting" | "ready" | "failed";
   message: string;
@@ -34,6 +46,9 @@ export class RemoteBridgeServer {
   private readonly client: CloudClient;
   private readonly onCloudError?: (error: unknown) => void;
   private readonly getProviderConnectionId?: () => Promise<string | null>;
+  private readonly onResponseSettlement?: (
+    target: CloudResponseSettlementTarget,
+  ) => Promise<void> | void;
   private readonly port: number;
   private readonly calls = new Map<string, RemoteConversation>();
   private server: Server | null = null;
@@ -44,11 +59,15 @@ export class RemoteBridgeServer {
     port = 8787,
     onCloudError?: (error: unknown) => void,
     getProviderConnectionId?: () => Promise<string | null>,
+    onResponseSettlement?: (
+      target: CloudResponseSettlementTarget,
+    ) => Promise<void> | void,
   ) {
     this.client = client;
     this.port = port;
     this.onCloudError = onCloudError;
     this.getProviderConnectionId = getProviderConnectionId;
+    this.onResponseSettlement = onResponseSettlement;
     this.status = {
       state: "stopped",
       message: "Cloud Bridge 未启动",
@@ -210,6 +229,13 @@ export class RemoteBridgeServer {
     const result = ResponseSchema.parse(payload);
     this.captureOutput(result.output, conversation);
     sendJson(outgoing, 200, result);
+    this.notifyResponseSettlement({
+      responseId: result.id,
+      requestId:
+        result.usage.request_id
+        ?? transport.response.headers.get("X-Bridge-AI-Request-Id"),
+      recovery: false,
+    });
   }
 
   private resolveConversation(
@@ -271,30 +297,72 @@ export class RemoteBridgeServer {
     });
     const reader = cloudResponse.body.getReader();
     const decoder = new TextDecoder();
+    const lifecycle: StreamLifecycle = {
+      responseId: null,
+      requestId: cloudResponse.headers.get("X-Bridge-AI-Request-Id"),
+      completed: false,
+    };
     let eventBuffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      desktopResponse.write(value);
-      eventBuffer += decoder.decode(value, { stream: true });
-      eventBuffer = this.captureSseEvents(eventBuffer, conversation);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        desktopResponse.write(value);
+        eventBuffer += decoder.decode(value, { stream: true });
+        eventBuffer = this.captureSseEvents(
+          eventBuffer,
+          conversation,
+          lifecycle,
+        );
+      }
+      eventBuffer += decoder.decode();
+      this.captureSseEvents(`${eventBuffer}\n\n`, conversation, lifecycle);
+      desktopResponse.end();
+    } finally {
+      if (!lifecycle.completed && (lifecycle.responseId || lifecycle.requestId)) {
+        this.notifyResponseSettlement({
+          responseId: lifecycle.responseId,
+          requestId: lifecycle.requestId,
+          recovery: true,
+        });
+      }
     }
-    eventBuffer += decoder.decode();
-    this.captureSseEvents(`${eventBuffer}\n\n`, conversation);
-    desktopResponse.end();
   }
 
   private captureSseEvents(
     buffer: string,
     conversation: RemoteConversation,
+    lifecycle: StreamLifecycle,
   ): string {
     const blocks = buffer.split(/\r?\n\r?\n/);
     const remainder = blocks.pop() ?? "";
     for (const block of blocks) {
       const event = /^event:\s*(.+)$/m.exec(block)?.[1];
       const data = /^data:\s*(.+)$/m.exec(block)?.[1];
-      if (event !== "response.output_item.done" || !data) continue;
+      if (!data || data === "[DONE]") continue;
       const payload: unknown = JSON.parse(data);
+      if (event === "response.created") {
+        lifecycle.responseId = responseIdFromEvent(payload)
+          ?? lifecycle.responseId;
+        continue;
+      }
+      if (event === "response.completed") {
+        const result = responseFromEvent(payload);
+        if (!result) continue;
+        lifecycle.responseId = result.id;
+        lifecycle.requestId =
+          result.usage.request_id
+          ?? lifecycle.requestId;
+        lifecycle.completed = true;
+        this.captureOutput(result.output, conversation);
+        this.notifyResponseSettlement({
+          responseId: lifecycle.responseId,
+          requestId: lifecycle.requestId,
+          recovery: false,
+        });
+        continue;
+      }
+      if (event !== "response.output_item.done") continue;
       if (
         !payload
         || typeof payload !== "object"
@@ -304,6 +372,15 @@ export class RemoteBridgeServer {
       this.captureOutput([item], conversation);
     }
     return remainder;
+  }
+
+  private notifyResponseSettlement(
+    target: CloudResponseSettlementTarget,
+  ): void {
+    if (!this.onResponseSettlement) return;
+    void Promise.resolve(this.onResponseSettlement(target)).catch((error) => {
+      this.onCloudError?.(error);
+    });
   }
 
   private captureOutput(
@@ -316,6 +393,27 @@ export class RemoteBridgeServer {
       this.calls.set(item.call_id, conversation);
     }
   }
+}
+
+function responseIdFromEvent(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || !("response" in payload)) {
+    return null;
+  }
+  const response = payload.response;
+  if (!response || typeof response !== "object" || !("id" in response)) {
+    return null;
+  }
+  return typeof response.id === "string" ? response.id : null;
+}
+
+function responseFromEvent(
+  payload: unknown,
+): ReturnType<typeof ResponseSchema.parse> | null {
+  if (!payload || typeof payload !== "object" || !("response" in payload)) {
+    return null;
+  }
+  const parsed = ResponseSchema.safeParse(payload.response);
+  return parsed.success ? parsed.data : null;
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {

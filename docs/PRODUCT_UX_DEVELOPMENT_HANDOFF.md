@@ -211,7 +211,7 @@ Build:
 PASS
 
 Tests:
-PASS (26/26)
+PASS (34/34)
 
 Vendored Proxy:
 PASS (409/409)
@@ -221,6 +221,10 @@ PASS (29/29 focused Tool Bridge)
 
 Cloud Regression:
 PASS (Gateway compatibility + Production Contract 2.2 Shadow)
+
+Runtime Server Integration:
+PASS (Client Config, Release, Usage History, automatic Usage/Wallet refresh,
+response/request settlement recovery, provider error actions)
 
 Startup/Tray:
 PASS (unchanged validated lifecycle)
@@ -304,17 +308,20 @@ runtime logs
 user data
 credentials
 
-Current Commit:
-e9242650f40d55fc17949899f5eb86c726f0ac03
+Baseline Before This Integration:
+62cebd54329a13299255b63828ece65f712a5ac5
+
+Final Commit:
+See repository HEAD
 
 NSIS SHA256:
-27cb7a154fc0d8a316eb220bfbb919cca7423efc1404032fa98ad9157d468309
+9595e05e7c5c3a24d9d70e28449d01a040de3620facaf1387f460d446c2ed3a5
 
 Installed EXE SHA256:
-a16daa4e41e3ea3b9a922f0a74ac46d6ea4ab086b7be1d974a01d1ff2bc9faf6
+75e5a246b948db6bce123a90bb6ff9bb9b538ef7b434ac4f324eb6b9700434d2
 ```
 
-No V2 commit or tag was created because the current task did not request one.
+No release tag was created.
 
 ## REAL CHATGPT DESKTOP
 

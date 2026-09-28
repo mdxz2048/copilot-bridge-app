@@ -29,6 +29,9 @@ export async function performServiceSwitch(
     if (cloud.authState !== "AUTHENTICATED") {
       throw new Error("请先登录 Copilot Bridge 云服务。");
     }
+    if (cloud.serviceStatus !== "AVAILABLE") {
+      throw new Error(cloud.message);
+    }
   }
 
   const candidate: AppSettings = {

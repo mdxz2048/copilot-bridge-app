@@ -174,6 +174,15 @@ try {
     cloudBefore.remainingPoints === 10_000
       && cloudBefore.usageV2?.pointsCharged >= 0,
   );
+  results.clientConfig = pass(
+    cloudBefore.clientConfig?.features.cloudGateway === true
+      && cloudBefore.updateState === "CURRENT",
+  );
+  results.release = pass(
+    cloudBefore.latestRelease === null
+      || typeof cloudBefore.latestRelease.version === "string",
+  );
+  results.usageHistory = pass(Array.isArray(cloudBefore.usageHistory));
   results.referral = pass(
     typeof cloudBefore.referral?.code === "string"
       && cloudBefore.referral.code.length >= 8,
@@ -234,6 +243,23 @@ try {
       && streamText.includes("event: response.completed")
       && streamText.includes("data: [DONE]"),
   );
+  let automaticCloud = null;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    automaticCloud = await cdp.evaluate(
+      "window.copilotBridge.getCloudStatus()",
+    );
+    if (
+      automaticCloud.usageV2?.requests
+        >= (cloudBefore.usageV2?.requests ?? 0) + 2
+    ) {
+      break;
+    }
+    await delay(200);
+  }
+  results.automaticUsageRefresh = pass(
+    automaticCloud?.usageV2?.requests
+      >= (cloudBefore.usageV2?.requests ?? 0) + 2,
+  );
   if (screenshotDirectory) {
     await mkdir(screenshotDirectory, { recursive: true });
     await cdp.captureScreenshot(
@@ -259,6 +285,25 @@ try {
       && accountUi.includes("台设备")
       && accountUi.includes("管理账号")
       && !accountUi.includes("已扣除"),
+  );
+  await cdp.evaluate(
+    `(() => {
+      [...document.querySelectorAll('.account-link-row')]
+        .find((button) => button.textContent?.includes('条记录'))
+        ?.click();
+      return true;
+    })()`,
+  );
+  await delay(200);
+  const usageHistoryUi = await cdp.evaluate(
+    "document.querySelector('.sheet')?.innerText ?? ''",
+  );
+  evidence.usageHistoryUi = usageHistoryUi;
+  results.usageHistoryUi = pass(
+    usageHistoryUi.includes("AI 请求记录")
+      && usageHistoryUi.includes("点数记录")
+      && !usageHistoryUi.includes("input_tokens")
+      && !usageHistoryUi.includes("output_tokens"),
   );
   if (screenshotDirectory) {
     await cdp.captureScreenshot(
@@ -304,6 +349,10 @@ try {
     walletBefore: cloudBefore.remainingPoints,
     walletAfter: refreshed.remainingPoints,
     settlement,
+  };
+  evidence.automaticUsageRefresh = {
+    before: cloudBefore.usageV2?.requests ?? null,
+    after: automaticCloud?.usageV2?.requests ?? null,
   };
 } finally {
   cdp?.close();

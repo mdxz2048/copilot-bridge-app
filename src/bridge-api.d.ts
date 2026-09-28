@@ -107,6 +107,15 @@ export interface CloudServiceStatus {
     pointsCharged: number;
     legacy: Record<string, unknown> | null;
   } | null;
+  usageHistory: Array<{
+    id: string;
+    status: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    usageCredit: string;
+    createdAt: string;
+  }>;
   referral: {
     code: string;
     registered: number;
@@ -146,9 +155,49 @@ export interface CloudServiceStatus {
     createdAt?: string;
     updatedAt?: string;
   }>;
+  clientConfig: {
+    minimumVersion: string;
+    latestVersion: string;
+    maintenance: boolean;
+    features: { cloudGateway: boolean };
+  } | null;
+  latestRelease: {
+    id: string;
+    version: string;
+    channel: string;
+    platform: string;
+    arch: string;
+    downloadUrl: string;
+    sha256: string;
+    releaseNotes: string;
+    published: boolean;
+    createdAt: string;
+  } | null;
+  serviceConfigurationError: string | null;
+  updateState: "CURRENT" | "AVAILABLE" | "REQUIRED" | "MAINTENANCE";
+  lastError: {
+    code: string;
+    message: string;
+    action:
+      | "SIGN_IN"
+      | "REFRESH_TOKEN"
+      | "MANAGE_DEVICE"
+      | "RENEW_SUBSCRIPTION"
+      | "ADD_POINTS"
+      | "RECONNECT_PROVIDER"
+      | "CHANGE_PROVIDER"
+      | "RETRY"
+      | "NONE";
+    retryable: boolean;
+  } | null;
   accountManagementAvailable: boolean;
   subscriptionManagementAvailable: boolean;
-  serviceStatus: "WAITING_FOR_CONTRACT" | "AVAILABLE" | "UNREACHABLE";
+  serviceStatus:
+    | "WAITING_FOR_CONTRACT"
+    | "AVAILABLE"
+    | "UNREACHABLE"
+    | "MAINTENANCE"
+    | "UPDATE_REQUIRED";
   message: string;
 }
 
@@ -249,6 +298,7 @@ declare global {
       refreshCloud(): Promise<CloudServiceStatus>;
       manageCloudAccount(): Promise<void>;
       manageCloudSubscription(): Promise<void>;
+      openCloudRelease(): Promise<void>;
       revokeCloudDevice(id: string): Promise<CloudServiceStatus>;
       renameCloudDevice(request: {
         id: string;

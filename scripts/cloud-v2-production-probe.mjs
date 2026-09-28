@@ -60,6 +60,9 @@ const wallet = await client.getWallet();
 const usageBefore = await client.getUsageV2();
 const devices = await client.listDevicesV2();
 const transactions = await client.listWalletTransactions();
+const usageHistory = await client.getUsageHistory();
+const clientConfig = await client.getClientConfig();
+const latestRelease = await client.getLatestRelease();
 const referral = await client.getReferralSummary();
 const referralHistory = await client.getReferralHistory();
 const providers = await client.listProviders();
@@ -98,6 +101,15 @@ results.deviceRename = currentDevice
     )
   : pass(false);
 results.walletTransactions = pass(Array.isArray(transactions));
+results.usageHistory = pass(Array.isArray(usageHistory));
+results.clientConfig = pass(
+  clientConfig.features.cloudGateway === true
+    && typeof clientConfig.minimumVersion === "string",
+);
+results.release = pass(
+  latestRelease.release === null
+    || typeof latestRelease.release.version === "string",
+);
 results.referral = pass(
   referral.code.length >= 8
     && Array.isArray(referralHistory),
@@ -169,6 +181,11 @@ evidence.account = {
 evidence.wallet = {
   balance: wallet.balance,
   transactionCount: transactions.length,
+};
+evidence.client = {
+  config: clientConfig,
+  latestRelease: latestRelease.release?.version ?? null,
+  usageHistoryCount: usageHistory.length,
 };
 evidence.usage = {
   before: usageBefore,

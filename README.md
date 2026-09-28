@@ -41,6 +41,10 @@ portable EXE。
   配置注入；现有 Local Copilot 与 Tool Bridge 保持可用。
 - 已适配冻结的 Server Contract `2.2.0`，包括 Shadow billing、Wallet、
   Referral、Device、Provider Catalog 及 Copilot 稳定错误码。
+- Responses 完成后会自动核对 Settlement 并刷新 Wallet/Usage；断线或缺失
+  final frame 时按 Request/Response ID 恢复结算状态。
+- 已接入 Client Config、维护/最低版本状态、Release 检查和 Server Usage
+  History；普通用户界面不展示 Token 计量字段。
 - 新增 Desktop UI/UX V2：独立的 ChatGPT Bridge 总开关、轻量账户状态、
   Provider/Model 分层、服务切换确认、模型与推理强度主界面操作、详细设备
   流程和 760×560 紧凑窗口。

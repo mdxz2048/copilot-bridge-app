@@ -18,6 +18,7 @@ import type {
   ResponseRequest,
   SubscriptionResponse,
   Usage,
+  UsageHistoryRecord,
   UsageSettlementV2,
   UsageSummaryV2,
   User,
@@ -44,6 +45,7 @@ type CloudClientResponse = {
   listDevices: Device[];
   getSubscription: SubscriptionResponse;
   getUsage: Usage;
+  getUsageHistory: UsageHistoryRecord[];
   getClientConfig: ClientConfig;
   listModels: ModelList;
   createResponse: CloudResponseTransport;
@@ -53,6 +55,7 @@ type CloudClientResponse = {
   listWalletTransactions: WalletTransactionV2[];
   getUsageV2: UsageSummaryV2;
   getUsageByResponse: UsageSettlementV2;
+  getUsageByRequest: UsageSettlementV2;
   listDevicesV2: DeviceV2[];
   renameDevice: DeviceV2;
   revokeDevice: DeviceV2;
@@ -127,6 +130,9 @@ export class MockCloudClient implements CloudClient {
   getUsage(): Promise<Usage> {
     return this.invoke("getUsage");
   }
+  getUsageHistory(): Promise<UsageHistoryRecord[]> {
+    return this.invoke("getUsageHistory");
+  }
 
   getClientConfig(): Promise<ClientConfig> {
     return this.invoke("getClientConfig");
@@ -155,6 +161,9 @@ export class MockCloudClient implements CloudClient {
   getUsageV2(): Promise<UsageSummaryV2> { return this.invoke("getUsageV2"); }
   getUsageByResponse(responseId: string): Promise<UsageSettlementV2> {
     return this.invoke("getUsageByResponse", responseId);
+  }
+  getUsageByRequest(requestId: string): Promise<UsageSettlementV2> {
+    return this.invoke("getUsageByRequest", requestId);
   }
   listDevicesV2(): Promise<DeviceV2[]> { return this.invoke("listDevicesV2"); }
   renameDevice(id: string, deviceName: string): Promise<DeviceV2> {

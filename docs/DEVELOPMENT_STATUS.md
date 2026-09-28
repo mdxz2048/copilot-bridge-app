@@ -19,6 +19,12 @@ Status: CONTRACT 2.2 CLIENT READY; REAL PROVIDER PENDING
 - Audited Contract `2.2.0`; no new route or DTO conflict was found. Desktop
   now parses `COPILOT_AUTH_EXPIRED` and `COPILOT_USAGE_UNAVAILABLE` and keeps
   Server-managed Copilot failures distinct from BYOS authentication.
+- Completed the remaining frozen Desktop surfaces for Client Config, release
+  checks, legacy request history, settlement-by-request/response lookup, and
+  automatic post-response Wallet/Usage refresh.
+- Provider-specific failures no longer sign out the Cloud account. The
+  renderer now exposes Server-defined retry, reconnect, switch-provider, and
+  update actions.
 - Desktop-to-Server Mock Cloud E2E passed through the production CloudClient,
   Windows Credential Manager token boundary, stable device identity, and
   localhost Remote Bridge. Auth, device, account, subscription, usage, Server

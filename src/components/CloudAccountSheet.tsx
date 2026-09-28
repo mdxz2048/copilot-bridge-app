@@ -83,6 +83,7 @@ export function CloudAccountSheet({
           : view === "usage"
             ? (
               <UsageDetail
+                history={status?.usageHistory ?? []}
                 onBack={() => setView("account")}
                 transactions={status?.walletTransactions ?? []}
               />
@@ -287,7 +288,11 @@ export function CloudAccountSheet({
             onClick={() => setView("usage")}
             type="button"
           >
-            <span>{`${status.walletTransactions.length} 条记录`}</span>
+            <span>
+              {`${
+                status.walletTransactions.length + status.usageHistory.length
+              } 条记录`}
+            </span>
             <strong>查看 ›</strong>
           </button>
         </>
@@ -411,9 +416,11 @@ function ReferralDetail({
 }
 
 function UsageDetail({
+  history,
   onBack,
   transactions,
 }: {
+  history: CloudServiceStatus["usageHistory"];
   onBack: () => void;
   transactions: CloudServiceStatus["walletTransactions"];
 }) {
@@ -422,6 +429,25 @@ function UsageDetail({
       <Button className="secondary compact" onClick={onBack} type="button">
         ‹ 返回账户
       </Button>
+      <h3>AI 请求记录</h3>
+      {history.length === 0
+        ? <p className="empty-detail">暂无 AI 请求记录。</p>
+        : (
+          <>
+            {history.slice(0, 20).map((record) => (
+              <div className="history-row" key={record.id}>
+                <div>
+                  <strong>AI 请求</strong>
+                  <span>{formatDate(record.createdAt)}</span>
+                </div>
+                <strong>{usageStatusLabel(record.status)}</strong>
+              </div>
+            ))}
+            {history.length > 20 && (
+              <p className="empty-detail">仅显示最近 20 条请求。</p>
+            )}
+          </>
+        )}
       <h3>点数记录</h3>
       {transactions.length === 0
         ? <p className="empty-detail">暂无点数记录。</p>
@@ -438,6 +464,14 @@ function UsageDetail({
         ))}
     </div>
   );
+}
+
+function usageStatusLabel(status: string): string {
+  return {
+    RUNNING: "处理中",
+    COMPLETED: "已完成",
+    FAILED: "失败",
+  }[status] ?? status;
 }
 
 function AccountActions({

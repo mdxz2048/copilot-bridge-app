@@ -22,7 +22,10 @@ import {
   PRODUCTION_CLOUD_BASE_URL,
   resolveCloudRuntimeConfiguration,
 } from "../dist-electron/cloud/cloud-config.js";
-import { CloudFoundation } from "../dist-electron/cloud/cloud-foundation.js";
+import {
+  CloudFoundation,
+  compareVersions,
+} from "../dist-electron/cloud/cloud-foundation.js";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
 import {
   CLOUD_CONTRACT_VERSION,
@@ -187,6 +190,7 @@ test("separates production, development override, and loopback test Cloud config
     isPackaged: true,
     environment: {},
   });
+
   assert.equal(production.runtimeMode, "PRODUCTION");
   assert.equal(production.gatewayBaseUrl, PRODUCTION_CLOUD_BASE_URL);
   assert.equal(
@@ -238,6 +242,12 @@ test("separates production, development override, and loopback test Cloud config
     }),
     /loopback/,
   );
+});
+
+test("compares Server minimum and release versions", () => {
+  assert.equal(compareVersions("0.1.0", "0.1.0"), 0);
+  assert.equal(compareVersions("0.2.0", "0.1.9"), 1);
+  assert.equal(compareVersions("0.1.0", "0.1.1"), -1);
 });
 
 test("maps only stable Cloud errors to auth states", () => {
@@ -433,10 +443,18 @@ test("keeps Cloud pending without guessing endpoints or calling the client", asy
 test("drives foundation auth state from stable Cloud errors", async () => {
   const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-state-"));
   try {
-    const client = new MockCloudClient().reject(
-      "login",
-      new CloudError("DEVICE_REVOKED", "revoked"),
-    );
+    const client = new MockCloudClient()
+      .respond("getClientConfig", {
+        minimumVersion: "0.1.0",
+        latestVersion: "0.1.0",
+        maintenance: false,
+        features: { cloudGateway: true },
+      })
+      .respond("getLatestRelease", { release: null })
+      .reject(
+        "login",
+        new CloudError("DEVICE_REVOKED", "revoked"),
+      );
     const foundation = new CloudFoundation(
       client,
       new ReadyCloudConfigurationProvider(),
@@ -473,6 +491,7 @@ test("deduplicates concurrent account refreshes", async () => {
       .respond("getMeV2", me)
       .respond("listDevicesV2", [])
       .respond("listWalletTransactions", [])
+      .respond("getUsageHistory", [])
       .respond("getUsageV2", {
         requests: 0,
         pointsRated: 0,
@@ -487,7 +506,14 @@ test("deduplicates concurrent account refreshes", async () => {
       })
       .respond("getReferralHistory", [])
       .respond("listProviderConnections", [])
-      .respond("listProviders", []);
+      .respond("listProviders", [])
+      .respond("getClientConfig", {
+        minimumVersion: "0.1.0",
+        latestVersion: "0.1.0",
+        maintenance: false,
+        features: { cloudGateway: true },
+      })
+      .respond("getLatestRelease", { release: null });
     const foundation = new CloudFoundation(
       client,
       new ReadyCloudConfigurationProvider(),
@@ -503,6 +529,10 @@ test("deduplicates concurrent account refreshes", async () => {
       client.calls.filter((call) => call.method === "getMeV2").length,
       1,
     );
+    assert.equal(
+      client.calls.filter((call) => call.method === "getClientConfig").length,
+      1,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -515,6 +545,7 @@ test("login wins an overlapping stale authentication error", async () => {
     const loginBarrier = new Promise((resolve) => {
       finishLogin = resolve;
     });
+
     const me = {
       account: {
         id: "11111111-1111-4111-8111-111111111111",
@@ -538,6 +569,7 @@ test("login wins an overlapping stale authentication error", async () => {
       .respond("getMeV2", me)
       .respond("listDevicesV2", [])
       .respond("listWalletTransactions", [])
+      .respond("getUsageHistory", [])
       .respond("getUsageV2", {
         requests: 0,
         pointsRated: 0,
@@ -552,7 +584,14 @@ test("login wins an overlapping stale authentication error", async () => {
       })
       .respond("getReferralHistory", [])
       .respond("listProviderConnections", [])
-      .respond("listProviders", []);
+      .respond("listProviders", [])
+      .respond("getClientConfig", {
+        minimumVersion: "0.1.0",
+        latestVersion: "0.1.0",
+        maintenance: false,
+        features: { cloudGateway: true },
+      })
+      .respond("getLatestRelease", { release: null });
     client.login = async (request) => {
       client.calls.push({ method: "login", request });
       await loginBarrier;
@@ -580,6 +619,155 @@ test("login wins an overlapping stale authentication error", async () => {
     finishLogin();
 
     assert.equal((await login).authState, "AUTHENTICATED");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("keeps Cloud authenticated for provider-specific errors", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-provider-error-"));
+  try {
+    const me = productMe();
+    const foundation = new CloudFoundation(
+      configuredAccountClient(me),
+      new ReadyCloudConfigurationProvider(),
+      new DeviceIdentityStore(join(directory, "device.json"), "0.1.0"),
+      "0.1.0",
+    );
+    assert.equal((await foundation.refresh()).authState, "AUTHENTICATED");
+
+    const status = await foundation.handleRequestError(
+      new CloudError("COPILOT_AUTH_EXPIRED", "Server Copilot 授权已过期。"),
+    );
+    assert.equal(status.authState, "AUTHENTICATED");
+    assert.equal(status.lastError?.code, "COPILOT_AUTH_EXPIRED");
+    assert.equal(status.lastError?.action, "CHANGE_PROVIDER");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("reconciles a completed response and refreshes Server account state", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-settlement-"));
+  try {
+    const me = productMe();
+    const settlement = {
+      request: {
+        id: "22222222-2222-4222-8222-222222222222",
+        responseId: "resp_0123456789abcdef0123456789abcdef",
+        status: "COMPLETED",
+        billingPolicy: "MANAGED_USAGE",
+        createdAt: "2026-09-28T00:00:00.000Z",
+        completedAt: "2026-09-28T00:00:01.000Z",
+      },
+      usage: {
+        inputTokens: 8,
+        outputTokens: 4,
+        cachedInputTokens: 0,
+        reasoningTokens: 0,
+        pointsRated: 1,
+        pointsCharged: 0,
+        billingStatus: "SHADOW",
+        rateCardVersionId: "33333333-3333-4333-8333-333333333333",
+      },
+      wallet: { balance: 88, unit: "AI_POINT" },
+    };
+    const client = configuredAccountClient(me)
+      .respond("getUsageByResponse", settlement);
+    const foundation = new CloudFoundation(
+      client,
+      new ReadyCloudConfigurationProvider(),
+      new DeviceIdentityStore(join(directory, "device.json"), "0.1.0"),
+      "0.1.0",
+    );
+
+    const result = await foundation.reconcileResponse({
+      responseId: settlement.request.responseId,
+    });
+
+    assert.equal(result.settlement.usage?.billingStatus, "SHADOW");
+    assert.equal(result.status.remainingPoints, 88);
+    assert.equal(
+      client.calls.filter((call) => call.method === "getUsageByResponse").length,
+      1,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("prefers request lookup when recovering an interrupted stream", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-recovery-"));
+  try {
+    const settlement = {
+      request: {
+        id: "22222222-2222-4222-8222-222222222222",
+        responseId: "resp_0123456789abcdef0123456789abcdef",
+        status: "CLIENT_DISCONNECTED",
+        billingPolicy: "MANAGED_USAGE",
+        createdAt: "2026-09-28T00:00:00.000Z",
+        completedAt: "2026-09-28T00:00:01.000Z",
+      },
+      usage: {
+        inputTokens: 8,
+        outputTokens: 4,
+        cachedInputTokens: 0,
+        reasoningTokens: 0,
+        pointsRated: 1,
+        pointsCharged: 0,
+        billingStatus: "SHADOW",
+        rateCardVersionId: "33333333-3333-4333-8333-333333333333",
+      },
+      wallet: { balance: 88, unit: "AI_POINT" },
+    };
+    const client = configuredAccountClient(productMe())
+      .respond("getUsageByRequest", settlement)
+      .reject(
+        "getUsageByResponse",
+        new Error("response lookup must not be used for recovery"),
+      );
+    const foundation = new CloudFoundation(
+      client,
+      new ReadyCloudConfigurationProvider(),
+      new DeviceIdentityStore(join(directory, "device.json"), "0.1.0"),
+      "0.1.0",
+    );
+
+    await foundation.reconcileResponse({
+      responseId: settlement.request.responseId,
+      requestId: settlement.request.id,
+      recovery: true,
+    });
+    assert.equal(
+      client.calls.filter((call) => call.method === "getUsageByRequest").length,
+      1,
+    );
+    assert.equal(
+      client.calls.filter((call) => call.method === "getUsageByResponse").length,
+      0,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("keeps account refresh available when release metadata fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-config-error-"));
+  try {
+    const client = configuredAccountClient(productMe())
+      .reject("getLatestRelease", new Error("release endpoint unavailable"));
+    const foundation = new CloudFoundation(
+      client,
+      new ReadyCloudConfigurationProvider(),
+      new DeviceIdentityStore(join(directory, "device.json"), "0.1.0"),
+      "0.1.0",
+    );
+
+    const status = await foundation.refresh();
+    assert.equal(status.authState, "AUTHENTICATED");
+    assert.equal(status.remainingPoints, 88);
+    assert.equal(status.clientConfig?.features.cloudGateway, true);
+    assert.match(status.serviceConfigurationError ?? "", /release endpoint/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -636,6 +824,7 @@ test("keeps V2 product account APIs behind replaceable adapters", async () => {
     },
     devices: [],
     walletTransactions: [],
+    usageHistory: [],
     referral: {
       code: "TESTCODE",
       registered: 0,
@@ -652,6 +841,7 @@ test("keeps V2 product account APIs behind replaceable adapters", async () => {
     .respond("getUsageV2", snapshot.usage)
     .respond("listDevicesV2", [])
     .respond("listWalletTransactions", [])
+    .respond("getUsageHistory", [])
     .respond("getReferralSummary", snapshot.referral)
     .respond("getReferralHistory", [])
     .respond("listProviders", [])
@@ -690,4 +880,47 @@ class ReadyCloudConfigurationProvider {
       subscriptionManagementUrl: null,
     };
   }
+}
+
+function productMe() {
+  return {
+    account: {
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "desktop@example.test",
+      status: "ACTIVE",
+    },
+    subscription: null,
+    wallet: { balance: 88, unit: "AI_POINT" },
+    activeDevices: 1,
+  };
+}
+
+function configuredAccountClient(me) {
+  return new MockCloudClient()
+    .respond("getMeV2", me)
+    .respond("listDevicesV2", [])
+    .respond("listWalletTransactions", [])
+    .respond("getUsageHistory", [])
+    .respond("getUsageV2", {
+      requests: 1,
+      pointsRated: 1,
+      pointsCharged: 0,
+      legacy: null,
+    })
+    .respond("getReferralSummary", {
+      code: "TESTCODE",
+      registered: 0,
+      rewarded: 0,
+      pointsEarned: 0,
+    })
+    .respond("getReferralHistory", [])
+    .respond("listProviderConnections", [])
+    .respond("listProviders", [])
+    .respond("getClientConfig", {
+      minimumVersion: "0.1.0",
+      latestVersion: "0.1.0",
+      maintenance: false,
+      features: { cloudGateway: true },
+    })
+    .respond("getLatestRelease", { release: null });
 }

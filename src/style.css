@@ -995,6 +995,19 @@ code {
   margin-top: 16px;
 }
 
+.product-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-primary);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
 .cloud-auth-mode {
   display: flex;
   gap: 8px;

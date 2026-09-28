@@ -28,6 +28,7 @@ interface CurrentServiceCardProps {
   onInstallChatGpt: () => void;
   onOpenAccount: () => void;
   onOpenChatGpt: () => void;
+  onOpenRelease: () => void;
   onRetryCloud: () => void;
   onSwitchService: () => void;
   onUpdateSettings: (settings: AppSettings) => void;
@@ -48,13 +49,17 @@ export function CurrentServiceCard({
   onInstallChatGpt,
   onOpenAccount,
   onOpenChatGpt,
+  onOpenRelease,
   onRetryCloud,
   onSwitchService,
   onUpdateSettings,
 }: CurrentServiceCardProps) {
   const copy = zhCN.product;
   const isCloud = provider.id !== "github-copilot";
-  const cloudReady = cloud?.authState === "AUTHENTICATED";
+  const cloudReady =
+    cloud?.authState === "AUTHENTICATED"
+    && cloud.serviceStatus === "AVAILABLE"
+    && !cloud.lastError;
   const bridgeReady = bridge?.state === "ready";
   const serviceReady = isCloud ? cloudReady && bridgeReady : bridgeReady;
   const state = isCloud ? cloudStatePresentation(cloud) : localStatePresentation(bridge);
@@ -152,9 +157,12 @@ export function CurrentServiceCard({
                 disabled={busy}
                 onClick={
                   isCloud
-                    ? cloud?.authState === "SERVER_UNREACHABLE"
-                      ? onRetryCloud
-                      : onOpenAccount
+                    ? cloudAction(cloud, {
+                        openAccount: onOpenAccount,
+                        openRelease: onOpenRelease,
+                        retry: onRetryCloud,
+                        switchService: onSwitchService,
+                      })
                     : onConnectLocal
                 }
                 type="button"
@@ -235,6 +243,30 @@ function localStatePresentation(bridge: BridgeStatus | null) {
 }
 
 function cloudStatePresentation(cloud: CloudServiceStatus | null) {
+  if (cloud?.lastError) {
+    return {
+      symbol: "●",
+      title: cloudErrorTitle(cloud.lastError.action),
+      message: cloud.lastError.message,
+      tone: cloud.lastError.retryable ? "warning" : "danger",
+    } as const;
+  }
+  if (cloud?.serviceStatus === "MAINTENANCE") {
+    return {
+      symbol: "●",
+      title: "服务维护中",
+      message: cloud.message,
+      tone: "warning",
+    } as const;
+  }
+  if (cloud?.serviceStatus === "UPDATE_REQUIRED") {
+    return {
+      symbol: "●",
+      title: "需要更新",
+      message: cloud.message,
+      tone: "warning",
+    } as const;
+  }
   const presentations = {
     AUTHENTICATED: { symbol: "●", title: "已连接", message: "", tone: "success" },
     AUTHENTICATING: {
@@ -283,7 +315,49 @@ function cloudStatePresentation(cloud: CloudServiceStatus | null) {
   return presentations[cloud?.authState ?? "SIGNED_OUT"];
 }
 
+function cloudErrorTitle(
+  action: NonNullable<CloudServiceStatus["lastError"]>["action"],
+): string {
+  if (action === "RECONNECT_PROVIDER") return "需要重新连接";
+  if (action === "CHANGE_PROVIDER") return "当前 AI 服务不可用";
+  if (action === "ADD_POINTS") return "AI 点数不足";
+  return "云服务需要处理";
+}
+
+function cloudAction(
+  cloud: CloudServiceStatus | null,
+  actions: {
+    openAccount: () => void;
+    openRelease: () => void;
+    retry: () => void;
+    switchService: () => void;
+  },
+): () => void {
+  if (cloud?.serviceStatus === "UPDATE_REQUIRED") return actions.openRelease;
+  switch (cloud?.lastError?.action) {
+    case "RECONNECT_PROVIDER":
+    case "CHANGE_PROVIDER":
+      return actions.switchService;
+    case "RETRY":
+    case "REFRESH_TOKEN":
+      return actions.retry;
+    default:
+      return cloud?.authState === "SERVER_UNREACHABLE"
+        ? actions.retry
+        : actions.openAccount;
+  }
+}
+
 function cloudActionLabel(cloud: CloudServiceStatus | null): string {
+  if (cloud?.serviceStatus === "UPDATE_REQUIRED") return "立即更新";
+  switch (cloud?.lastError?.action) {
+    case "RECONNECT_PROVIDER":
+      return "重新连接";
+    case "CHANGE_PROVIDER":
+      return "切换 AI 服务";
+    case "RETRY":
+      return zhCN.account.retry;
+  }
   switch (cloud?.authState) {
     case "DEVICE_REVOKED":
       return zhCN.account.manageDevice;
