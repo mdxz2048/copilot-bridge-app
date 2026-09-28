@@ -21,8 +21,8 @@
     "test:cloud-v2-production": "npm run build && node scripts/cloud-v2-production-probe.mjs",
     "test:installed-production": "node scripts/installed-production-e2e.mjs",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
-    "package:portable": "npm run prepare:runtime && npm run build && electron-builder --win portable",
-    "package:installer": "npm run prepare:runtime && npm run build && electron-builder --win nsis"
+    "package:portable": "npm run prepare:runtime && npm run build && electron-builder --win portable --publish never",
+    "package:installer": "npm run prepare:runtime && npm run build && electron-builder --win nsis --publish never"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
