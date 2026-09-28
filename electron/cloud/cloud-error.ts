@@ -112,11 +112,18 @@ export function cloudErrorPolicy(error: unknown): CloudErrorPolicy {
         retryable: false,
       };
     case "COPILOT_NOT_ENTITLED":
+    case "COPILOT_AUTH_EXPIRED":
     case "PROVIDER_CONNECTION_UNAVAILABLE":
       return {
         authState: null,
         action: "CHANGE_PROVIDER",
         retryable: false,
+      };
+    case "COPILOT_USAGE_UNAVAILABLE":
+      return {
+        authState: null,
+        action: "RETRY",
+        retryable: true,
       };
     case "PROVIDER_UNAVAILABLE":
     case "MODEL_UNAVAILABLE":

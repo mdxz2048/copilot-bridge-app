@@ -39,11 +39,13 @@ portable EXE。
 - Cloud Mock E2E 已覆盖登录、设备、订阅、用量、JSON/SSE Responses、
   read/edit/shell 本地工具 continuation 和错误状态。Cloud Base URL 通过环境
   配置注入；现有 Local Copilot 与 Tool Bridge 保持可用。
+- 已适配冻结的 Server Contract `2.2.0`，包括 Shadow billing、Wallet、
+  Referral、Device、Provider Catalog 及 Copilot 稳定错误码。
 - 新增 Desktop UI/UX V2：独立的 ChatGPT Bridge 总开关、轻量账户状态、
   Provider/Model 分层、服务切换确认、模型与推理强度主界面操作、详细设备
   流程和 760×560 紧凑窗口。
-- Custom API、本地模型、剩余点数、邀请奖励与设备凭据已建立客户端接口，
-  但在 Server Contract 正式提供前不会在生产环境伪造或启用。
+- Wallet、邀请奖励、设备和 Provider 数据均由 Server 返回；客户端不计算
+  点数、订阅或奖励。真实 Copilot Provider 仍等待 Server 完成授权 Gate。
 
 ### 0.1.0
 
@@ -60,8 +62,15 @@ portable EXE。
 
 ## 开发
 
+仓库已包含定制 Proxy 源码与项目文档，不依赖任何隔壁目录。需要
+Node.js `22.17.0`：
+
 ```powershell
-npm install
+npm ci
+npm run typecheck
 npm test
 npm run package:installer
 ```
+
+GitHub Actions 会在 Windows runner 上执行相同验证并上传 NSIS workflow
+artifact。完整说明见 [GitHub development workflow](docs/GITHUB_DEVELOPMENT.md)。

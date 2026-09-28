@@ -9,11 +9,14 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.renderer.json && vite build && tsc -p tsconfig.electron.json",
+    "build": "npm run build:proxy && tsc -p tsconfig.renderer.json && vite build && tsc -p tsconfig.electron.json",
+    "build:proxy": "npm --prefix vendor/copilot-sdk-proxy run build",
+    "postinstall": "npm run build:proxy",
     "preview": "vite preview",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.renderer.json && tsc -p tsconfig.electron.json",
-    "test": "npm run build && node --test test/profile-store.test.mjs test/cloud-foundation.test.mjs test/service-switcher.test.mjs",
+    "test": "npm run build && node --test test/profile-store.test.mjs test/cloud-foundation.test.mjs test/service-switcher.test.mjs test/repository.test.mjs",
+    "test:proxy": "npm --prefix vendor/copilot-sdk-proxy test",
     "test:cloud-e2e": "npm run build && node scripts/cloud-e2e-harness.mjs",
     "test:cloud-v2-production": "npm run build && node scripts/cloud-v2-production-probe.mjs",
     "test:installed-production": "node scripts/installed-production-e2e.mjs",
@@ -34,8 +37,8 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
-    "@github/copilot": "^1.0.75",
-    "copilot-sdk-proxy": "file:../upstream-copilot-sdk-proxy",
+    "@github/copilot": "1.0.75",
+    "copilot-sdk-proxy": "file:vendor/copilot-sdk-proxy",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.5"

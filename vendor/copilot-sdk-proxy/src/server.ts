@@ -1,0 +1,78 @@
+import Fastify, { type FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
+import type { AppContext } from "#context.js";
+import type { LogLevel } from "#logger.js";
+import type { Provider } from "#providers/types.js";
+
+const PINO_LEVEL = {
+  none: "silent",
+  error: "error",
+  warning: "warn",
+  info: "info",
+  debug: "debug",
+  all: "trace",
+} satisfies Record<LogLevel, string>;
+
+export async function createServer(
+  ctx: AppContext,
+  provider: Provider,
+): Promise<FastifyInstance> {
+  const app = Fastify({
+    bodyLimit: ctx.config.bodyLimit,
+    // Without this, shutdown hangs waiting for SSE streams to drain
+    forceCloseConnections: true,
+    logger: {
+      level: PINO_LEVEL[ctx.logger.level],
+    },
+  });
+
+  app.server.requestTimeout = ctx.config.requestTimeoutMs;
+
+  await app.register(cors, {
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "anthropic-beta",
+      "anthropic-version",
+      "x-api-key",
+    ],
+  });
+
+  app.get("/health", async (_req, reply) => {
+    try {
+      const { message, timestamp, protocolVersion } =
+        await ctx.service.ping("health");
+      return await reply.send({
+        status: "ok",
+        message,
+        timestamp,
+        protocolVersion,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return reply.status(503).send({ status: "error", message });
+    }
+  });
+
+  app.get("/bridge/models", async (_req, reply) => {
+    try {
+      const models = await ctx.service.listModels();
+      return await reply.send({
+        data: models.map((model) => ({
+          id: model.id,
+          supportsReasoningEffort:
+            model.capabilities.supports.reasoningEffort ?? false,
+        })),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return await reply.status(503).send({ status: "error", message });
+    }
+  });
+
+  provider.register(app, ctx);
+
+  return app;
+}

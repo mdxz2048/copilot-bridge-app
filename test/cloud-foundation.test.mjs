@@ -26,6 +26,7 @@ import { CloudFoundation } from "../dist-electron/cloud/cloud-foundation.js";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
 import {
   CLOUD_CONTRACT_VERSION,
+  ErrorResponseV2Schema,
   ResponseSchema,
   UsageSettlementV2Schema,
 } from "../dist-electron/cloud/contract.js";
@@ -64,8 +65,8 @@ test("defines every required Cloud auth state and enforces transitions", () => {
   );
 });
 
-test("parses Contract 2.1.0 Shadow usage without treating rated points as charged", () => {
-  assert.equal(CLOUD_CONTRACT_VERSION, "2.1.0");
+test("parses Contract 2.2.0 Shadow usage without treating rated points as charged", () => {
+  assert.equal(CLOUD_CONTRACT_VERSION, "2.2.0");
   const response = ResponseSchema.parse({
     id: "resp_0123456789abcdef0123456789abcdef",
     object: "response",
@@ -84,6 +85,7 @@ test("parses Contract 2.1.0 Shadow usage without treating rated points as charge
       billing_mode: "SHADOW",
     },
   });
+
   const settlement = UsageSettlementV2Schema.parse({
     request: {
       id: "11111111-1111-4111-8111-111111111111",
@@ -119,7 +121,23 @@ test("parses Contract 2.1.0 Shadow usage without treating rated points as charge
   );
 });
 
-test("sends optional referralCode in the Contract 2.1.0 registration request", async () => {
+test("parses Contract 2.2.0 Copilot provider errors", () => {
+  for (const code of ["COPILOT_AUTH_EXPIRED", "COPILOT_USAGE_UNAVAILABLE"]) {
+    assert.equal(
+      ErrorResponseV2Schema.parse({
+        error: {
+          code,
+          message: "Provider request failed.",
+          request_id: "request-1",
+          requestId: "request-1",
+        },
+      }).error.code,
+      code,
+    );
+  }
+});
+
+test("sends optional referralCode in the Contract 2.2.0 registration request", async () => {
   const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-register-"));
   try {
     let requestBody = null;
@@ -269,6 +287,26 @@ test("centralizes V2 business error actions", () => {
       new CloudError("COPILOT_NOT_ENTITLED", "copilot"),
     ).action,
     "CHANGE_PROVIDER",
+  );
+  assert.deepEqual(
+    cloudErrorPolicy(
+      new CloudError("COPILOT_AUTH_EXPIRED", "server credential expired"),
+    ),
+    {
+      authState: null,
+      action: "CHANGE_PROVIDER",
+      retryable: false,
+    },
+  );
+  assert.deepEqual(
+    cloudErrorPolicy(
+      new CloudError("COPILOT_USAGE_UNAVAILABLE", "usage unavailable"),
+    ),
+    {
+      authState: null,
+      action: "RETRY",
+      retryable: true,
+    },
   );
 });
 

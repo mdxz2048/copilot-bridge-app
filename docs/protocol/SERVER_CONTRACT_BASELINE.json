@@ -1,0 +1,10 @@
+{
+  "contractVersion": "2.2.0",
+  "contractTag": "api-v2.2.0",
+  "serverCommit": "c987b4d77898595831f0c9e7740c71068a5e1646",
+  "deploymentImage": "sha256:d7bfa3bfbad917705cb52389ad0262ffad499da0f4fbfe7676a47d84a0b12b80",
+  "openApiSha256": "c8039a458af1adf9af9863c2bce6d54c729c5bbc71bf173778ad4072cc7de090",
+  "serverBaseUrl": "https://ai.mddxz.top",
+  "billingMode": "SHADOW",
+  "updatedAt": "2026-09-28"
+}

@@ -158,8 +158,8 @@ results.shadow = pass(
 results.walletUnchanged = pass(walletAfter.balance === wallet.balance);
 
 evidence.contract = {
-  apiV2: "2.1.0",
-  generatedOpenApi: "2.1.0",
+  apiV2: "2.2.0",
+  generatedOpenApi: "2.2.0",
 };
 evidence.account = {
   plan: me.subscription?.planCode ?? null,

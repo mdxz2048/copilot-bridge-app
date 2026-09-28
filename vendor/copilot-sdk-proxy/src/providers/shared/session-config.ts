@@ -1,0 +1,195 @@
+import type {
+  SessionConfig,
+  MCPServerConfig,
+  PermissionRequestResult,
+  SystemMessageReplaceConfig,
+} from "@github/copilot-sdk";
+import { ToolSet } from "@github/copilot-sdk";
+import type { Tool } from "@github/copilot-sdk";
+
+type Hooks = NonNullable<SessionConfig["hooks"]>;
+type PreToolUseResult = NonNullable<
+  Awaited<NonNullable<ReturnType<NonNullable<Hooks["onPreToolUse"]>>>>
+>;
+type ErrorResult = NonNullable<
+  Awaited<NonNullable<ReturnType<NonNullable<Hooks["onErrorOccurred"]>>>>
+>;
+import type { ServerConfig, ApprovalRule, ReasoningEffort } from "#config.js";
+import type { Logger } from "#logger.js";
+
+type SdkReasoningEffort = NonNullable<SessionConfig["reasoningEffort"]>;
+
+// The SDK type doesn't include "max" but the Copilot backend accepts it
+// for Claude models. Cast our broader type to the SDK's narrower type.
+export function toSdkEffort(effort: ReasoningEffort): SdkReasoningEffort {
+  return effort as SdkReasoningEffort;
+}
+
+export interface SessionConfigOptions {
+  model: string;
+  systemMessage?: string | undefined;
+  logger: Logger;
+  config: ServerConfig;
+  supportsReasoningEffort: boolean;
+  cwd?: string | undefined;
+  provider?: SessionConfig["provider"];
+  tools?: Tool<Record<string, unknown>>[] | undefined;
+}
+
+function isApproved(rule: ApprovalRule, kind: string): boolean {
+  if (typeof rule === "boolean") return rule;
+  return rule.some((k) => k === kind);
+}
+
+export function createSessionConfig({
+  model,
+  systemMessage,
+  logger,
+  config,
+  supportsReasoningEffort,
+  cwd,
+  provider,
+  tools,
+}: SessionConfigOptions): SessionConfig {
+  const availableTools = new ToolSet();
+  let hasAvailableTools = false;
+  if (config.allowedCliTools.length > 0) {
+    availableTools.addBuiltIn(config.allowedCliTools);
+    hasAvailableTools = true;
+  }
+  for (const tool of tools ?? []) {
+    availableTools.addCustom(tool.name);
+    hasAvailableTools = true;
+  }
+
+  return {
+    clientName: "copilot-sdk-proxy",
+    model,
+    streaming: true,
+    includeSubAgentStreamingEvents: false,
+    infiniteSessions: { enabled: true },
+    workingDirectory: cwd ?? process.cwd(),
+    ...(provider && { provider }),
+    ...(tools?.length && { tools }),
+
+    ...(systemMessage && {
+      systemMessage: {
+        mode: "replace",
+        content: systemMessage,
+      } satisfies SystemMessageReplaceConfig,
+    }),
+
+    mcpServers: Object.fromEntries(
+      Object.entries(config.mcpServers).map(([name, server]) => [
+        name,
+        { ...server, tools: ["*"] } satisfies MCPServerConfig,
+      ]),
+    ),
+
+    ...(hasAvailableTools && { availableTools }),
+    ...(config.reasoningEffort &&
+      supportsReasoningEffort && {
+        reasoningEffort: toSdkEffort(config.reasoningEffort),
+      }),
+
+    onUserInputRequest: (request) => {
+      logger.debug(`User input requested: "${request.question}"`);
+      return Promise.resolve({
+        answer:
+          "Interactive input is not available here. Ask the user directly in your reply instead, presenting any choices as a short numbered list.",
+        wasFreeform: true,
+      });
+    },
+
+    onPermissionRequest: (request) => {
+      const approved = isApproved(config.autoApprovePermissions, request.kind);
+      logger.debug(
+        `Permission "${request.kind}": ${approved ? "approved" : "denied"}`,
+      );
+      if (!approved) {
+        return Promise.resolve({
+          kind: "reject",
+        } satisfies PermissionRequestResult);
+      }
+      // Hoist read/write/memory to session scope so the SDK stops asking again.
+      // Other kinds (shell, mcp, url, custom-tool, hook) need payload data not
+      // present on PermissionRequest, so we approve them per-call.
+      switch (request.kind) {
+        case "read":
+        case "write":
+        case "memory":
+          return Promise.resolve({
+            kind: "approve-for-session",
+            approval: { kind: request.kind },
+          } satisfies PermissionRequestResult);
+        default:
+          return Promise.resolve({
+            kind: "approve-once",
+          } satisfies PermissionRequestResult);
+      }
+    },
+
+    hooks: {
+      onPreToolUse: (input) => {
+        const toolName = input.toolName;
+
+        if (tools?.some((tool) => tool.name === toolName)) {
+          logger.debug(`Tool "${toolName}": allowed (external)`);
+          return Promise.resolve({
+            permissionDecision: "allow",
+          } satisfies PreToolUseResult);
+        }
+
+        if (
+          config.allowedCliTools.includes("*") ||
+          config.allowedCliTools.includes(toolName)
+        ) {
+          logger.debug(`Tool "${toolName}": allowed (CLI)`);
+          return Promise.resolve({
+            permissionDecision: "allow",
+          } satisfies PreToolUseResult);
+        }
+
+        for (const [serverName, server] of Object.entries(config.mcpServers)) {
+          const allowlist = server.allowedTools ?? [];
+          if (allowlist.includes("*") || allowlist.includes(toolName)) {
+            logger.debug(`Tool "${toolName}": allowed (${serverName})`);
+            return Promise.resolve({
+              permissionDecision: "allow",
+            } satisfies PreToolUseResult);
+          }
+        }
+
+        logger.debug(`Tool "${toolName}": denied (not in any allowlist)`);
+        return Promise.resolve({
+          permissionDecision: "deny",
+        } satisfies PreToolUseResult);
+      },
+
+      onPostToolUse: (input) => {
+        logger.debug(`Tool executed: ${input.toolName}`, input.toolArgs);
+      },
+
+      onErrorOccurred: (input) => {
+        const error =
+          typeof input.error === "string"
+            ? input.error
+            : JSON.stringify(input.error);
+        logger.warn(
+          `SDK error (${input.errorContext}, ${input.recoverable ? "recoverable" : "not recoverable"}): ${error}`,
+        );
+        if (
+          input.recoverable &&
+          (input.errorContext === "model_call" ||
+            input.errorContext === "tool_execution")
+        ) {
+          return {
+            errorHandling: "retry",
+            retryCount: 2,
+          } satisfies ErrorResult;
+        }
+        return undefined;
+      },
+    },
+  };
+}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CLOUD_CONTRACT_VERSION = "2.1.0";
+export const CLOUD_CONTRACT_VERSION = "2.2.0";
 
 export const DeviceInfoSchema = z.object({
   deviceId: z.uuid(),
@@ -55,7 +55,9 @@ export const ErrorCodeSchema = z.enum([
   "BILLING_REVIEW_REQUIRED",
   "CANNOT_DISABLE_SELF",
   "CLIENT_THREAD_ID_REQUIRED",
+  "COPILOT_AUTH_EXPIRED",
   "COPILOT_NOT_ENTITLED",
+  "COPILOT_USAGE_UNAVAILABLE",
   "CSRF_REJECTED",
   "DEVICE_LIMIT_REACHED",
   "DEVICE_NOT_REGISTERED",

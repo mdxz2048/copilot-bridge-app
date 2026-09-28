@@ -1,0 +1,36 @@
+// Configuration for copilot-sdk-proxy.
+// Edit this file to add MCP servers, control tool access, and set permissions.
+
+{
+  // Per-provider MCP servers. Example:
+  // openai: {
+  //   mcpServers: {
+  //     filesystem: {
+  //       type: "local",
+  //       command: "npx",
+  //       args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/projects"],
+  //     },
+  //   },
+  // },
+  // Reasoning effort for models that support it.
+  // OpenAI models accept: "low", "medium", "high", "xhigh"
+  // Claude models accept: "low", "medium", "high", "max"
+  claude: { mcpServers: {}, reasoningEffort: "max" },
+  codex: { mcpServers: {}, reasoningEffort: "xhigh" },
+  openai: { mcpServers: {}, reasoningEffort: "xhigh" },
+
+  // Built-in Copilot CLI tools allowlist. Use ["*"] to allow all, [] to deny
+  // all, or list specific tools like ["glob", "grep", "bash"].
+  allowedCliTools: ["*"],
+
+  // Auto-approve permission requests. Set to true to approve all, false to deny
+  // all, or pass an array of specific kinds:
+  // ["read", "write", "shell", "mcp", "url", "custom-tool", "memory", "hook"].
+  autoApprovePermissions: true,
+
+  // Maximum request body size in MiB.
+  bodyLimit: 10,
+
+  // Server-level request timeout in minutes. 0: disabled.
+  requestTimeout: 0,
+}
