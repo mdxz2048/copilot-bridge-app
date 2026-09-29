@@ -122,6 +122,7 @@ export interface CloudServiceStatus {
     rewarded: number;
     pointsEarned: number;
   } | null;
+  referralRegistrationUrl: string | null;
   referralHistory: Array<{
     id: string;
     status: "REGISTERED" | "PENDING" | "QUALIFIED" | "REWARDED" | "REJECTED";

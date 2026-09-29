@@ -19,6 +19,7 @@ import {
 } from "./cloud/cloud-config.js";
 import { DeviceIdentityStore } from "./cloud/device-identity.js";
 import { CloudFoundation } from "./cloud/cloud-foundation.js";
+import { createFocusRefresh } from "./cloud/focus-refresh.js";
 import { HttpCloudClient } from "./cloud/http-cloud-client.js";
 import {
   cloudCredentialTarget,
@@ -208,6 +209,11 @@ async function refreshCloudStatus(): Promise<void> {
   }
 }
 
+const refreshCloudOnFocus = createFocusRefresh(
+  () => cloudTokens.getAccessToken() !== null,
+  refreshCloudStatus,
+);
+
 async function switchAiService(
   target: AppSettings["backendMode"],
 ): Promise<{
@@ -308,8 +314,21 @@ function refreshTray(): void {
   ]));
 }
 
+function titleBarOverlayColors() {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: "#1C1C1E", symbolColor: "#F5F5F7", height: 48 }
+    : { color: "#F5F5F7", symbolColor: "#1D1D1F", height: 48 };
+}
+
+function updateTitleBarOverlay(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setTitleBarOverlay(titleBarOverlayColors());
+  }
+}
+
 function applyTheme(theme: AppSettings["theme"]): void {
-  nativeTheme.themeSource = theme === "system" ? "system" : theme;
+  nativeTheme.themeSource = theme;
+  updateTitleBarOverlay();
 }
 
 function createWindow(): void {
@@ -324,11 +343,7 @@ function createWindow(): void {
     minHeight: 520,
     center: true,
     titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: "#F5F5F7",
-      symbolColor: "#1D1D1F",
-      height: 48,
-    },
+    titleBarOverlay: titleBarOverlayColors(),
     webPreferences: {
       preload: join(import.meta.dirname, "preload.cjs"),
       contextIsolation: true,
@@ -342,7 +357,11 @@ function createWindow(): void {
     }
   });
   window.on("focus", () => {
-    void refreshCloudStatus();
+    void refreshCloudOnFocus()?.catch((error: unknown) => {
+      logDiagnostic(`Cloud focus refresh failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`);
+    });
   });
   window.on("close", (event) => {
     if (isQuitting || currentSettings?.minimizeToTray === false) return;
@@ -380,6 +399,7 @@ function focusMainWindow(): void {
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   Menu.setApplicationMenu(null);
+  nativeTheme.on("updated", updateTitleBarOverlay);
   const settings = await settingsStore.read();
   currentSettings = settings;
   applyTheme(settings.theme);

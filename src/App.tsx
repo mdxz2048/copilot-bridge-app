@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AppSettings,
   AuthStatus,
@@ -60,19 +60,31 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [cloudLoginIssue, setCloudLoginIssue] = useState<"SUBSCRIPTION_REQUIRED" | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [activateCloudAfterLogin, setActivateCloudAfterLogin] = useState(false);
-  const [activateLocalAfterLogin, setActivateLocalAfterLogin] = useState(false);
+  const activateLocalAfterLogin = useRef(false);
+  const onboardingTarget = useRef<AppSettings["backendMode"] | null>(null);
+  const [onboardingInProgress, setOnboardingInProgress] = useState(false);
   const [restartDismissed, setRestartDismissed] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<AIProviderId | null>(null);
   const [copilotPreflightOpen, setCopilotPreflightOpen] = useState(false);
   const [customApiOpen, setCustomApiOpen] = useState(false);
   const [customApiLabel, setCustomApiLabel] = useState("我的 DeepSeek");
   const [customApiKey, setCustomApiKey] = useState("");
+  const onLocalLoginSuccess = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    if (settings.theme === "system") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.dataset.theme = settings.theme;
+    }
+  }, [settings.theme]);
 
   const refreshApp = async () => {
     try {
@@ -115,12 +127,7 @@ export function App() {
       setAuth(next);
       if (next.state === "success") {
         window.setTimeout(() => setLoginOpen(false), 800);
-        if (activateLocalAfterLogin) {
-          setActivateLocalAfterLogin(false);
-          void switchService("LOCAL");
-        } else {
-          void refreshApp();
-        }
+        onLocalLoginSuccess.current();
       }
     });
     const removeBridge = window.copilotBridge.onBridgeStatus((next) => {
@@ -179,19 +186,53 @@ export function App() {
     }
   };
 
-  const switchService = async (target: AppSettings["backendMode"]) => {
-    if (
-      target === settings.backendMode
-      && bridge?.state === "ready"
-      && !(target === "REMOTE" && settings.providerConnectionId)
-    ) {
-      setServicesOpen(false);
-      return;
+  const finishOnboarding = async (
+    target: AppSettings["backendMode"],
+    currentSettings: AppSettings,
+  ) => {
+    if (onboardingTarget.current !== target) return;
+    try {
+      const persisted = await window.copilotBridge.updateSettings({
+        ...currentSettings,
+        onboardingCompleted: true,
+      });
+      setSettings(persisted);
+      onboardingTarget.current = null;
+      setOnboardingInProgress(false);
+    } catch (error) {
+      onboardingTarget.current = null;
+      setOnboardingInProgress(false);
+      showError(error, "首次设置未能保存，请重试。");
     }
-    if (target === "REMOTE" && cloud?.authState !== "AUTHENTICATED") {
+  };
+
+  const switchService = async (
+    target: AppSettings["backendMode"],
+    authenticatedCloud?: CloudServiceStatus,
+  ) => {
+    const cloudStatus = authenticatedCloud ?? cloud;
+    if (target === "REMOTE"
+      && cloudStatus?.authState !== "AUTHENTICATED") {
       setActivateCloudAfterLogin(true);
       setServicesOpen(false);
       setCloudOpen(true);
+      return;
+    }
+    if (
+      target === settings.backendMode
+      && bridge?.state === "ready"
+      && (
+        onboardingTarget.current !== target
+        || (
+          models.length > 0
+          && (target === "LOCAL"
+            || (cloudStatus?.serviceStatus === "AVAILABLE" && !cloudStatus.lastError))
+        )
+      )
+      && !(target === "REMOTE" && settings.providerConnectionId)
+    ) {
+      setServicesOpen(false);
+      await finishOnboarding(target, settings);
       return;
     }
     setBusy(true);
@@ -208,6 +249,8 @@ export function App() {
           ? "✓ 已切换到 Copilot Bridge 云服务"
           : "✓ 已切换到我的 GitHub Copilot",
       );
+      await finishOnboarding(target, result.settings);
+      return;
     } catch (error) {
       showError(error, "AI 服务切换失败，已恢复之前的服务。");
       if (target === "LOCAL") {
@@ -221,8 +264,22 @@ export function App() {
         });
         setLoginOpen(true);
       }
+      if (onboardingTarget.current === target) {
+        onboardingTarget.current = null;
+        setOnboardingInProgress(false);
+      }
+      return;
     } finally {
       setBusy(false);
+    }
+  };
+
+  onLocalLoginSuccess.current = () => {
+    if (activateLocalAfterLogin.current) {
+      activateLocalAfterLogin.current = false;
+      void switchService("LOCAL");
+    } else {
+      void refreshApp();
     }
   };
 
@@ -230,16 +287,22 @@ export function App() {
     email: string;
     password: string;
   }) => {
+    setCloudLoginIssue(null);
     setBusy(true);
     setNotice(null);
     try {
       const next = await window.copilotBridge.loginCloud(credentials);
       setCloud(next);
-      if (activateCloudAfterLogin || settings.backendMode !== "REMOTE") {
+      setCloudLoginIssue(null);
+      if (activateCloudAfterLogin || settings.backendMode !== "REMOTE"
+        || onboardingTarget.current === "REMOTE") {
         setActivateCloudAfterLogin(false);
-        await switchService("REMOTE");
+        await switchService("REMOTE", next);
       }
     } catch (error) {
+      if (error instanceof Error && /SUBSCRIPTION_REQUIRED/i.test(error.message)) {
+        setCloudLoginIssue("SUBSCRIPTION_REQUIRED");
+      }
       showError(error, "登录失败，请检查账号信息后重试。");
     } finally {
       setBusy(false);
@@ -255,7 +318,8 @@ export function App() {
     setNotice(null);
     try {
       await window.copilotBridge.registerCloud(request);
-      setNotice("账号创建成功。登录并完成套餐设置后即可使用云服务。");
+      setCloudLoginIssue(null);
+      setNotice("账号创建成功。Cloud 套餐待管理员开通，开通后再登录使用。");
     } catch (error) {
       showError(error, "注册失败，请检查账号和邀请码后重试。");
       throw error;
@@ -271,20 +335,26 @@ export function App() {
       await window.copilotBridge.startCopilotLogin();
     } catch (error) {
       showError(error, "暂时无法开始 GitHub Copilot 登录。");
+      activateLocalAfterLogin.current = false;
+      if (onboardingTarget.current === "LOCAL") {
+        onboardingTarget.current = null;
+        setOnboardingInProgress(false);
+        setLoginOpen(false);
+      }
     }
   };
 
   const completeOnboarding = async (
     target: AppSettings["backendMode"],
   ) => {
-    const next = { ...settings, onboardingCompleted: true };
-    await persistSettings(next);
-    if (target === "REMOTE") {
-      setActivateCloudAfterLogin(true);
-      setCloudOpen(true);
-    } else if (bridge?.state !== "ready") {
+    onboardingTarget.current = target;
+    setOnboardingInProgress(true);
+    if (target === "LOCAL" && bridge?.state !== "ready") {
+      activateLocalAfterLogin.current = true;
       await startLocalLogin();
+      return;
     }
+    await switchService(target);
   };
 
   const switchProfile = async (target: ProfileId) => {
@@ -495,7 +565,7 @@ export function App() {
         </button>
       </footer>
 
-      {loaded && !settings.onboardingCompleted && (
+      {loaded && !settings.onboardingCompleted && !onboardingInProgress && (
         <FirstRunDialog
           busy={busy}
           onChoose={(service) => void completeOnboarding(service)}
@@ -594,7 +664,7 @@ export function App() {
               onClick={() => {
                 setCopilotPreflightOpen(false);
                 setPendingProvider(null);
-                setActivateLocalAfterLogin(true);
+                activateLocalAfterLogin.current = true;
                 void startLocalLogin();
               }}
               type="button"
@@ -674,7 +744,15 @@ export function App() {
       {cloudOpen && (
         <CloudAccountSheet
           busy={busy}
-          onClose={() => setCloudOpen(false)}
+          loginIssue={cloudLoginIssue}
+          onClose={() => {
+            setCloudOpen(false);
+            if (onboardingTarget.current === "REMOTE") {
+              onboardingTarget.current = null;
+              setOnboardingInProgress(false);
+            }
+            setActivateCloudAfterLogin(false);
+          }}
           onLogin={(credentials) => void loginCloud(credentials)}
           onRegister={registerCloud}
           onLogout={() =>
@@ -712,7 +790,14 @@ export function App() {
       )}
 
       {loginOpen && (
-        <Modal onClose={() => setLoginOpen(false)} title="连接 GitHub Copilot">
+        <Modal onClose={() => {
+          setLoginOpen(false);
+          activateLocalAfterLogin.current = false;
+          if (onboardingTarget.current === "LOCAL") {
+            onboardingTarget.current = null;
+            setOnboardingInProgress(false);
+          }
+        }} title="连接 GitHub Copilot">
           <p>{auth.message}</p>
           <ol className="auth-steps">
             <li className={authStepDone(auth.state, 1) ? "done" : ""}>
@@ -764,6 +849,11 @@ export function App() {
               onClick={() => {
                 void window.copilotBridge.cancelCopilotLogin();
                 setLoginOpen(false);
+                activateLocalAfterLogin.current = false;
+                if (onboardingTarget.current === "LOCAL") {
+                  onboardingTarget.current = null;
+                  setOnboardingInProgress(false);
+                }
               }}
               type="button"
             >
@@ -827,23 +917,17 @@ export function App() {
         <Modal onClose={() => setRestartDismissed(true)} title="应用新的环境">
           <p>
             {profile.pendingProfile === "bridge"
-              ? "Copilot 环境已经准备完成。"
-              : "原账号环境已经准备完成。"}
+              ? "Copilot 环境已选择，尚未在当前 Windows 会话生效。"
+              : "原账号环境已选择，尚未在当前 Windows 会话生效。"}
           </p>
-          <p>Windows 需要重新登录一次，才能让 ChatGPT 使用新的环境。</p>
+          <p>请先保存正在编辑的内容并退出 ChatGPT，然后从 Windows 开始菜单的用户头像选择“注销”，重新登录 Windows 后再启动 ChatGPT。不要只关闭本应用；在重新登录前，ChatGPT 仍可能使用原环境。</p>
           <div className="modal-actions">
             <Button
               className="secondary"
               onClick={() => setRestartDismissed(true)}
               type="button"
             >
-              {zhCN.common.later}
-            </Button>
-            <Button
-              onClick={() => void window.copilotBridge.restartSystem()}
-              type="button"
-            >
-              重新启动 Windows
+              我知道了，稍后手动注销
             </Button>
           </div>
         </Modal>
@@ -920,6 +1004,9 @@ function friendlyError(error: unknown, fallback: string): string {
   if (/DEVICE_REVOKED/i.test(error.message)) return zhCN.account.deviceRevokedMessage;
   if (/SUBSCRIPTION_EXPIRED/i.test(error.message)) {
     return zhCN.account.subscriptionExpiredMessage;
+  }
+  if (/SUBSCRIPTION_REQUIRED/i.test(error.message)) {
+    return "Cloud 套餐未开通，需管理员人工开通；请在账户页查看网站入口，开通后重试登录。";
   }
   if (/MONTHLY_QUOTA_EXCEEDED|QUOTA_EXCEEDED/i.test(error.message)) {
     return zhCN.account.quotaExceededMessage;

@@ -1,6 +1,40 @@
 # DEVELOPMENT HANDOFF: Desktop UI/UX V2
 
-Updated: 2026-09-24
+Updated: 2026-09-29
+
+## CURRENT SOURCE SNAPSHOT (UNRELEASED)
+
+The `0.1.0` installer, screenshots, Server commit/hash, response IDs, and
+NSIS hashes recorded below are historical evidence, **not** acceptance of
+the current Desktop source. Website/API changes are deployed, but the
+Desktop changes in this handoff have not been repackaged or published.
+
+- Local GitHub Copilot onboarding does not require a Cloud account. First-run
+  completion waits for authentication, model/service readiness, and saved
+  settings. Profile changes remain visibly pending until a manual Windows
+  sign-out/in; no automatic restart is performed.
+- A newly registered Cloud account without a subscription cannot complete
+  Desktop device login. The UI keeps a retryable "未开通/待管理员开通" explanation
+  and a website account-center entry when configured; TEST mode has no site
+  URL and says to contact an administrator. The website QR is a clearly
+  marked test placeholder: it does not collect payment or auto-activate a
+  subscription.
+- Invite detail copies the code and, for an approved HTTPS site or loopback,
+  the prefilled `/register?ref=` link, with success/failure feedback.
+  Registration is not an immediate reward. Only Server-validated payment
+  eligibility/rules and its ledger can confirm an award; a test placeholder
+  or manual activation alone does not prove paid qualification.
+- Modal/Sheet initialize and trap keyboard focus, expose dialog semantics,
+  preserve applicable Escape behavior, and restore focus to a surviving
+  trigger. Light/dark/system theme selection applies immediately and persists.
+  An authenticated Cloud window refreshes account, subscription, wallet, and
+  usage on return to foreground with deduplication and throttling; local-only
+  users incur no focus-time Cloud refresh.
+- Earlier targeted Desktop regressions **55/55**, build, and typecheck passed.
+  Real Windows session/profile switch, real Cloud account, and a new
+  NSIS-installed package have **not** been rechecked for this source. Docker
+  real Copilot authorization/model access and commercial payment are still
+  gated.
 
 ## PRODUCT UX
 
@@ -47,10 +81,11 @@ The home page now prioritizes:
 4. ChatGPT and provider-switch actions;
 5. low-emphasis health/version/diagnostics.
 
-Bridge environment and AI provider are separate dimensions. With Bridge off,
-the UI states that ChatGPT uses Original account/configuration. With Bridge
-on, ChatGPT uses the selected provider after the required Windows
-sign-out/in or restart.
+Bridge environment and AI provider are separate dimensions. Without a pending
+switch, Bridge off means ChatGPT uses Original account/configuration. After
+selecting either environment the UI shows a pending state until the required
+manual Windows sign-out/in; selecting it is not proof that the current
+ChatGPT process has switched.
 
 ## ACCOUNT STATES
 
@@ -211,7 +246,7 @@ Build:
 PASS
 
 Tests:
-PASS (34/34)
+PASS (34/34, historical run; current targeted source run: 55/55)
 
 Vendored Proxy:
 PASS (409/409)
@@ -230,10 +265,10 @@ Startup/Tray:
 PASS (unchanged validated lifecycle)
 
 NSIS:
-PASS
+PASS (historical package only; current source not packaged)
 
 Installed Smoke:
-PASS
+PASS (historical package only; current source not installed)
 ```
 
 The final NSIS-installed App passed Production Contract `2.2.0` login,
@@ -261,7 +296,7 @@ APP_CONTRACT_CONFLICT:
 NONE
 ```
 
-## RELEASE
+## RELEASE (HISTORICAL SNAPSHOT; NOT CURRENT SOURCE)
 
 ```text
 Git Worktree:
@@ -321,7 +356,8 @@ Installed EXE SHA256:
 75e5a246b948db6bce123a90bb6ff9bb9b538ef7b434ac4f324eb6b9700434d2
 ```
 
-No release tag was created.
+No release tag was created for the historical integration recorded here;
+this line is not a statement about the separately published 0.1.0 installer.
 
 ## REAL CHATGPT DESKTOP
 

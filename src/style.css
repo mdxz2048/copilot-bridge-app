@@ -339,6 +339,16 @@ h2 {
   gap: 8px;
 }
 
+.copy-code.invite-link {
+  display: grid;
+  justify-items: start;
+}
+
+.invite-link code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
 .detail-stats {
   display: grid;
   gap: 2px;
@@ -1214,8 +1224,33 @@ code {
 
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  color: #f5f5f7;
+  background: #1c1c1e;
+  --bg-window: #1c1c1e;
+  --surface-primary: #2c2c2e;
+  --surface-secondary: #242426;
+  --surface-hover: #343437;
+  --text-primary: #f5f5f7;
+  --text-secondary: #aeaeb2;
+  --text-tertiary: #8e8e93;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-control: rgba(255, 255, 255, 0.11);
+}
+
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .modal,
+:root[data-theme="dark"] .sheet {
+  box-shadow: none;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     color: #f5f5f7;
     background: #1c1c1e;
     --bg-window: #1c1c1e;
@@ -1229,9 +1264,9 @@ code {
     --border-control: rgba(255, 255, 255, 0.11);
   }
 
-  .card,
-  .modal,
-  .sheet {
+  :root:not([data-theme]) .card,
+  :root:not([data-theme]) .modal,
+  :root:not([data-theme]) .sheet {
     box-shadow: none;
   }
 }

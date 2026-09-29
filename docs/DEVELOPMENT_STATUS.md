@@ -1,12 +1,42 @@
 # Development Status
 
-Updated: 2026-09-28
+Updated: 2026-09-29
 
 ## Current Phase
 
 Phase 0 - Product Integration Readiness
 
-Status: CONTRACT 2.2 CLIENT READY; REAL PROVIDER PENDING
+Status: CLIENT SOURCE UPDATED; LATEST PACKAGE AND REAL PROVIDER PENDING
+
+Current source status (mock/renderer verification, not a new installed-package
+acceptance):
+
+- Local GitHub Copilot works without Cloud registration. First-run completion
+  waits for authentication, service/model readiness, and persisted settings.
+  Switching ChatGPT environments stays visibly pending until the user saves
+  work, exits ChatGPT, and manually signs out/in to Windows; no automatic
+  restart is offered.
+- Cloud account registration does not activate a subscription. An unentitled
+  Desktop device login reports "未开通/待管理员开通" rather than a password
+  error, keeps retry available, and links to the website account center when
+  a trusted URL exists. TEST mode explains the missing website URL. Website
+  QR codes are test placeholders, collect no payment, and cannot activate an
+  account automatically; an administrator handles test activation.
+- Referral UI can copy the code or a trusted website registration link and
+  reports clipboard failures. Registration alone is not a reward; eligibility
+  and credited points remain Server authoritative.
+- Modal/Sheet focus, Tab containment, Escape behavior, and focus return have
+  renderer regressions. Theme selection takes effect on the renderer and
+  Electron title bar, follows system preference when selected, and persists.
+  A signed-in Cloud session refreshes account/subscription/wallet/usage on
+  window focus with concurrent/frequency limits; signed-out local use does
+  not refresh Cloud on focus.
+- Prior focused client tests **55/55**, `npm run build`, and
+  `npm run typecheck` passed. No real Windows sign-out/profile switch, real
+  Cloud account, or latest NSIS build/install was run for these changes.
+  Website/API updates are deployed, but the Desktop changes here remain
+  unpackaged/unpublished. Docker real Copilot access and commercial
+  payment remain gated.
 
 ## Completed
 
@@ -111,17 +141,18 @@ Status: CONTRACT 2.2 CLIENT READY; REAL PROVIDER PENDING
 
 ## Current Work
 
-Implement and validate application-owned GitHub Copilot device-code OAuth
-against the packaged official runtime. The Electron/React application shell,
-profile backend, restart-required UX, and portable package now exist and pass
-their automated checks.
+Next work is safe installed-package acceptance of the current Desktop source,
+then approved real Windows/Cloud validation. Local device-code login, the
+Electron/React shell, profile backend, and restart-required UX are implemented;
+their earlier portable/installed results below are historical and do not
+validate the latest package.
 
 UI-0 packaged renderer blank is resolved. The root cause was an ESM
 `preload.js` loaded by Electron as a CommonJS preload, which prevented
 `window.copilotBridge` injection and crashed the renderer. The preload now
 builds as `preload.cjs`; a real packaged renderer DOM check and screenshot
-passed. UI-1 and all visual reconstruction remain intentionally unstarted and
-must follow `UI_UX_PRD.md`.
+passed for that earlier build. Subsequent visual/UI stages described below
+were implemented; their latest installed rendering needs revalidation.
 
 UI-1 default Electron menu removal is accepted in a real portable screenshot.
 The native Windows title bar and its minimize/maximize/close controls remain;
@@ -130,10 +161,10 @@ only the `File / Edit / View / Window` application menu was removed.
 UI-2 through UI-4 visual foundations are accepted: the native Windows control
 behavior is retained through `titleBarOverlay`; the main page uses the UI/UX
 token foundation, default Chinese copy, one GitHub Copilot card, one current
-ChatGPT-environment card, and a status bar. Portable renderer checks at 100%,
-125%, and 150% observed no main-page overflow. Real authentication state,
-model enumeration/select controls, settings, and modal workflows remain
-subsequent functional UI stages.
+ChatGPT-environment card, and a status bar. Earlier portable renderer checks
+at 100%, 125%, and 150% observed no main-page overflow. Authentication,
+model selection, settings, and modal workflows have since been implemented
+and covered by mock/renderer tests; this is not a new installed visual check.
 
 UI-5 reusable Button, Select, Toggle, Modal, and Sheet components now exist.
 UI-7/UI-8 are connected to actual packaged Bridge data: the portable app
@@ -147,10 +178,16 @@ real portable E2E flows.
 
 ## Current Blocker
 
+The latest Desktop source still needs a fresh NSIS package/install and safe
+real Windows/Cloud acceptance. Historical installed and Shadow results below
+must not be treated as this iteration's release evidence. The deployed
+website/API do not remove Docker real Copilot or commercial-payment gates.
+
 ## Installer Acceptance
 
-Version 0.1.0 NSIS installer has passed real installation acceptance. It
-installs per-user at `%LOCALAPPDATA%\Programs\Copilot Bridge`, creates desktop
+The previously built Version 0.1.0 NSIS installer passed real installation
+acceptance at the time. It installs per-user at
+`%LOCALAPPDATA%\Programs\Copilot Bridge`, creates desktop
 and Start Menu shortcuts, and starts the installed executable rather than the
 portable `%TEMP%` extraction path. The installed app's Bridge health is `ok`
 and its real model list contains 11 models.
@@ -160,13 +197,15 @@ physical-swap backend remains blocked and must not be used.
 
 ## Next
 
-1. Run the portable application through a real Bridge → Original → Bridge
-   switch/restart workflow and verify profile recovery without manual
-   environment-variable edits.
-2. Run an isolated fresh device-code login acceptance flow without altering
-   the user's existing Copilot credential.
-3. Execute the complete packaged user flow: login, models, switch, Desktop
-   responses/tools, restore Original, then restore Bridge.
+1. Package and inspect the current Desktop source as a fresh NSIS build;
+   do not reuse historical installer hashes or claim the old package includes
+   the recent UI/Cloud fixes.
+2. With explicit approval and a safe isolated environment, verify real
+   Windows sign-out/in, the pending environment state, theme/title bar, and
+   the 720x520 window; do not switch the user's real profile for mock tests.
+3. Validate the complete registered/unsubscribed/administrator-activated
+   Cloud flow and real Provider/payment gates separately; do not infer them
+   from mock or Shadow billing acceptance.
 
 ## Do Not Touch
 
@@ -177,9 +216,10 @@ physical-swap backend remains blocked and must not be used.
 ## Product Continuation Update
 
 The expanded product scope is defined in `PRODUCT_CONTINUATION_PRD.md`.
-Current implementation phase is ChatGPT detection and official-install
-bootstrap. Existing Profile/Responses/Tool Bridge E2E remains valid and must
-not be rewritten.
+At the time of the Phase A evidence below, the implementation phase was
+ChatGPT detection and official-install bootstrap. That is no longer the
+current development phase; historical Profile/Responses/Tool Bridge E2E
+remains valid for the build it tested.
 
 ### Restart Safety Blocker
 

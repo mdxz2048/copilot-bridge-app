@@ -20,13 +20,16 @@ import {
   PendingCloudConfigurationProvider,
   PRODUCTION_ACCOUNT_MANAGEMENT_URL,
   PRODUCTION_CLOUD_BASE_URL,
+  referralRegistrationUrl,
   resolveCloudRuntimeConfiguration,
+  StaticCloudConfigurationProvider,
 } from "../dist-electron/cloud/cloud-config.js";
 import {
   CloudFoundation,
   compareVersions,
 } from "../dist-electron/cloud/cloud-foundation.js";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
+import { createFocusRefresh } from "../dist-electron/cloud/focus-refresh.js";
 import {
   CLOUD_CONTRACT_VERSION,
   ErrorResponseV2Schema,
@@ -199,7 +202,7 @@ test("separates production, development override, and loopback test Cloud config
   );
   assert.equal(
     production.subscriptionManagementUrl,
-    "https://ai.mddxz.top/dashboard/subscription",
+    "https://ai.mddxz.top/dashboard",
   );
 
   const development = resolveCloudRuntimeConfiguration({
@@ -242,6 +245,165 @@ test("separates production, development override, and loopback test Cloud config
     }),
     /loopback/,
   );
+});
+
+test("builds registration links only from trusted Cloud account sites", () => {
+  const production = resolveCloudRuntimeConfiguration({
+    isPackaged: true,
+    environment: {},
+  });
+  assert.equal(
+    referralRegistrationUrl(production, "INVITE +&/"),
+    "https://ai.mddxz.top/register?ref=INVITE%20%2B%26%2F",
+  );
+  const development = resolveCloudRuntimeConfiguration({
+    isPackaged: false,
+    environment: {
+      COPILOT_BRIDGE_CLOUD_BASE_URL: "http://127.0.0.1:3001",
+      COPILOT_BRIDGE_ACCOUNT_MANAGEMENT_URL: "http://localhost:33117/dashboard?next=unsafe",
+    },
+  });
+  assert.equal(
+    referralRegistrationUrl(development, "INVITE123"),
+    "http://localhost:33117/register?ref=INVITE123",
+  );
+  assert.equal(
+    referralRegistrationUrl({
+      ...development,
+      accountManagementUrl: "http://[::1]:33117/dashboard",
+    }, "INVITE123"),
+    "http://[::1]:33117/register?ref=INVITE123",
+  );
+  for (const accountManagementUrl of [
+    "https://ai.mddxz.top.evil.example/dashboard",
+    "https://bad:secret@ai.mddxz.top/dashboard",
+    "https://evil.example/dashboard",
+    "http://localhost.evil.example/dashboard",
+    "http://ai.mddxz.top/dashboard",
+    "javascript:alert(1)",
+    "not a URL",
+  ]) {
+    assert.equal(
+      referralRegistrationUrl({ ...production, accountManagementUrl }, "INVITE123"),
+      null,
+      accountManagementUrl,
+    );
+  }
+  assert.equal(
+    referralRegistrationUrl({
+      ...production,
+      accountManagementUrl: "http://localhost:33117/dashboard",
+    }, "INVITE123"),
+    null,
+  );
+  assert.equal(
+    referralRegistrationUrl({
+      ...development,
+      accountManagementUrl: "http://127.0.0.1:33117/dashboard",
+    }, "INVITE123"),
+    "http://127.0.0.1:33117/register?ref=INVITE123",
+  );
+  assert.equal(
+    referralRegistrationUrl({
+      ...development,
+      accountManagementUrl: "https://other.example/dashboard",
+    }, "INVITE123"),
+    null,
+  );
+  assert.equal(
+    referralRegistrationUrl({
+      ...development,
+      contractStatus: "PENDING",
+    }, "INVITE123"),
+    null,
+  );
+  assert.equal(referralRegistrationUrl(production, "\ud800"), null);
+  const testConfiguration = resolveCloudRuntimeConfiguration({
+    isPackaged: false,
+    environment: {
+      COPILOT_BRIDGE_CLOUD_MODE: "TEST",
+      COPILOT_BRIDGE_CLOUD_BASE_URL: "http://localhost:3001",
+    },
+  });
+  assert.equal(referralRegistrationUrl(testConfiguration, "INVITE123"), null);
+});
+
+test("exposes a trusted registration URL only while the Cloud account is authenticated", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-referral-link-"));
+  try {
+    const foundation = new CloudFoundation(
+      configuredAccountClient(productMe()),
+      new StaticCloudConfigurationProvider(resolveCloudRuntimeConfiguration({
+        isPackaged: true,
+        environment: {},
+      })),
+      new DeviceIdentityStore(join(directory, "device.json"), "0.1.0"),
+      "0.1.0",
+    );
+    assert.equal(
+      (await foundation.refresh()).referralRegistrationUrl,
+      "https://ai.mddxz.top/register?ref=TESTCODE",
+    );
+    assert.equal((await foundation.logout()).referralRegistrationUrl, null);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("refreshes Cloud on focus only with a session, without concurrent or frequent requests", async () => {
+  let time = 0;
+  let authenticated = false;
+  let completeRefresh;
+  let calls = 0;
+  const refreshOnFocus = createFocusRefresh(
+    () => authenticated,
+    () => {
+      calls += 1;
+      return new Promise((resolve) => {
+        completeRefresh = resolve;
+      });
+    },
+    30_000,
+    () => time,
+  );
+  assert.equal(refreshOnFocus(), null);
+  authenticated = true;
+  const first = refreshOnFocus();
+  assert.ok(first);
+  assert.equal(refreshOnFocus(), null);
+  assert.equal(calls, 1);
+  completeRefresh();
+  await first;
+  time = 29_999;
+  assert.equal(refreshOnFocus(), null);
+  time = 30_000;
+  const second = refreshOnFocus();
+  assert.ok(second);
+  completeRefresh();
+  await second;
+  assert.equal(calls, 2);
+  authenticated = false;
+  time = 60_000;
+  assert.equal(refreshOnFocus(), null);
+});
+
+test("allows a later focus refresh after an earlier failure", async () => {
+  let time = 0;
+  let calls = 0;
+  const refreshOnFocus = createFocusRefresh(
+    () => true,
+    async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("offline");
+    },
+    30_000,
+    () => time,
+  );
+  await assert.rejects(refreshOnFocus(), /offline/);
+  assert.equal(refreshOnFocus(), null);
+  time = 30_000;
+  await refreshOnFocus();
+  assert.equal(calls, 2);
 });
 
 test("compares Server minimum and release versions", () => {

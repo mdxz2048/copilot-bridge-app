@@ -6,6 +6,7 @@ import type {
   CloudConfiguration,
   CloudConfigurationProvider,
 } from "./cloud-config.js";
+import { referralRegistrationUrl } from "./cloud-config.js";
 import { CLOUD_CONTRACT_VERSION } from "./contract.js";
 import type {
   ClientConfig,
@@ -63,6 +64,7 @@ export interface CloudServiceStatus {
   usageV2: UsageSummaryV2 | null;
   usageHistory: UsageHistoryRecord[];
   referral: ReferralSummaryV2 | null;
+  referralRegistrationUrl: string | null;
   referralHistory: ReferralRecordV2[];
   providers: Array<ProviderV2 & {
     models: Array<{
@@ -521,6 +523,9 @@ export class CloudFoundation {
       usageV2: this.usageV2,
       usageHistory: this.usageHistory,
       referral: this.referral,
+      referralRegistrationUrl: this.auth.state === "AUTHENTICATED" && this.referral
+        ? referralRegistrationUrl(configuration, this.referral.code)
+        : null,
       referralHistory: this.referralHistory,
       providers: this.providers,
       providerConnections: this.providerConnections,

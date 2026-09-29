@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.renderer.json && tsc -p tsconfig.electron.json",
-    "test": "npm run build && node --test test/profile-store.test.mjs test/cloud-foundation.test.mjs test/service-switcher.test.mjs test/repository.test.mjs test/remote-bridge-server.test.mjs",
+    "test": "npm run build && node --test test/profile-store.test.mjs test/cloud-foundation.test.mjs test/service-switcher.test.mjs test/repository.test.mjs test/remote-bridge-server.test.mjs test/renderer-flows.test.mjs",
     "test:proxy": "npm --prefix vendor/copilot-sdk-proxy test",
     "test:cloud-e2e": "npm run build && node scripts/cloud-e2e-harness.mjs",
     "test:cloud-v2-production": "npm run build && node scripts/cloud-v2-production-probe.mjs",
@@ -32,6 +32,8 @@
     "concurrently": "^10.0.5",
     "electron": "^44.4.3",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
     "wait-on": "^9.1.0"

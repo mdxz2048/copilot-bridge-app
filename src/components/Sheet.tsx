@@ -1,21 +1,15 @@
-import { useEffect, type PropsWithChildren } from "react";
+import type { PropsWithChildren } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 
 export function Sheet({
   children,
   onClose,
   title,
 }: PropsWithChildren<{ onClose?: () => void; title: string }>) {
-  useEffect(() => {
-    if (!onClose) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  const dialog = useDialogFocus<HTMLElement>(onClose);
 
   return (
-    <aside aria-label={title} className="sheet">
+    <aside aria-label={title} aria-modal="true" className="sheet" ref={dialog} role="dialog" tabIndex={-1}>
       <h2>{title}</h2>
       {children}
     </aside>

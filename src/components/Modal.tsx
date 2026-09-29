@@ -1,22 +1,16 @@
-import { useEffect, type PropsWithChildren } from "react";
+import type { PropsWithChildren } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 
 export function Modal({
   children,
   onClose,
   title,
 }: PropsWithChildren<{ onClose?: () => void; title: string }>) {
-  useEffect(() => {
-    if (!onClose) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  const dialog = useDialogFocus<HTMLElement>(onClose);
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section aria-label={title} aria-modal="true" className="modal" role="dialog">
+      <section aria-label={title} aria-modal="true" className="modal" ref={dialog} role="dialog" tabIndex={-1}>
         <h2>{title}</h2>
         {children}
       </section>

@@ -9,6 +9,7 @@ import { Sheet } from "./Sheet";
 
 interface CloudAccountSheetProps {
   busy: boolean;
+  loginIssue: "SUBSCRIPTION_REQUIRED" | null;
   status: CloudServiceStatus | null;
   onClose: () => void;
   onLogin: (credentials: { email: string; password: string }) => void;
@@ -27,6 +28,7 @@ interface CloudAccountSheetProps {
 
 export function CloudAccountSheet({
   busy,
+  loginIssue,
   status,
   onClose,
   onLogin,
@@ -49,6 +51,9 @@ export function CloudAccountSheet({
     "account" | "devices" | "referral" | "usage"
   >("account");
   const state = accountState(status);
+  const subscriptionRequired = !authenticated
+    && (loginIssue === "SUBSCRIPTION_REQUIRED"
+      || status?.authState === "SUBSCRIPTION_REQUIRED");
   const normalizedUsage = Math.max(
     0,
     Math.min(100, status?.usagePercent ?? 0),
@@ -78,6 +83,7 @@ export function CloudAccountSheet({
               history={status?.referralHistory ?? []}
               onBack={() => setView("account")}
               referral={status?.referral ?? null}
+              registrationUrl={status?.referralRegistrationUrl ?? null}
             />
           )
           : view === "usage"
@@ -90,15 +96,26 @@ export function CloudAccountSheet({
             )
         : (
           <>
-            <div className={`account-state state-panel-${state.tone}`}>
-              <strong>
-                <span aria-hidden="true">{state.symbol}</span>
-                {state.title}
-              </strong>
-              <p>{state.message}</p>
-            </div>
+            {subscriptionRequired ? (
+              <div className="account-state state-panel-warning" role="status">
+                <strong>Cloud 套餐未开通</strong>
+                <p>注册不会自动开通套餐。网站二维码仅为测试占位，不收款、不会自动开通；请联系管理员人工开通，开通后返回此处重试登录。</p>
+                {status?.accountManagementAvailable
+                  ? <Button className="secondary compact" onClick={onManageAccount} type="button">打开网站账户中心查看开通说明</Button>
+                  : <p>当前环境未配置网站入口，请联系管理员开通后重试。</p>}
+              </div>
+            ) : (
+              <div className={`account-state state-panel-${state.tone}`}>
+                <strong>
+                  <span aria-hidden="true">{state.symbol}</span>
+                  {state.title}
+                </strong>
+                <p>{state.message}</p>
+              </div>
+            )}
 
-            {!authenticated && status?.authState === "SIGNED_OUT" && (
+            {!authenticated && (status?.authState === "SIGNED_OUT"
+              || status?.authState === "SUBSCRIPTION_REQUIRED") && (
         <div className="cloud-login-fields">
           <div className="cloud-auth-mode">
             <Button
@@ -117,7 +134,7 @@ export function CloudAccountSheet({
             </Button>
           </div>
           {registrationComplete && (
-            <p className="form-success">注册成功，请登录并完成套餐设置。</p>
+            <p className="form-success">注册成功，Cloud 套餐待管理员开通；开通后请登录。</p>
           )}
           <label>
             <span>{copy.email}</span>
@@ -147,6 +164,7 @@ export function CloudAccountSheet({
                 onChange={(event) => setReferralCode(event.target.value)}
                 value={referralCode}
               />
+              <small>注册仅记录邀请，不即时发放奖励；测试开通不等于真实付费资格。</small>
             </label>
           )}
           <Button
@@ -369,11 +387,33 @@ function ReferralDetail({
   history,
   onBack,
   referral,
+  registrationUrl,
 }: {
   history: CloudServiceStatus["referralHistory"];
   onBack: () => void;
   referral: CloudServiceStatus["referral"];
+  registrationUrl: string | null;
 }) {
+  const [copyFeedback, setCopyFeedback] = useState<{
+    message: string;
+    error: boolean;
+  } | null>(null);
+
+  const copy = async (value: string, kind: "邀请码" | "邀请链接") => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(value);
+      setCopyFeedback({ message: `${kind}已复制，可以分享给朋友。`, error: false });
+    } catch {
+      setCopyFeedback({
+        message: `${kind}复制失败，请手动选中上方${kind}复制。`,
+        error: true,
+      });
+    }
+  };
+
   return (
     <div className="detail-view">
       <Button className="secondary compact" onClick={onBack} type="button">
@@ -386,12 +426,30 @@ function ReferralDetail({
             <code>{referral.code}</code>
             <Button
               className="secondary compact"
-              onClick={() => void navigator.clipboard.writeText(referral.code)}
+              onClick={() => void copy(referral.code, "邀请码")}
               type="button"
             >
               复制邀请码
             </Button>
           </div>
+          {registrationUrl ? (
+            <div className="copy-code invite-link">
+              <code>{registrationUrl}</code>
+              <Button
+                className="secondary compact"
+                onClick={() => void copy(registrationUrl, "邀请链接")}
+                type="button"
+              >
+                复制邀请链接
+              </Button>
+            </div>
+          ) : (
+            <p>当前环境未配置可信的网站邀请链接，可复制邀请码分享。</p>
+          )}
+          {copyFeedback && (
+            <p role={copyFeedback.error ? "alert" : "status"}>{copyFeedback.message}</p>
+          )}
+          <p>注册仅记录邀请，不即时发奖。需受邀人的真实付费订单满足活动门槛及风控条件后，才可能获得奖励；测试占位二维码和单纯的人工开通不代表已付款。是否入账以服务端邀请记录和点数流水为准。</p>
           <div className="detail-stats">
             <CloudValue label="已邀请" value={String(referral.registered)} />
             <CloudValue label="有效邀请" value={String(referral.rewarded)} />
@@ -500,7 +558,7 @@ function AccountActions({
 
   const subscriptionAction = state === "SUBSCRIPTION_EXPIRED"
     ? copy.renew
-    : state === "QUOTA_EXCEEDED" || state === "SUBSCRIPTION_REQUIRED"
+    : state === "QUOTA_EXCEEDED"
       ? copy.upgrade
       : copy.manageSubscription;
   const accountAction = state === "DEVICE_REVOKED"
@@ -509,7 +567,6 @@ function AccountActions({
   return (
     <div className="cloud-actions">
       {(state === "SUBSCRIPTION_EXPIRED"
-        || state === "SUBSCRIPTION_REQUIRED"
         || state === "QUOTA_EXCEEDED"
         || state === "AUTHENTICATED") && (
         <Button

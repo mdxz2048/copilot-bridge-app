@@ -2,7 +2,7 @@ export const PRODUCTION_CLOUD_BASE_URL = "https://ai.mddxz.top";
 export const PRODUCTION_ACCOUNT_MANAGEMENT_URL =
   "https://ai.mddxz.top/dashboard";
 export const PRODUCTION_SUBSCRIPTION_MANAGEMENT_URL =
-  "https://ai.mddxz.top/dashboard/subscription";
+  "https://ai.mddxz.top/dashboard";
 
 export type CloudRuntimeMode = "PRODUCTION" | "DEVELOPMENT" | "TEST";
 
@@ -75,6 +75,39 @@ export function resolveCloudRuntimeConfiguration(
   };
 }
 
+export function referralRegistrationUrl(
+  configuration: CloudConfiguration,
+  code: string,
+): string | null {
+  const siteUrl = configuration.accountManagementUrl;
+  if (
+    configuration.contractStatus !== "READY"
+    || !siteUrl
+    || !URL.canParse(siteUrl)
+    || !code
+  ) {
+    return null;
+  }
+  const site = new URL(siteUrl);
+  const productionSite = site.origin === PRODUCTION_CLOUD_BASE_URL
+    && site.protocol === "https:";
+  const loopbackSite = configuration.runtimeMode !== "PRODUCTION"
+    && (site.protocol === "http:" || site.protocol === "https:")
+    && isLoopbackUrl(siteUrl);
+  if ((!productionSite && !loopbackSite) || site.username || site.password) {
+    return null;
+  }
+
+  const registration = new URL("/register", site);
+  try {
+    registration.search = `?ref=${encodeURIComponent(code)}`;
+  } catch (error) {
+    if (error instanceof URIError) return null;
+    throw error;
+  }
+  return registration.toString();
+}
+
 export class StaticCloudConfigurationProvider
   implements CloudConfigurationProvider
 {
@@ -124,5 +157,5 @@ function normalizeUrl(value: string): string {
 
 function isLoopbackUrl(value: string): boolean {
   const hostname = new URL(value).hostname;
-  return hostname === "127.0.0.1" || hostname === "::1" || hostname === "localhost";
+  return hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "localhost";
 }

@@ -61,6 +61,7 @@ export function CurrentServiceCard({
     && cloud.serviceStatus === "AVAILABLE"
     && !cloud.lastError;
   const bridgeReady = bridge?.state === "ready";
+  const profilePending = profile?.restartRequired === true;
   const serviceReady = isCloud ? cloudReady && bridgeReady : bridgeReady;
   const state = isCloud ? cloudStatePresentation(cloud) : localStatePresentation(bridge);
   const selectedModel = settings.backendModel ?? models[0]?.id ?? "";
@@ -77,23 +78,27 @@ export function CurrentServiceCard({
         <div className="card current-service-card bridge-disabled-card">
           <div className="service-card-header">
             <p className="service-name">ChatGPT 原账号</p>
-            <span className="service-state state-success">
+            <span className={`service-state state-${profilePending ? "neutral" : "success"}`}>
               <span aria-hidden="true">●</span>
-              当前使用
+              {profilePending ? "待生效" : "当前使用"}
             </span>
           </div>
           <p className="bridge-disabled-message">
-            Copilot Bridge 未启用，ChatGPT 保持原来的账号、会话和配置。
+            {profilePending
+              ? "原账号环境已选择，待手动注销并重新登录 Windows 后生效；当前 ChatGPT 可能仍使用旧环境。"
+              : "Copilot Bridge 未启用，ChatGPT 保持原来的账号、会话和配置。"}
           </p>
           <div className="service-actions">
             <Button
-              disabled={busy || chatGpt.state !== "INSTALLED"}
+              disabled={busy || profilePending || chatGpt.state !== "INSTALLED"}
               onClick={onOpenChatGpt}
               type="button"
             >
-              {chatGpt.state === "INSTALLED"
-                ? copy.openChatGpt
-                : copy.installChatGpt}
+              {chatGpt.state !== "INSTALLED"
+                ? copy.installChatGpt
+                : profilePending
+                  ? "待重新登录 Windows"
+                  : copy.openChatGpt}
             </Button>
           </div>
         </div>
@@ -110,12 +115,17 @@ export function CurrentServiceCard({
             {provider.name}
           </p>
           <div className="service-header-state">
-            <span className={`service-state state-${state.tone}`}>
+            <span className={`service-state state-${profilePending ? "neutral" : state.tone}`}>
               <span aria-hidden="true">{state.symbol}</span>
-              {state.title}
+              {profilePending ? "待环境生效" : state.title}
             </span>
           </div>
         </div>
+        {profilePending && (
+          <p className="local-inline-note" role="status">
+            AI 服务即使已连接，ChatGPT 环境仍待手动注销并重新登录 Windows 后生效；请勿将当前会话视为已切换。
+          </p>
+        )}
 
         {serviceReady && selectedModel
           ? (
@@ -192,7 +202,8 @@ export function CurrentServiceCard({
             {copy.switchService}
           </Button>
           <Button
-            disabled={busy || (!serviceReady && chatGpt.state === "INSTALLED")}
+            disabled={busy || (profilePending && chatGpt.state === "INSTALLED")
+              || (!serviceReady && chatGpt.state === "INSTALLED")}
             onClick={
               chatGpt.state !== "INSTALLED"
                 ? onInstallChatGpt
@@ -204,9 +215,11 @@ export function CurrentServiceCard({
           >
             {chatGpt.state !== "INSTALLED"
               ? copy.installChatGpt
-              : profile?.activeProfile === "bridge"
-                ? copy.openChatGpt
-                : copy.enableInChatGpt}
+              : profilePending
+                ? "待重新登录 Windows"
+                : profile?.activeProfile === "bridge"
+                  ? copy.openChatGpt
+                  : copy.enableInChatGpt}
           </Button>
         </div>
       </div>
