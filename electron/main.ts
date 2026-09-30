@@ -14,6 +14,7 @@ import {
   type AuthStatus,
 } from "./copilot-auth.js";
 import {
+  cloudRegistrationUrl,
   resolveCloudRuntimeConfiguration,
   StaticCloudConfigurationProvider,
 } from "./cloud/cloud-config.js";
@@ -455,10 +456,6 @@ app.whenReady().then(async () => {
     (_event, target: AppSettings["backendMode"]) => switchAiService(target),
   );
   ipcMain.handle("cloud:status", () => cloudFoundation.getStatus());
-  ipcMain.handle("cloud:register", (
-    _event,
-    request: { email: string; password: string; referralCode?: string },
-  ) => cloudFoundation.register(request));
   ipcMain.handle("cloud:login", async (
     _event,
     credentials: { email: string; password: string },
@@ -489,6 +486,11 @@ app.whenReady().then(async () => {
       throw new Error("当前环境未配置账号管理页面。");
     }
     await shell.openExternal(configuration.accountManagementUrl);
+  });
+  ipcMain.handle("cloud:open-registration", async () => {
+    const url = cloudRegistrationUrl(await cloudConfiguration.get());
+    if (!url) throw new Error("当前环境未配置可信的网站注册地址。");
+    await shell.openExternal(url);
   });
   ipcMain.handle("cloud:manage-subscription", async () => {
     const configuration = await cloudConfiguration.get();

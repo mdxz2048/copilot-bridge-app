@@ -309,25 +309,6 @@ export function App() {
     }
   };
 
-  const registerCloud = async (request: {
-    email: string;
-    password: string;
-    referralCode?: string;
-  }) => {
-    setBusy(true);
-    setNotice(null);
-    try {
-      await window.copilotBridge.registerCloud(request);
-      setCloudLoginIssue(null);
-      setNotice("账号创建成功。Cloud 套餐待管理员开通，开通后再登录使用。");
-    } catch (error) {
-      showError(error, "注册失败，请检查账号和邀请码后重试。");
-      throw error;
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const startLocalLogin = async () => {
     setLoginOpen(true);
     setNotice(null);
@@ -754,7 +735,10 @@ export function App() {
             setActivateCloudAfterLogin(false);
           }}
           onLogin={(credentials) => void loginCloud(credentials)}
-          onRegister={registerCloud}
+          onOpenRegistration={() =>
+            void window.copilotBridge.openCloudRegistration().catch((error: unknown) =>
+              showError(error, "无法打开网站注册页面，请联系管理员。")
+            )}
           onLogout={() =>
             void runCloudAction(
               () => window.copilotBridge.logoutCloud(),

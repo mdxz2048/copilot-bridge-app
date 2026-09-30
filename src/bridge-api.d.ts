@@ -286,11 +286,7 @@ declare global {
         target: AppSettings["backendMode"],
       ): Promise<ServiceSwitchResult>;
       getCloudStatus(): Promise<CloudServiceStatus>;
-      registerCloud(request: {
-        email: string;
-        password: string;
-        referralCode?: string;
-      }): Promise<CloudUser>;
+      openCloudRegistration(): Promise<void>;
       loginCloud(credentials: {
         email: string;
         password: string;

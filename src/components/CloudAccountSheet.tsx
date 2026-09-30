@@ -13,11 +13,7 @@ interface CloudAccountSheetProps {
   status: CloudServiceStatus | null;
   onClose: () => void;
   onLogin: (credentials: { email: string; password: string }) => void;
-  onRegister: (request: {
-    email: string;
-    password: string;
-    referralCode?: string;
-  }) => Promise<void>;
+  onOpenRegistration: () => void;
   onLogout: () => void;
   onManageAccount: () => void;
   onManageSubscription: () => void;
@@ -32,7 +28,7 @@ export function CloudAccountSheet({
   status,
   onClose,
   onLogin,
-  onRegister,
+  onOpenRegistration,
   onLogout,
   onManageAccount,
   onManageSubscription,
@@ -44,9 +40,6 @@ export function CloudAccountSheet({
   const authenticated = status?.authState === "AUTHENTICATED";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [referralCode, setReferralCode] = useState("");
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [registrationComplete, setRegistrationComplete] = useState(false);
   const [view, setView] = useState<
     "account" | "devices" | "referral" | "usage"
   >("account");
@@ -118,24 +111,15 @@ export function CloudAccountSheet({
               || status?.authState === "SUBSCRIPTION_REQUIRED") && (
         <div className="cloud-login-fields">
           <div className="cloud-auth-mode">
-            <Button
-              className={authMode === "login" ? "compact" : "secondary compact"}
-              onClick={() => setAuthMode("login")}
-              type="button"
-            >
-              登录
-            </Button>
-            <Button
-              className={authMode === "register" ? "compact" : "secondary compact"}
-              onClick={() => setAuthMode("register")}
-              type="button"
-            >
-              注册
-            </Button>
+            <strong>登录 Cloud</strong>
+            {status?.accountManagementAvailable && (
+              <Button className="secondary compact" onClick={onOpenRegistration} type="button">
+                去网站注册
+              </Button>
+            )}
           </div>
-          {registrationComplete && (
-            <p className="form-success">注册成功，Cloud 套餐待管理员开通；开通后请登录。</p>
-          )}
+          <p>新账号请先在网站注册，待管理员开通 Cloud 套餐后返回 App 登录。</p>
+          {!status?.accountManagementAvailable && <p>当前环境未配置网站注册地址，请联系管理员。</p>}
           <label>
             <span>{copy.email}</span>
             <input
@@ -148,54 +132,18 @@ export function CloudAccountSheet({
           <label>
             <span>{copy.password}</span>
             <input
-              autoComplete={
-                authMode === "register" ? "new-password" : "current-password"
-              }
+              autoComplete="current-password"
               onChange={(event) => setPassword(event.target.value)}
               type="password"
               value={password}
             />
           </label>
-          {authMode === "register" && (
-            <label>
-              <span>邀请码（选填）</span>
-              <input
-                autoComplete="off"
-                onChange={(event) => setReferralCode(event.target.value)}
-                value={referralCode}
-              />
-              <small>注册仅记录邀请，不即时发放奖励；测试开通不等于真实付费资格。</small>
-            </label>
-          )}
           <Button
-            disabled={
-              busy
-              || !email
-              || !password
-              || (authMode === "register" && password.length < 12)
-            }
-            onClick={() => {
-              if (authMode === "login") {
-                onLogin({ email, password });
-                return;
-              }
-              void onRegister({
-                email,
-                password,
-                ...(referralCode.trim() && {
-                  referralCode: referralCode.trim(),
-                }),
-              }).then(() => {
-                setPassword("");
-                setRegistrationComplete(true);
-                setAuthMode("login");
-              }).catch(() => {
-                // The parent displays the contract error in the app notice.
-              });
-            }}
+            disabled={busy || !email || !password}
+            onClick={() => onLogin({ email: email.trim(), password })}
             type="button"
           >
-            {authMode === "login" ? copy.login : "创建账号"}
+            {copy.login}
           </Button>
         </div>
             )}

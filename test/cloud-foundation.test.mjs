@@ -17,6 +17,7 @@ import {
   cloudErrorPolicy,
 } from "../dist-electron/cloud/cloud-error.js";
 import {
+  cloudRegistrationUrl,
   PendingCloudConfigurationProvider,
   PRODUCTION_ACCOUNT_MANAGEMENT_URL,
   PRODUCTION_CLOUD_BASE_URL,
@@ -258,6 +259,7 @@ test("builds registration links only from trusted Cloud account sites", () => {
     referralRegistrationUrl(production, "INVITE +&/"),
     "https://ai.mddxz.top/register?ref=INVITE%20%2B%26%2F",
   );
+  assert.equal(cloudRegistrationUrl(production), "https://ai.mddxz.top/register");
   const development = resolveCloudRuntimeConfiguration({
     isPackaged: false,
     environment: {
@@ -269,6 +271,7 @@ test("builds registration links only from trusted Cloud account sites", () => {
     referralRegistrationUrl(development, "INVITE123"),
     "http://localhost:33117/register?ref=INVITE123",
   );
+  assert.equal(cloudRegistrationUrl(development), "http://localhost:33117/register");
   assert.equal(
     referralRegistrationUrl({
       ...development,
@@ -290,6 +293,7 @@ test("builds registration links only from trusted Cloud account sites", () => {
       null,
       accountManagementUrl,
     );
+    assert.equal(cloudRegistrationUrl({ ...production, accountManagementUrl }), null, accountManagementUrl);
   }
   assert.equal(
     referralRegistrationUrl({
@@ -328,6 +332,7 @@ test("builds registration links only from trusted Cloud account sites", () => {
     },
   });
   assert.equal(referralRegistrationUrl(testConfiguration, "INVITE123"), null);
+  assert.equal(cloudRegistrationUrl(testConfiguration), null);
 });
 
 test("exposes a trusted registration URL only while the Cloud account is authenticated", async () => {

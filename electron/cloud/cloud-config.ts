@@ -75,16 +75,12 @@ export function resolveCloudRuntimeConfiguration(
   };
 }
 
-export function referralRegistrationUrl(
-  configuration: CloudConfiguration,
-  code: string,
-): string | null {
+function trustedRegistrationUrl(configuration: CloudConfiguration): URL | null {
   const siteUrl = configuration.accountManagementUrl;
   if (
     configuration.contractStatus !== "READY"
     || !siteUrl
     || !URL.canParse(siteUrl)
-    || !code
   ) {
     return null;
   }
@@ -98,7 +94,20 @@ export function referralRegistrationUrl(
     return null;
   }
 
-  const registration = new URL("/register", site);
+  return new URL("/register", site);
+}
+
+export function cloudRegistrationUrl(configuration: CloudConfiguration): string | null {
+  return trustedRegistrationUrl(configuration)?.toString() ?? null;
+}
+
+export function referralRegistrationUrl(
+  configuration: CloudConfiguration,
+  code: string,
+): string | null {
+  if (!code) return null;
+  const registration = trustedRegistrationUrl(configuration);
+  if (!registration) return null;
   try {
     registration.search = `?ref=${encodeURIComponent(code)}`;
   } catch (error) {

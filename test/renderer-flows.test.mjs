@@ -39,6 +39,7 @@ async function mountApp({
   cloudServiceStatus = "AVAILABLE",
   initialBridgeState = "stopped",
   cloudLoginError = null,
+  cloudRegistrationOpenError = null,
   accountManagementAvailable = false,
   referral = null,
   referralRegistrationUrl = null,
@@ -95,6 +96,7 @@ async function mountApp({
   };
   const events = [];
   let nextCloudLoginError = cloudLoginError;
+  let nextRegistrationOpenError = cloudRegistrationOpenError;
   const copiedCodes = [];
   let copyFails = false;
   Object.defineProperty(dom.window.navigator, "clipboard", {
@@ -136,8 +138,9 @@ async function mountApp({
       if (nextCloudLoginError) throw new Error(nextCloudLoginError);
       return { ...cloud, authState: "AUTHENTICATED" };
     },
-    registerCloud: async () => {
-      events.push("registerCloud");
+    openCloudRegistration: async () => {
+      events.push("openCloudRegistration");
+      if (nextRegistrationOpenError) throw new Error(nextRegistrationOpenError);
     },
     manageCloudAccount: async () => {
       events.push("manageCloudAccount");
@@ -226,6 +229,7 @@ async function mountApp({
     get document() { return dom.window.document; },
     get theme() { return dom.window.document.documentElement.dataset.theme ?? null; },
     setCloudLoginError(value) { nextCloudLoginError = value; },
+    setCloudRegistrationOpenError(value) { nextRegistrationOpenError = value; },
     setCopyFailure(value) { copyFails = value; },
     get settings() { return settings; },
     async loginSuccess() {
@@ -421,7 +425,7 @@ test("failed environment switch reports the failure", async () => {
   }
 });
 
-test("registration followed by subscription-required login keeps guidance and website entry visible", async () => {
+test("website registration followed by subscription-required login keeps guidance and website entry visible", async () => {
   const app = await mountApp({
     initialSettings: { onboardingCompleted: true },
     cloudLoginError: "SUBSCRIPTION_REQUIRED",
@@ -429,12 +433,9 @@ test("registration followed by subscription-required login keeps guidance and we
   });
   try {
     await app.clickSelector(".account-status-bar");
-    await app.click("注册");
+    await app.click("去网站注册");
+    assert.deepEqual(app.events, ["openCloudRegistration"]);
     await app.input("email", "new@example.com");
-    await app.input("password", "TwelveChars!");
-    await app.click("创建账号");
-    assert.match(app.text, /Cloud 套餐待管理员开通/);
-    assert.deepEqual(app.events, ["registerCloud"]);
     await app.input("password", "TwelveChars!");
     await app.click("登录", true);
     assert.match(app.text, /Cloud 套餐未开通/);
@@ -446,15 +447,47 @@ test("registration followed by subscription-required login keeps guidance and we
     assert.match(app.text, /Cloud 套餐未开通/);
     await app.input("email", "new@example.com");
     await app.input("password", "TwelveChars!");
-    assert.deepEqual(app.events, ["registerCloud", "loginCloud", "manageCloudAccount"]);
+    assert.deepEqual(app.events, ["openCloudRegistration", "loginCloud", "manageCloudAccount"]);
     app.setCloudLoginError(null);
     await app.clickSelector(".cloud-login-fields > button");
     assert.doesNotMatch(app.text, /网站二维码仅为测试占位/);
     assert.equal(app.settings.backendMode, "REMOTE");
     assert.deepEqual(app.events, [
-      "registerCloud", "loginCloud", "manageCloudAccount",
+      "openCloudRegistration", "loginCloud", "manageCloudAccount",
       "loginCloud", "switch:REMOTE",
     ]);
+  } finally {
+    await app.dispose();
+  }
+});
+
+test("website registration failure is visible and remains retryable", async () => {
+  const app = await mountApp({
+    initialSettings: { onboardingCompleted: true },
+    accountManagementAvailable: true,
+    cloudRegistrationOpenError: "No trusted registration URL",
+  });
+  try {
+    await app.clickSelector(".account-status-bar");
+    await app.click("去网站注册");
+    assert.match(app.text, /无法打开网站注册页面，请联系管理员/);
+    app.setCloudRegistrationOpenError(null);
+    await app.click("去网站注册");
+    assert.deepEqual(app.events, ["openCloudRegistration", "openCloudRegistration"]);
+  } finally {
+    await app.dispose();
+  }
+});
+
+test("TEST Cloud with no trusted site explains why registration cannot open", async () => {
+  const app = await mountApp({
+    initialSettings: { onboardingCompleted: true },
+  });
+  try {
+    await app.clickSelector(".account-status-bar");
+    assert.match(app.text, /当前环境未配置网站注册地址，请联系管理员/);
+    assert.doesNotMatch(app.text, /去网站注册/);
+    assert.deepEqual(app.events, []);
   } finally {
     await app.dispose();
   }

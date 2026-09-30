@@ -4,11 +4,7 @@ import type { BridgeModel, BridgeStatus } from "./bridge-manager.js";
 import type { AppSettings } from "./settings-store.js";
 import type { ChatGptStatus } from "./chatgpt-manager.js";
 import type { CloudServiceStatus } from "./cloud/cloud-foundation.js";
-import type {
-  RegisterRequestV2,
-  UsageSettlementV2,
-  User,
-} from "./cloud/contract.js";
+import type { UsageSettlementV2 } from "./cloud/contract.js";
 
 interface Diagnostics {
   appVersion: string;
@@ -51,8 +47,8 @@ contextBridge.exposeInMainWorld("copilotBridge", {
   }> => ipcRenderer.invoke("service:switch", target),
   getCloudStatus: (): Promise<CloudServiceStatus> =>
     ipcRenderer.invoke("cloud:status"),
-  registerCloud: (request: RegisterRequestV2): Promise<User> =>
-    ipcRenderer.invoke("cloud:register", request),
+  openCloudRegistration: (): Promise<void> =>
+    ipcRenderer.invoke("cloud:open-registration"),
   loginCloud: (
     credentials: { email: string; password: string },
   ): Promise<CloudServiceStatus> =>
