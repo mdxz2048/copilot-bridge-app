@@ -50,6 +50,16 @@ export function cloudCredentialTarget(
   return `CopilotBridge.Cloud.RefreshToken.${host}.${profile}`;
 }
 
+export function cloudDeviceKeyTarget(
+  baseUrl: string,
+  userDataPath: string,
+): string {
+  return cloudCredentialTarget(baseUrl, userDataPath).replace(
+    "CopilotBridge.Cloud.RefreshToken.",
+    "CopilotBridge.Cloud.DeviceKey.",
+  );
+}
+
 export interface RotatedTokens {
   accessToken: string;
   refreshToken: string;

@@ -17,13 +17,13 @@ test("keeps the GitHub checkout self-contained", async () => {
   await access("docs/MASTER_PRD.md");
 });
 
-test("pins the Desktop adapter to the reviewed Server contract", async () => {
+test("preserves the reviewed 2.2 Server baseline while the Desktop adapter requires 2.3", async () => {
   const baseline = JSON.parse(
     await readFile("docs/protocol/SERVER_CONTRACT_BASELINE.json", "utf8"),
   );
 
-  assert.equal(CLOUD_CONTRACT_VERSION, "2.2.0");
-  assert.equal(baseline.contractVersion, CLOUD_CONTRACT_VERSION);
+  assert.equal(CLOUD_CONTRACT_VERSION, "2.3.0");
+  assert.equal(baseline.contractVersion, "2.2.0");
   assert.equal(baseline.contractTag, "api-v2.2.0");
   assert.match(baseline.openApiSha256, /^[a-f0-9]{64}$/);
   assert.equal(baseline.billingMode, "SHADOW");

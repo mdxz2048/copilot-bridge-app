@@ -29,6 +29,7 @@ import {
   compareVersions,
 } from "../dist-electron/cloud/cloud-foundation.js";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
+import { DeviceKeyStore } from "../dist-electron/cloud/device-proof.js";
 import { createFocusRefresh } from "../dist-electron/cloud/focus-refresh.js";
 import {
   CLOUD_CONTRACT_VERSION,
@@ -71,8 +72,8 @@ test("defines every required Cloud auth state and enforces transitions", () => {
   );
 });
 
-test("parses Contract 2.2.0 Shadow usage without treating rated points as charged", () => {
-  assert.equal(CLOUD_CONTRACT_VERSION, "2.2.0");
+test("parses Contract 2.3.0 Shadow usage without treating rated points as charged", () => {
+  assert.equal(CLOUD_CONTRACT_VERSION, "2.3.0");
   const response = ResponseSchema.parse({
     id: "resp_0123456789abcdef0123456789abcdef",
     object: "response",
@@ -127,7 +128,7 @@ test("parses Contract 2.2.0 Shadow usage without treating rated points as charge
   );
 });
 
-test("parses Contract 2.2.0 Copilot provider errors", () => {
+test("parses Contract 2.3.0 Copilot provider errors", () => {
   for (const code of ["COPILOT_AUTH_EXPIRED", "COPILOT_USAGE_UNAVAILABLE"]) {
     assert.equal(
       ErrorResponseV2Schema.parse({
@@ -143,7 +144,7 @@ test("parses Contract 2.2.0 Copilot provider errors", () => {
   }
 });
 
-test("sends optional referralCode in the Contract 2.2.0 registration request", async () => {
+test("sends optional referralCode in the Contract 2.3.0 registration request", async () => {
   const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-register-"));
   try {
     let requestBody = null;
@@ -156,6 +157,7 @@ test("sends optional referralCode in the Contract 2.2.0 registration request", a
         join(directory, "device.json"),
         "0.1.0",
       ),
+      deviceKeys: new DeviceKeyStore(new MemoryCredentialManager(), "test-device-key"),
       fetch: async (input, init) => {
         assert.equal(
           String(input),

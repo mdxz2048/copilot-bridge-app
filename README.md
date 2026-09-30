@@ -24,8 +24,11 @@ portable EXE。
 
 > 安装器作为 GitHub Release asset 发布，不提交到 Git 仓库。
 >
-> 上述链接是已发布的 0.1.0 安装器；下列"开发中"改动尚未生成并发布最新
-> NSIS 包，不应将旧安装器视为本轮功能验收结果。
+> 上述链接是旧的 0.1.0 安装器，不支持线上已启用的 V2.3 设备证明，
+> **不能再用于 Cloud**。内部测试版 0.2.0 NSIS 已在隔离目录构建，
+> SHA-256 为 `f470859995fda95f45dd2a43dab66110ab5f79c76cc08c0e8fe04e39c3cf04e0`，
+> 但未进行 Authenticode 签名、真实安装验收或公开发布；不要将旧链接
+> 视为最新版下载入口。
 
 ## 变更记录
 
@@ -52,12 +55,36 @@ portable EXE。
 - 新增契约化 Cloud 模式：集中式 `CloudClient`、Windows Credential Manager
   TokenStore、稳定随机设备 UUID、Server 模型目录、账号与服务 UI，以及
   localhost Remote Bridge。
+- Cloud 登录向 Server 注册每个安装独有的 P-256 公钥；导出的私钥 PEM 由 Windows
+  Credential Manager 按用户保护（不是不可导出硬件密钥）。后续 Cloud 请求（含刷新与
+  SSE）使用 ES256 DPoP JWT 绑定令牌、请求 URL、方法及原始请求体；密钥库不可用时
+  拒绝发送请求，不影响本地 Copilot 模式。
+- Cloud 适配器登录要求 V2 `2.3.0` 设备凭据响应；不将冻结的 V1
+  登录响应隐式解释为 V2 设备详情。线上已于 2026-09-30 切换到 V2.3，
+  本地 Copilot 模式不受 Cloud 设备证明影响。
 - 早前 Cloud Mock E2E 曾覆盖登录、设备、订阅、用量、JSON/SSE Responses、
   read/edit/shell 本地工具 continuation 和错误状态。Cloud Base URL 通过环境
   配置注入；现有 Local Copilot 与 Tool Bridge 保持可用。本轮没有运行会
   写 Windows PasswordVault 的完整 Cloud E2E harness。
 - 已适配冻结的 Server Contract `2.2.0`，包括 Shadow billing、Wallet、
   Referral、Device、Provider Catalog 及 Copilot 稳定错误码。
+- DPoP 签名客户端已通过本地 loopback Mock 的登录、设备注册、JSON/SSE、
+  工具续接、刷新、令牌复制与重放拒绝测试；真实 Remote Bridge 的累计对话
+  在每设备每分钟 1 次新提问的默认限额下也完成了工具续接，新提问被拒绝。
+  内部测试 NSIS 0.2.0 已在隔离输出目录完成构建，但安装版尚未实测或发布。
+  该测试安装包未进行 Authenticode 签名，
+  设备签名只证明私钥持有，不证明二进制为官方原版。
+- 低限额 Remote Bridge 跨仓集成：由外部启动独立的 account2/device1
+  签名 Mock（每分钟 1 个新请求），设置 `COPILOT_BRIDGE_LOW_CAP_MOCK_URL`
+  （仅 HTTP loopback）、`COPILOT_BRIDGE_LOW_CAP_MOCK_EMAIL`、
+  `COPILOT_BRIDGE_LOW_CAP_MOCK_PASSWORD`，然后运行
+  `npm run test:cloud-bridge-low-cap`。如需固定设备 UUID，另设
+  `COPILOT_BRIDGE_LOW_CAP_MOCK_DEVICE_ID`；可选 `_MODEL` 指定模型。
+  Mock 若提供同一响应中并行两次工具调用的 fixture，可设置
+  `COPILOT_BRIDGE_LOW_CAP_MOCK_PARALLEL_TOOLS=1`（可选
+  `COPILOT_BRIDGE_LOW_CAP_MOCK_PARALLEL_PROMPT`）验证首个工具结果仅本地
+  零用量确认，第二个结果再统一发送到 Cloud。
+  此测试仅使用内存凭据，不调用 Windows PasswordVault。
 - Responses 完成后会自动核对 Settlement 并刷新 Wallet/Usage；断线或缺失
   final frame 时按 Request/Response ID 恢复结算状态。
 - 已接入 Client Config、维护/最低版本状态、Release 检查和 Server Usage

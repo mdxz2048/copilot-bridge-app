@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   AccountSchema,
   ClientConfigSchema,
-  DeviceInfoSchema,
   DeviceListSchema,
   DeviceV2Schema,
   ErrorResponseSchema,
@@ -20,6 +19,7 @@ import {
   ReferralSummaryV2Schema,
   RegisterRequestV2Schema,
   RegisterDeviceResponseSchema,
+  RegisterDeviceRequestV2Schema,
   RegisterV2ResponseSchema,
   ResponseRequestSchema,
   SubscriptionResponseSchema,
@@ -66,6 +66,7 @@ import type {
 } from "./cloud-client.js";
 import { CloudError } from "./cloud-error.js";
 import type { DeviceIdentityStore } from "./device-identity.js";
+import type { DeviceKeyStore } from "./device-proof.js";
 import { withSingleTokenRefreshRetry } from "./retry.js";
 import type { CloudTokenSession } from "./token-store.js";
 
@@ -73,6 +74,7 @@ export interface HttpCloudClientOptions {
   baseUrl: string;
   tokens: CloudTokenSession;
   devices: DeviceIdentityStore;
+  deviceKeys: DeviceKeyStore;
   timeoutMs?: number;
   defaultHeaders?: HeadersInit;
   fetch?: typeof fetch;
@@ -82,14 +84,17 @@ export class HttpCloudClient implements CloudClient {
   private readonly baseUrl: string;
   private readonly tokens: CloudTokenSession;
   private readonly devices: DeviceIdentityStore;
+  private readonly deviceKeys: DeviceKeyStore;
   private readonly timeoutMs: number;
   private readonly defaultHeaders: Headers;
   private readonly fetch: typeof fetch;
+  private refreshInFlight: Promise<void> | null = null;
 
   constructor(options: HttpCloudClientOptions) {
     this.baseUrl = new URL(options.baseUrl).toString().replace(/\/$/, "");
     this.tokens = options.tokens;
     this.devices = options.devices;
+    this.deviceKeys = options.deviceKeys;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.defaultHeaders = new Headers(options.defaultHeaders);
     this.fetch = options.fetch ?? globalThis.fetch;
@@ -108,27 +113,50 @@ export class HttpCloudClient implements CloudClient {
   }
 
   async login(request: LoginRequest): Promise<LoginResponse> {
-    const body = LoginRequestSchema.parse(request);
+    const key = await this.deviceKeys.get();
+    const body = LoginRequestSchema.parse({
+      ...request,
+      device: { ...request.device, publicKeyJwk: key.publicKeyJwk },
+    });
     const response = await this.requestJson(
       "/api/v1/auth/login",
       LoginResponseSchema,
-      { method: "POST", body: JSON.stringify(body) },
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        redirect: "manual",
+      },
     );
     await this.tokens.rotate(response);
     return response;
   }
 
-  async refresh(): Promise<void> {
+  refresh(): Promise<void> {
+    this.refreshInFlight ??= this.performRefresh().finally(() => {
+      this.refreshInFlight = null;
+    });
+    return this.refreshInFlight;
+  }
+
+  private async performRefresh(): Promise<void> {
     const refreshToken = await this.tokens.readRefreshToken();
     if (!refreshToken) {
       throw new CloudError("UNAUTHORIZED", "No Cloud refresh token is stored.");
     }
+    const body = JSON.stringify({ refreshToken });
     const response = await this.requestJson(
       "/api/v1/auth/refresh",
       RefreshResponseSchema,
       {
         method: "POST",
-        body: JSON.stringify({ refreshToken }),
+        body,
+        headers: (await this.deviceKeys.get()).sign(
+          "POST",
+          `${this.baseUrl}/api/v1/auth/refresh`,
+          refreshToken,
+          body,
+        ),
+        redirect: "manual",
       },
     );
     await this.tokens.rotate(response);
@@ -175,12 +203,16 @@ export class HttpCloudClient implements CloudClient {
   }
 
   async registerDevice(request: DeviceInfo): Promise<Device> {
+    const key = await this.deviceKeys.get();
     const response = await this.authenticatedJson(
       "/api/v1/devices/register",
       RegisterDeviceResponseSchema,
       {
         method: "POST",
-        body: JSON.stringify(DeviceInfoSchema.parse(request)),
+        body: JSON.stringify(RegisterDeviceRequestV2Schema.parse({
+          ...request,
+          publicKeyJwk: key.publicKeyJwk,
+        })),
       },
     );
     return response.device;
@@ -465,7 +497,18 @@ export class HttpCloudClient implements CloudClient {
     if (gateway) {
       headers.set("X-Device-ID", (await this.devices.get()).deviceId);
     }
-    const response = await this.rawFetch(path, { ...init, headers });
+    const proof = (await this.deviceKeys.get()).sign(
+      init.method ?? "GET",
+      `${this.baseUrl}${path}`,
+      accessToken,
+      init.body,
+    );
+    proof.forEach((value, name) => headers.set(name, value));
+    const response = await this.rawFetch(path, {
+      ...init,
+      headers,
+      redirect: "manual",
+    });
     if (!response.ok) throw await responseError(response);
     return response;
   }

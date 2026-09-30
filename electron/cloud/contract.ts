@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CLOUD_CONTRACT_VERSION = "2.2.0";
+export const CLOUD_CONTRACT_VERSION = "2.3.0";
 
 export const DeviceInfoSchema = z.object({
   deviceId: z.uuid(),
@@ -25,13 +25,22 @@ export const DeviceSchema = DeviceInfoSchema.extend({
   lastSeenAt: z.iso.datetime().nullable(),
 });
 
+export const RegisterDeviceRequestV2Schema = DeviceInfoSchema.extend({
+  publicKeyJwk: z.object({
+    kty: z.literal("EC"),
+    crv: z.literal("P-256"),
+    x: z.string().min(1),
+    y: z.string().min(1),
+  }),
+});
+
 export const LoginRequestSchema = z.object({
   email: z.email(),
   password: z.string(),
-  device: DeviceInfoSchema,
+  device: RegisterDeviceRequestV2Schema,
 });
 
-const GatewayV1LoginResponseSchema = z.object({
+export const GatewayV1LoginResponseSchema = z.object({
   accessToken: z.string(),
   refreshToken: z.string(),
   expiresIn: z.literal(1800),
@@ -370,10 +379,7 @@ export const DeviceCredentialV2Schema = z.object({
   }),
   device: DeviceV2Schema,
 });
-export const LoginResponseSchema = z.union([
-  DeviceCredentialV2Schema,
-  GatewayV1LoginResponseSchema,
-]);
+export const LoginResponseSchema = GatewayV1LoginResponseSchema;
 export const MeV2Schema = z.object({
   account: AccountSummaryV2Schema,
   subscription: SubscriptionSummaryV2Schema,
@@ -492,7 +498,11 @@ export type DeviceInfo = z.infer<typeof DeviceInfoSchema>;
 export type RegisterRequestV2 = z.infer<typeof RegisterRequestV2Schema>;
 export type User = z.infer<typeof UserSchema>;
 export type Device = z.infer<typeof DeviceSchema>;
-export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+export type LoginRequest = {
+  email: string;
+  password: string;
+  device: DeviceInfo;
+};
 export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 export type RefreshResponse = z.infer<typeof RefreshResponseSchema>;
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;

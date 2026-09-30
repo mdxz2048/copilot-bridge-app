@@ -18,11 +18,13 @@ import {
   StaticCloudConfigurationProvider,
 } from "./cloud/cloud-config.js";
 import { DeviceIdentityStore } from "./cloud/device-identity.js";
+import { DeviceKeyStore } from "./cloud/device-proof.js";
 import { CloudFoundation } from "./cloud/cloud-foundation.js";
 import { createFocusRefresh } from "./cloud/focus-refresh.js";
 import { HttpCloudClient } from "./cloud/http-cloud-client.js";
 import {
   cloudCredentialTarget,
+  cloudDeviceKeyTarget,
   CloudTokenSession,
   WindowsCredentialManagerTokenStore,
 } from "./cloud/token-store.js";
@@ -81,6 +83,10 @@ const cloudClient = new HttpCloudClient({
   baseUrl: cloudBaseUrl,
   tokens: cloudTokens,
   devices: cloudDeviceIdentity,
+  deviceKeys: new DeviceKeyStore(
+    new WindowsPasswordVaultCredentialManager(),
+    cloudDeviceKeyTarget(cloudBaseUrl, app.getPath("userData")),
+  ),
 });
 const cloudFoundation = new CloudFoundation(
   cloudClient,

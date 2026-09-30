@@ -101,7 +101,7 @@ try {
     login.authState === "AUTHENTICATED"
       && (!email || login.account === email),
   );
-  results.contract = pass(login.contractVersion === "2.2.0");
+  results.contract = pass(login.contractVersion === "2.3.0");
   results.account = pass(Boolean(login.account));
   results.device = pass(login.currentDevice.includes("已激活"));
   results.subscription = pass(

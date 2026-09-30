@@ -1,9 +1,12 @@
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
+import { CLOUD_CONTRACT_VERSION } from "../dist-electron/cloud/contract.js";
+import { DeviceKeyStore } from "../dist-electron/cloud/device-proof.js";
 import { HttpCloudClient } from "../dist-electron/cloud/http-cloud-client.js";
 import {
   cloudCredentialTarget,
+  cloudDeviceKeyTarget,
   CloudTokenSession,
   WindowsCredentialManagerTokenStore,
 } from "../dist-electron/cloud/token-store.js";
@@ -28,6 +31,10 @@ const client = new HttpCloudClient({
   baseUrl,
   tokens,
   devices: deviceStore,
+  deviceKeys: new DeviceKeyStore(
+    new WindowsPasswordVaultCredentialManager(),
+    cloudDeviceKeyTarget(baseUrl, userData),
+  ),
   timeoutMs: 30_000,
 });
 
@@ -170,8 +177,8 @@ results.shadow = pass(
 results.walletUnchanged = pass(walletAfter.balance === wallet.balance);
 
 evidence.contract = {
-  apiV2: "2.2.0",
-  generatedOpenApi: "2.2.0",
+  apiV2: CLOUD_CONTRACT_VERSION,
+  generatedOpenApi: CLOUD_CONTRACT_VERSION,
 };
 evidence.account = {
   plan: me.subscription?.planCode ?? null,

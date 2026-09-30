@@ -13,6 +13,7 @@ import {
   authStateForCloudError,
 } from "../dist-electron/cloud/cloud-error.js";
 import { DeviceIdentityStore } from "../dist-electron/cloud/device-identity.js";
+import { DeviceKeyStore } from "../dist-electron/cloud/device-proof.js";
 import { RemoteBridgeServer } from "../dist-electron/cloud/remote-bridge-server.js";
 import {
   CloudTokenSession,
@@ -35,6 +36,7 @@ const fixture = resolve(root, "cloud-tool.txt");
 const editFixture = resolve(root, "cloud-edit.txt");
 const credentialTarget = `CopilotBridge.Cloud.E2E.${randomUUID()}`;
 const credentials = new WindowsPasswordVaultCredentialManager();
+const deviceKeys = new DeviceKeyStore(credentials, `${credentialTarget}.DeviceKey`);
 const tokenStore = new WindowsCredentialManagerTokenStore(
   credentials,
   credentialTarget,
@@ -51,6 +53,7 @@ const client = new HttpCloudClient({
   baseUrl,
   tokens: tokenSession,
   devices: deviceStore,
+  deviceKeys,
   timeoutMs: requestTimeoutMs,
 });
 const bridge = new RemoteBridgeServer(client, 0);
@@ -266,6 +269,7 @@ try {
     baseUrl,
     tokens: tokenSession,
     devices: deviceStore,
+    deviceKeys,
     timeoutMs: 5,
   });
   let timeoutObserved = false;
@@ -335,6 +339,7 @@ try {
     baseUrl: "http://127.0.0.1:1",
     tokens: tokenSession,
     devices: deviceStore,
+    deviceKeys,
     timeoutMs: 100,
   });
   let unreachableCode = null;
@@ -378,6 +383,7 @@ try {
 } finally {
   await bridge.stop();
   await tokenStore.deleteRefreshToken();
+  await credentials.delete(`${credentialTarget}.DeviceKey`);
   await rm(root, { recursive: true, force: true });
 }
 
@@ -467,6 +473,7 @@ async function verifyRevokedDevice() {
     baseUrl,
     tokens: revokedTokens,
     devices: revokedDevices,
+    deviceKeys,
     timeoutMs: requestTimeoutMs,
   });
   try {
@@ -509,6 +516,7 @@ async function verifyControlledError(wireCode, expectedState) {
     baseUrl,
     tokens: tokenSession,
     devices: deviceStore,
+    deviceKeys,
     timeoutMs: requestTimeoutMs,
     defaultHeaders: { "X-Mock-Error-Code": wireCode },
   });

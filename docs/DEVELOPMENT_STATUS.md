@@ -1,12 +1,12 @@
 # Development Status
 
-Updated: 2026-09-29
+Updated: 2026-09-30
 
 ## Current Phase
 
 Phase 0 - Product Integration Readiness
 
-Status: CLIENT SOURCE UPDATED; LATEST PACKAGE AND REAL PROVIDER PENDING
+Status: V2.3 CLIENT TEST INSTALLER BUILT; INSTALLED ACCEPTANCE AND REAL PROVIDER PENDING
 
 Current source status (mock/renderer verification, not a new installed-package
 acceptance):
@@ -31,12 +31,23 @@ acceptance):
   A signed-in Cloud session refreshes account/subscription/wallet/usage on
   window focus with concurrent/frequency limits; signed-out local use does
   not refresh Cloud on focus.
-- Prior focused client tests **55/55**, `npm run build`, and
-  `npm run typecheck` passed. No real Windows sign-out/profile switch, real
-  Cloud account, or latest NSIS build/install was run for these changes.
-  Website/API updates are deployed, but the Desktop changes here remain
-  unpackaged/unpublished. Docker real Copilot access and commercial
-  payment remain gated.
+- V2.3 adds one P-256 installation key per Cloud client (Windows-user
+  PasswordVault protected, not hardware attestation). DPoP signs bearer and
+  refresh requests; the Server rejects a copied token or replay. The
+  server-side Admin policy defaults to 2 new turns/minute/account and 1 new
+  turn/minute/device. Remote Bridge accumulates parallel tool outputs locally
+  before forwarding one complete signed continuation, so a single turn does
+  not consume a second new-turn allowance.
+- Full client tests **72/72**, local signed Cloud-to-Mock login, JSON/SSE,
+  refresh and low-cap Remote Bridge tool continuation passed. The Server V2.3
+  API was deployed for internal testing and a signed test-device JSON/tool
+  request and SHADOW non-debit passed over production TLS. The unsigned 0.2.0
+  NSIS test installer was built with SHA-256
+  `f470859995fda95f45dd2a43dab66110ab5f79c76cc08c0e8fe04e39c3cf04e0`,
+  but remains **uninstalled and unpublished**. The old published 0.1.0
+  installer cannot authenticate to the current Cloud API. No real Windows
+  sign-out/profile switch or real Copilot inference was validated in this
+  round; commercial payment is still gated.
 
 ## Completed
 

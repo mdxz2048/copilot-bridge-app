@@ -1,13 +1,16 @@
 # DEVELOPMENT HANDOFF: Desktop UI/UX V2
 
-Updated: 2026-09-29
+Updated: 2026-09-30
 
 ## CURRENT SOURCE SNAPSHOT (UNRELEASED)
 
-The `0.1.0` installer, screenshots, Server commit/hash, response IDs, and
-NSIS hashes recorded below are historical evidence, **not** acceptance of
-the current Desktop source. Website/API changes are deployed, but the
-Desktop changes in this handoff have not been repackaged or published.
+The published `0.1.0` installer, screenshots, historical Server commit/hash,
+response IDs, and older NSIS hashes below are **not** acceptance of V2.3.
+Website/API now require device DPoP; 0.1.0 Cloud can no longer log in.
+An unsigned 0.2.0 internal-test NSIS was built locally, SHA-256
+`f470859995fda95f45dd2a43dab66110ab5f79c76cc08c0e8fe04e39c3cf04e0`,
+but has not been installed or published. Local signed Mock and production
+test-device requests passed; this is not official binary attestation.
 
 - Local GitHub Copilot onboarding does not require a Cloud account. First-run
   completion waits for authentication, model/service readiness, and saved

@@ -206,6 +206,10 @@ export class RemoteBridgeServer {
   ): Promise<void> {
     const parsed = ResponseRequestSchema.parse(await readJson(incoming));
     const conversation = this.resolveConversation(parsed);
+    if ([...this.calls.values()].some((owner) => owner === conversation)) {
+      sendPendingToolAcknowledgment(outgoing, parsed);
+      return;
+    }
     const request: ResponseRequest = {
       ...parsed,
       input: conversation.input,
@@ -254,10 +258,15 @@ export class RemoteBridgeServer {
         tools: request.tools ?? [],
       };
     }
+    const active = outputs.filter((output) => this.calls.has(output.call_id));
     const conversations = new Set(
-      outputs.map((output) => this.calls.get(output.call_id)),
+      active.map((output) => this.calls.get(output.call_id)),
     );
-    if (conversations.has(undefined) || conversations.size !== 1) {
+    if (
+      active.length === 0
+      || new Set(outputs.map((output) => output.call_id)).size !== outputs.length
+      || conversations.size !== 1
+    ) {
       throw new CloudError(
         "VALIDATION_ERROR",
         "Function call outputs do not belong to one active Cloud conversation.",
@@ -273,6 +282,22 @@ export class RemoteBridgeServer {
       );
     }
     for (const output of outputs) {
+      if (this.calls.has(output.call_id)) continue;
+      const previous = conversation.input.find(
+        (item): item is Extract<InputItem, { type: "function_call_output" }> =>
+          "type" in item
+          && item.type === "function_call_output"
+          && item.call_id === output.call_id,
+      );
+      if (!previous || previous.output !== output.output) {
+        throw new CloudError(
+          "VALIDATION_ERROR",
+          "Previous function call output does not match this Cloud conversation.",
+          { httpStatus: 400 },
+        );
+      }
+    }
+    for (const output of active) {
       this.calls.delete(output.call_id);
       conversation.input.push(InputItemSchema.parse(output));
     }
@@ -389,7 +414,24 @@ export class RemoteBridgeServer {
   ): void {
     for (const item of output) {
       if (item.type !== "function_call") continue;
-      conversation.input.push(item);
+      const owner = this.calls.get(item.call_id);
+      if (owner && owner !== conversation) {
+        throw new CloudError(
+          "INVALID_SERVER_RESPONSE",
+          "Cloud function call ID belongs to another active conversation.",
+          { httpStatus: 502 },
+        );
+      }
+    }
+    for (const item of output) {
+      if (item.type !== "function_call") continue;
+      if (!conversation.input.some(
+        (existing) => "type" in existing
+          && existing.type === "function_call"
+          && existing.call_id === item.call_id,
+      )) {
+        conversation.input.push(item);
+      }
       this.calls.set(item.call_id, conversation);
     }
   }
@@ -447,6 +489,37 @@ function sendJson(
   if (response.headersSent || response.writableEnded) return;
   response.writeHead(status, { "Content-Type": "application/json" });
   response.end(JSON.stringify(payload));
+}
+
+function sendPendingToolAcknowledgment(
+  response: ServerResponse,
+  request: ResponseRequest,
+): void {
+  const result = ResponseSchema.parse({
+    id: `resp_${randomUUID().replaceAll("-", "")}`,
+    object: "response",
+    status: "completed",
+    model: request.model,
+    output: [],
+    usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+  });
+  if (!request.stream) {
+    sendJson(response, 200, result);
+    return;
+  }
+  response.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+  });
+  response.end(
+    `event: response.created\ndata: ${JSON.stringify({
+      type: "response.created",
+      response: { ...result, status: "in_progress" },
+    })}\n\n`
+    + `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: result })}\n\n`
+    + "data: [DONE]\n\n",
+  );
 }
 
 function sendCloudError(response: ServerResponse, error: unknown): void {

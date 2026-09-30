@@ -65,7 +65,7 @@ export type CloudAuthState =
   | "SERVER_UNREACHABLE";
 
 export interface CloudServiceStatus {
-  contractVersion: "2.2.0";
+  contractVersion: "2.3.0";
   authState: CloudAuthState;
   contractReady: boolean;
   account: string | null;
