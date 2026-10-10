@@ -28,6 +28,7 @@ interface CurrentServiceCardProps {
   onInstallChatGpt: () => void;
   onOpenAccount: () => void;
   onOpenChatGpt: () => void;
+  onRestartChatGpt: () => void;
   onOpenRelease: () => void;
   onRetryCloud: () => void;
   onSwitchService: () => void;
@@ -49,6 +50,7 @@ export function CurrentServiceCard({
   onInstallChatGpt,
   onOpenAccount,
   onOpenChatGpt,
+  onRestartChatGpt,
   onOpenRelease,
   onRetryCloud,
   onSwitchService,
@@ -85,19 +87,19 @@ export function CurrentServiceCard({
           </div>
           <p className="bridge-disabled-message">
             {profilePending
-              ? "原账号环境已选择，待手动注销并重新登录 Windows 后生效；当前 ChatGPT 可能仍使用旧环境。"
+              ? "原账号配置已恢复，重新打开 ChatGPT 后生效，无需重启或注销 Windows。"
               : "Copilot Bridge 未启用，ChatGPT 保持原来的账号、会话和配置。"}
           </p>
           <div className="service-actions">
             <Button
-              disabled={busy || profilePending || chatGpt.state !== "INSTALLED"}
-              onClick={onOpenChatGpt}
+              disabled={busy || chatGpt.state === "INSTALLING"}
+              onClick={chatGpt.state !== "INSTALLED" ? onInstallChatGpt : profilePending ? onRestartChatGpt : onOpenChatGpt}
               type="button"
             >
-              {chatGpt.state !== "INSTALLED"
+              {chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
                 ? copy.installChatGpt
                 : profilePending
-                  ? "待重新登录 Windows"
+                  ? "重启 ChatGPT"
                   : copy.openChatGpt}
             </Button>
           </div>
@@ -123,7 +125,7 @@ export function CurrentServiceCard({
         </div>
         {profilePending && (
           <p className="local-inline-note" role="status">
-            AI 服务即使已连接，ChatGPT 环境仍待手动注销并重新登录 Windows 后生效；请勿将当前会话视为已切换。
+            模型配置已保存，重新打开 ChatGPT 后生效，无需重启或注销 Windows。
           </p>
         )}
 
@@ -202,21 +204,22 @@ export function CurrentServiceCard({
             {copy.switchService}
           </Button>
           <Button
-            disabled={busy || (profilePending && chatGpt.state === "INSTALLED")
-              || (!serviceReady && chatGpt.state === "INSTALLED")}
+            disabled={busy || chatGpt.state === "INSTALLING"
+              || (!serviceReady && !profilePending && chatGpt.state === "INSTALLED")}
             onClick={
               chatGpt.state !== "INSTALLED"
                 ? onInstallChatGpt
+                : profilePending ? onRestartChatGpt
                 : profile?.activeProfile === "bridge"
                   ? onOpenChatGpt
                   : onEnableChatGpt
             }
             type="button"
           >
-            {chatGpt.state !== "INSTALLED"
+            {chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
               ? copy.installChatGpt
               : profilePending
-                ? "待重新登录 Windows"
+                ? "重启 ChatGPT"
                 : profile?.activeProfile === "bridge"
                   ? copy.openChatGpt
                   : copy.enableInChatGpt}

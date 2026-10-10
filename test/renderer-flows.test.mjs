@@ -50,6 +50,8 @@ async function mountApp({
   failSave = false,
   failSwitch = false,
   activeProfile = "original",
+  chatGptState = "INSTALLED",
+  failInstallChatGpt = false,
 } = {}) {
   const dom = new JSDOM("<div id='app'></div>", {
     url: "http://localhost/",
@@ -110,6 +112,7 @@ async function mountApp({
     },
   });
   let loginStatus;
+  let chatGptStatusListener;
   let failNextSave = failSave;
   let failNextSwitch = failSwitch;
   dom.window.copilotBridge = {
@@ -120,7 +123,12 @@ async function mountApp({
     }),
     getBridgeStatus: async () => bridge,
     getSettings: async () => settings,
-    getChatGptStatus: async () => ({ state: "INSTALLED", message: "" }),
+    getChatGptStatus: async () => ({ state: chatGptState, message: "" }),
+    installChatGpt: async () => {
+      events.push('installChatGpt');
+      if (failInstallChatGpt) throw new Error('安装程序启动失败');
+    },
+    launchChatGpt: async () => { events.push('launchChatGpt'); },
     getModels: async () => [{ id: "test-model", supportsReasoningEffort: false }],
     getCloudStatus: async () => cloud,
     getAppVersion: async () => "0.1.0",
@@ -135,7 +143,7 @@ async function mountApp({
     },
     onBridgeStatus: () => () => {},
     onProfileStatus: () => () => {},
-    onChatGptStatus: () => () => {},
+    onChatGptStatus: callback => { chatGptStatusListener = callback; return () => {}; },
     onCloudStatus: () => () => {},
     startCopilotLogin: async () => {},
     cancelCopilotLogin: async () => {},
@@ -240,6 +248,10 @@ async function mountApp({
     get settings() { return settings; },
     async loginSuccess() {
       await act(async () => loginStatus({ state: "success", message: "已连接" }));
+    },
+    async chatGptInstalled() {
+      chatGptState = 'INSTALLED';
+      await act(async () => chatGptStatusListener({state: 'INSTALLED', message: '已安装 ChatGPT'}));
     },
     async dispose() {
       await act(async () => root.unmount());
@@ -411,9 +423,53 @@ test("returning to the original provider remains pending until ChatGPT restart",
     assert.match(app.text, /原账号连接待生效/);
     assert.match(app.text, /重新打开 ChatGPT/);
     assert.throws(() => app.button("待重新打开 ChatGPT"), /Expected enabled button/);
+    await app.click('重启 ChatGPT');
+    assert.ok(app.document.querySelector('[role="dialog"]'));
+    assert.doesNotMatch(app.text, /待手动注销|待重新登录 Windows/);
   } finally {
     await app.dispose();
   }
+});
+
+test('install action works with the original account and pending profile on a fresh PC', async () => {
+  for (const activeProfile of ['original', 'bridge']) {
+    const app = await mountApp({ initialSettings: {onboardingCompleted: true}, activeProfile,
+      profileRestartRequired: true, pendingProfile: activeProfile, chatGptState: 'NOT_INSTALLED' });
+    try {
+      assert.equal(app.document.querySelector('[role="dialog"]'), null);
+      await app.click('安装 ChatGPT');
+      assert.deepEqual(app.events, ['installChatGpt']);
+      assert.ok(app.document.querySelector('[role="dialog"]'));
+      assert.doesNotMatch(app.text, /待手动注销|待重新登录 Windows/);
+    } finally { await app.dispose(); }
+  }
+});
+test('install launch errors are visible and installation in progress cannot start twice', async () => {
+  const app = await mountApp({initialSettings: {onboardingCompleted: true}, chatGptState: 'ERROR', failInstallChatGpt: true});
+  try { await app.click('安装 ChatGPT'); assert.match(app.text, /安装程序启动失败/); }
+  finally { await app.dispose(); }
+  const running = await mountApp({initialSettings: {onboardingCompleted: true}, chatGptState: 'INSTALLING'});
+  try { const button = [...running.document.querySelectorAll('button')].find(b => b.textContent === '正在安装 ChatGPT…'); assert.ok(button?.disabled); assert.deepEqual(running.events, []); }
+  finally { await running.dispose(); }
+});
+test('Bridge switch stays disabled until ChatGPT installation is detected', async () => {
+  const app = await mountApp({initialSettings: {onboardingCompleted: true}, chatGptState: 'NOT_INSTALLED'});
+  try {
+    const toggle = app.document.querySelector('button[role="switch"]'); assert.ok(toggle.disabled);
+    await app.clickSelector('button[role="switch"]'); assert.deepEqual(app.events, []);
+    assert.match(app.text, /请先安装 ChatGPT/);
+    await app.chatGptInstalled(); assert.equal(toggle.disabled, false);
+    await app.clickSelector('button[role="switch"]'); assert.ok(app.document.querySelector('[role="dialog"]'));
+  } finally { await app.dispose(); }
+});
+test('first run requires ChatGPT installation before offering AI services', async () => {
+  const app = await mountApp({chatGptState: 'NOT_INSTALLED'});
+  try {
+    assert.match(app.document.querySelector('[role="dialog"]').textContent, /先安装 ChatGPT/);
+    assert.doesNotMatch(app.document.querySelector('[role="dialog"]').textContent, /使用云服务/);
+    await app.chatGptInstalled(); assert.doesNotMatch(app.document.querySelector('[role="dialog"]').textContent, /先安装 ChatGPT/);
+    assert.equal(app.document.querySelector('button[role="switch"]').disabled, false);
+  } finally { await app.dispose(); }
 });
 
 test("failed environment switch reports the failure", async () => {

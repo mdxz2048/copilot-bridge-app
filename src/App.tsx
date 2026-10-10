@@ -11,6 +11,7 @@ import type {
   ProfileStatus,
 } from "./bridge-api";
 import { AppTitleBar } from "./components/AppTitleBar";
+import { UpdateControl } from './components/UpdateControl';
 import { AccountSummaryCard } from "./components/AccountSummaryCard";
 import { BridgeActivationBar } from "./components/BridgeActivationBar";
 import { Button } from "./components/Button";
@@ -367,6 +368,10 @@ export function App() {
   };
 
   const setBridgeEnabled = async (enabled: boolean) => {
+    if (enabled && chatGpt.state !== 'INSTALLED') {
+      setNotice('请先安装 ChatGPT，安装完成后才能开启 Bridge。');
+      return;
+    }
     if (enabled) {
       if (bridge?.state !== "ready") {
         showError(
@@ -446,9 +451,17 @@ export function App() {
     }
   };
 
+  const installChatGpt = () => {
+    setInstallOpen(true);
+    void window.copilotBridge.installChatGpt().catch(error => {
+      setChatGpt({ state: 'ERROR', message: error instanceof Error ? error.message : '无法启动 ChatGPT 安装，请重试。' });
+    });
+  };
+
   return (
     <main>
       <AppTitleBar onSettings={() => setSettingsOpen(true)} />
+      <UpdateControl />
 
       {cloud && cloud.updateState !== "CURRENT" && (
         <div className="product-alert" role="status">
@@ -480,6 +493,7 @@ export function App() {
 
       <BridgeActivationBar
         busy={busy}
+        chatGptInstalled={chatGpt.state === 'INSTALLED'}
         onChange={(enabled) => void setBridgeEnabled(enabled)}
         profile={profile}
       />
@@ -512,12 +526,10 @@ export function App() {
         models={models}
         onConnectLocal={() => void startLocalLogin()}
         onEnableChatGpt={() => setSetupOpen(true)}
-        onInstallChatGpt={() => {
-          setInstallOpen(true);
-          void window.copilotBridge.installChatGpt();
-        }}
+        onInstallChatGpt={installChatGpt}
         onOpenAccount={() => setCloudOpen(true)}
         onOpenChatGpt={() => void window.copilotBridge.launchChatGpt()}
+        onRestartChatGpt={() => { setRestartError(null); setRestartDismissed(false); }}
         onOpenRelease={() =>
           void window.copilotBridge.openCloudRelease().catch(
             (error: unknown) => showError(error, "无法打开更新下载页面。"),
@@ -551,7 +563,16 @@ export function App() {
         </button>
       </footer>
 
-      {loaded && !settings.onboardingCompleted && !onboardingInProgress && (
+      {loaded && !settings.onboardingCompleted && chatGpt.state !== 'INSTALLED' && !installOpen && (
+        <Modal title="先安装 ChatGPT">
+          <p>安装官方 ChatGPT 客户端后，才能选择 AI 服务并开启 Bridge。</p>
+          {chatGpt.state === 'ERROR' && <p role="alert">{chatGpt.message}</p>}
+          <Button disabled={chatGpt.state === 'INSTALLING'} onClick={installChatGpt} type="button">
+            {chatGpt.state === 'INSTALLING' ? '正在安装 ChatGPT…' : '安装 ChatGPT'}
+          </Button>
+        </Modal>
+      )}
+      {loaded && !settings.onboardingCompleted && chatGpt.state === 'INSTALLED' && !installOpen && !onboardingInProgress && (
         <FirstRunDialog
           busy={busy}
           onChoose={(service) => void completeOnboarding(service)}
@@ -902,7 +923,7 @@ export function App() {
         </Modal>
       )}
 
-      {profile?.restartRequired && !restartDismissed && (
+      {profile?.restartRequired && chatGpt.state === "INSTALLED" && !restartDismissed && (
         <Modal onClose={() => { if (!restartingChatGpt) setRestartDismissed(true); }} title="现在重启 ChatGPT？">
           <p>
             {profile.pendingProfile === "bridge"

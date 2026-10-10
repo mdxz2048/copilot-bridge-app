@@ -1,7 +1,8 @@
 import { ConversationCache } from './cloud/conversation-cache.js';
 import { safeStorage } from 'electron';
 import { BridgeTrace } from './cloud/bridge-trace.js';
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron";
+import { UpdateManager } from './update-manager.js';
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -95,6 +96,42 @@ const cloudClient = new HttpCloudClient({
     cloudDeviceKeyTarget(cloudBaseUrl, app.getPath("userData")),
   ),
 });
+const updater = new UpdateManager({
+  currentVersion: app.getVersion(), baseUrl: cloudBaseUrl,
+  directory: join(app.getPath('userData'), 'updates'),
+  latest: async () => (await cloudClient.getLatestRelease()).release,
+  changed: status => broadcast('update:status', status),
+});
+let updatePromptOpen = false;
+let installingUpdate = false;
+async function installUpdate(): Promise<void> {
+  if (installingUpdate) return;
+  installingUpdate = true;
+  try {
+    const path = await updater.installer();
+    const error = await shell.openPath(path);
+    if (error) throw new Error(error);
+    await bridgeManager.stop().catch(() => undefined);
+    app.quit();
+  } catch (error) { installingUpdate = false; throw error; }
+}
+async function checkForUpdates(manual = false): Promise<void> {
+  if (isIsolatedTestInstance && !manual) return;
+  const status = await updater.check();
+  if (status.state === 'READY' && !updatePromptOpen && !installingUpdate) {
+    updatePromptOpen = true;
+    try {
+      const options = { type: 'info' as const, title: 'Copilot Bridge 升级', message: `新版 ${status.version} 已下载完成`, detail: '立即安装会退出 Bridge 并打开安装程序。稍后安装可继续使用，安装包会保留。', buttons: ['立即安装', '稍后安装'], defaultId: 0, cancelId: 1, noLink: true };
+      const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options);
+      if (result.response === 0) await installUpdate();
+    } finally { updatePromptOpen = false; }
+  } else if (manual && status.state !== 'READY') {
+    await dialog.showMessageBox({ type: status.state === 'ERROR' ? 'warning' : 'info', message: status.state === 'ERROR' ? (status.message ?? '检查升级失败，请稍后重试。') : `当前 ${app.getVersion()} 已是最新版本。` });
+  }
+}
+function checkUpdatesOnOpen(): void {
+  void checkForUpdates().catch(error => logDiagnostic(`Update failed: ${error instanceof Error ? error.message : String(error)}`));
+}
 const cloudFoundation = new CloudFoundation(
   cloudClient,
   cloudConfiguration,
@@ -244,6 +281,7 @@ async function switchAiService(
   models: Awaited<ReturnType<BridgeManager["models"]>>;
 }> {
   try {
+    await requireInstalledChatGpt();
     const result = await performServiceSwitch(target, {
       readSettings: () => settingsStore.read(),
       writeSettings: (settings) => settingsStore.write(settings),
@@ -267,6 +305,7 @@ async function activateProviderConnection(connectionId: string): Promise<{
   bridge: ReturnType<BridgeManager["getStatus"]>;
   models: Awaited<ReturnType<BridgeManager["models"]>>;
 }> {
+  await requireInstalledChatGpt();
   const previous = await settingsStore.read();
   const next: AppSettings = {
     ...previous,
@@ -297,6 +336,11 @@ function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(channel, payload);
   }
+}
+async function requireInstalledChatGpt(): Promise<void> {
+  const status = await chatGptManager.detect();
+  sendChatGptStatus(status);
+  if (status.state !== 'INSTALLED') throw new Error('请先安装 ChatGPT，安装完成后才能开启或切换 Bridge。');
 }
 
 function createTrayIcon() {
@@ -373,7 +417,9 @@ function createWindow(): void {
     },
   });
   mainWindow = window;
+  checkUpdatesOnOpen();
   window.on("closed", () => {
+    logDiagnostic("Bridge window closed");
     if (mainWindow === window) {
       mainWindow = null;
     }
@@ -388,6 +434,7 @@ function createWindow(): void {
   window.on("close", (event) => {
     if (isQuitting || currentSettings?.minimizeToTray === false) return;
     event.preventDefault();
+    logDiagnostic("Bridge window hidden; gateway remains running");
     window.hide();
   });
   window.webContents.on("console-message", (_event, _level, message, line, sourceId) => {
@@ -416,6 +463,7 @@ function focusMainWindow(): void {
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
+  checkUpdatesOnOpen();
 }
 
 app.whenReady().then(async () => {
@@ -434,7 +482,11 @@ app.whenReady().then(async () => {
   }
   ipcMain.handle("profile:status", () => profileStore.getStatus());
   ipcMain.handle("app:version", () => app.getVersion());
+  ipcMain.handle('update:status', () => updater.status);
+  ipcMain.handle('update:check', () => checkForUpdates(true));
+  ipcMain.handle('update:install', () => installUpdate());
   ipcMain.handle("profile:activate", async (_event, target: ProfileId) => {
+    if (target === 'bridge') await requireInstalledChatGpt();
     await prepareBridgeEnvironment();
     const status = await profileStore.activate(target);
     broadcast("profile:status", status);
@@ -527,13 +579,7 @@ app.whenReady().then(async () => {
     await shell.openExternal(configuration.subscriptionManagementUrl);
   });
   ipcMain.handle("cloud:open-release", async () => {
-    const { release } = await cloudClient.getLatestRelease();
-    if (!release) throw new Error("当前没有可下载的新版本。");
-    const url = new URL(release.downloadUrl);
-    if (url.protocol !== "https:") {
-      throw new Error("Server 返回了不安全的下载地址。");
-    }
-    await shell.openExternal(url.toString());
+    await checkForUpdates(true);
   });
   ipcMain.handle("cloud:device-revoke", async (_event, id: string) => {
     const status = await cloudFoundation.revokeDevice(id);
@@ -648,6 +694,7 @@ app.whenReady().then(async () => {
   policyTimer.unref();
   app.once("before-quit",()=>clearInterval(policyTimer));
   ensureTray();
+  if (process.argv.includes('--autostart')) checkUpdatesOnOpen();
   if (!process.argv.includes("--autostart")) {
     createWindow();
   }
@@ -665,9 +712,14 @@ app.on("second-instance", () => {
 });
 
 app.on("before-quit", () => {
+  logDiagnostic("Bridge before-quit");
   isQuitting = true;
 });
 
 app.on("window-all-closed", () => {
+  if (!isQuitting && tray && currentSettings?.minimizeToTray !== false) {
+    logDiagnostic("Bridge has no windows; keeping tray and gateway running");
+    return;
+  }
   if (process.platform !== "darwin") app.quit();
 });

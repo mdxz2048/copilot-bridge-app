@@ -3,10 +3,12 @@ import { Toggle } from "./Toggle";
 
 export function BridgeActivationBar({
   busy,
+  chatGptInstalled,
   profile,
   onChange,
 }: {
   busy: boolean;
+  chatGptInstalled: boolean;
   profile: ProfileStatus | null;
   onChange: (enabled: boolean) => void;
 }) {
@@ -17,7 +19,8 @@ export function BridgeActivationBar({
       <div>
         <strong>在 ChatGPT 中使用 Copilot Bridge</strong>
         <span>
-          {pending
+          {!chatGptInstalled ? "请先安装 ChatGPT，安装完成后才能开启 Bridge"
+            : pending
             ? profile?.pendingProfile === "bridge"
               ? "Bridge 连接待生效：保存工作后重新打开 ChatGPT 即可"
               : "原账号连接待生效：保存工作后重新打开 ChatGPT 即可"
@@ -27,6 +30,7 @@ export function BridgeActivationBar({
         </span>
       </div>
       <Toggle
+        disabled={busy || !chatGptInstalled}
         checked={enabled}
         label="在 ChatGPT 中使用 Copilot Bridge"
         onChange={onChange}

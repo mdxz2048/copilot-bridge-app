@@ -63,6 +63,14 @@ contextBridge.exposeInMainWorld("copilotBridge", {
     ipcRenderer.invoke("cloud:manage-subscription"),
   openCloudRelease: (): Promise<void> =>
     ipcRenderer.invoke("cloud:open-release"),
+  getUpdateStatus: () => ipcRenderer.invoke('update:status'),
+  checkForUpdates: (): Promise<void> => ipcRenderer.invoke('update:check'),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (handler: (status: unknown) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: unknown) => handler(status);
+    ipcRenderer.on('update:status', listener);
+    return () => ipcRenderer.removeListener('update:status', listener);
+  },
   revokeCloudDevice: (id: string): Promise<CloudServiceStatus> =>
     ipcRenderer.invoke("cloud:device-revoke", id),
   renameCloudDevice: (

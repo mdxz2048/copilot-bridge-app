@@ -1,5 +1,6 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { promisify } from "node:util";
+import { chatGptStopScript } from "./chatgpt-restart.js";
 
 const execFileAsync = promisify(execFile);
 const windowsPowerShell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
@@ -160,18 +161,10 @@ export class ChatGptManager {
   async restart(): Promise<void> {
     const status = await this.detect();
     if (status.state !== "INSTALLED" || !status.appId) throw new Error("尚未检测到可重启的 ChatGPT。");
-    await execFileAsync(windowsPowerShell, ["-NoProfile", "-NonInteractive", "-Command", [
-      "$ErrorActionPreference = 'Stop'",
-      "$package = Get-AppxPackage -Name 'OpenAI.Codex' | Select-Object -First 1",
-      "if (-not $package.InstallLocation) { throw '无法确认官方客户端安装路径，请手动重启。' }",
-      "$root = [IO.Path]::GetFullPath($package.InstallLocation).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar",
-      "$targets = @(Get-Process -Name ChatGPT,Codex -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) })",
-      "$targets | ForEach-Object { [void]$_.CloseMainWindow() }",
-      "$deadline = [DateTime]::UtcNow.AddSeconds(8)",
-      "while ([DateTime]::UtcNow -lt $deadline -and @($targets | Where-Object { -not $_.HasExited }).Count) { Start-Sleep -Milliseconds 200; $targets | ForEach-Object { $_.Refresh() } }",
-      "$targets | Where-Object { -not $_.HasExited } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction Stop }",
-    ].join("; ")], { timeout: 20000 });
+    this.onDiagnostic?.("ChatGPT restart requested; Bridge remains running");
+    await execFileAsync(windowsPowerShell, ["-NoProfile", "-NonInteractive", "-Command", chatGptStopScript(process.pid)], { timeout: 20000, windowsHide: true });
     await this.launch();
+    this.onDiagnostic?.("ChatGPT restart launch completed");
   }
 
   cancelInstall(): void {

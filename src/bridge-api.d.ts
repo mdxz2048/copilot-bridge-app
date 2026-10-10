@@ -270,6 +270,10 @@ declare global {
   interface Window {
     copilotBridge: {
       getAppVersion(): Promise<string>;
+      getUpdateStatus(): Promise<{ state: string; version?: string; downloaded?: number; total?: number; message?: string }>;
+      checkForUpdates(): Promise<void>;
+      installUpdate(): Promise<void>;
+      onUpdateStatus(handler: (status: { state: string; version?: string; downloaded?: number; total?: number; message?: string }) => void): () => void;
       getProfileStatus(): Promise<ProfileStatus>;
       activateProfile(target: ProfileId): Promise<ProfileStatus>;
       acknowledgeRestart(): Promise<ProfileStatus>;
