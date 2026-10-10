@@ -46,6 +46,7 @@ async function mountApp({
   profileRestartRequired = false,
   pendingProfile = null,
   failActivateProfile = false,
+  failRestartChatGpt = false,
   failSave = false,
   failSwitch = false,
   activeProfile = "original",
@@ -123,6 +124,11 @@ async function mountApp({
     getModels: async () => [{ id: "test-model", supportsReasoningEffort: false }],
     getCloudStatus: async () => cloud,
     getAppVersion: async () => "0.1.0",
+    restartChatGpt: async () => {
+      events.push("restartChatGpt");
+      if (failRestartChatGpt) throw new Error("无法重启 ChatGPT");
+      return { activeProfile, restartRequired: false, pendingProfile: null };
+    },
     onCopilotLoginStatus: (callback) => {
       loginStatus = callback;
       return () => {};
@@ -373,7 +379,7 @@ test("preflight Local login switches the selected service after success", async 
   }
 });
 
-test("pending Windows environment gives manual sign-out guidance without invoking restart", async () => {
+test("pending gateway configuration asks to reopen ChatGPT without invoking Windows restart", async () => {
   const app = await mountApp({
     initialSettings: { onboardingCompleted: true },
     profileRestartRequired: true,
@@ -381,30 +387,30 @@ test("pending Windows environment gives manual sign-out guidance without invokin
     activeProfile: "bridge",
   });
   try {
-    assert.match(app.text, /尚未在当前 Windows 会话生效/);
-    assert.match(app.text, /用户头像选择“注销”/);
-    await app.click("我知道了，稍后手动注销");
-    assert.match(app.text, /Copilot 环境待生效/);
-    assert.match(app.text, /待环境生效/);
-    assert.throws(() => app.button("待重新登录 Windows"), /Expected enabled button/);
-    assert.doesNotMatch(app.text, /重新启动 Windows/);
+    assert.match(app.text, /模型连接已配置/);
+    assert.match(app.text, /关闭并重新打开 ChatGPT/);
+    await app.click("稍后重启 ChatGPT");
+    assert.match(app.text, /Bridge 连接待生效/);
+    assert.match(app.text, /重新打开 ChatGPT/);
+    assert.throws(() => app.button("待重新打开 ChatGPT"), /Expected enabled button/);
+    assert.doesNotMatch(app.text, /用户头像选择“注销”/);
     assert.deepEqual(app.events, []);
   } finally {
     await app.dispose();
   }
 });
 
-test("returning to the original profile remains pending until Windows sign-out", async () => {
+test("returning to the original provider remains pending until ChatGPT restart", async () => {
   const app = await mountApp({
     initialSettings: { onboardingCompleted: true },
     profileRestartRequired: true,
     pendingProfile: "original",
   });
   try {
-    await app.click("我知道了，稍后手动注销");
-    assert.match(app.text, /原账号环境待生效/);
-    assert.match(app.text, /当前 ChatGPT 可能仍使用旧环境/);
-    assert.throws(() => app.button("待重新登录 Windows"), /Expected enabled button/);
+    await app.click("稍后重启 ChatGPT");
+    assert.match(app.text, /原账号连接待生效/);
+    assert.match(app.text, /重新打开 ChatGPT/);
+    assert.throws(() => app.button("待重新打开 ChatGPT"), /Expected enabled button/);
   } finally {
     await app.dispose();
   }
@@ -677,4 +683,23 @@ test("a failed theme save keeps the current appearance", async () => {
   } finally {
     await app.dispose();
   }
+});
+
+
+test("restart confirmation invokes the app restart and clears pending only after success", async () => {
+  const app = await mountApp({initialSettings:{onboardingCompleted:true},profileRestartRequired:true,pendingProfile:"bridge",activeProfile:"bridge"});
+  try {
+    await app.click("立即重启 ChatGPT");
+    assert.deepEqual(app.events,["restartChatGpt"]);
+    assert.doesNotMatch(app.text,/现在重启 ChatGPT？/);
+  } finally {await app.dispose();}
+});
+
+test("failed app restart leaves the configuration pending and allows retry", async () => {
+  const app = await mountApp({initialSettings:{onboardingCompleted:true},profileRestartRequired:true,pendingProfile:"original",failRestartChatGpt:true});
+  try {
+    await app.click("立即重启 ChatGPT");
+    assert.match(app.text,/无法重启 ChatGPT/);
+    assert.ok(app.button("立即重启 ChatGPT"));
+  } finally {await app.dispose();}
 });

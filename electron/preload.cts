@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld("copilotBridge", {
   installChatGpt: (): Promise<void> => ipcRenderer.invoke("chatgpt:install"),
   cancelChatGptInstall: (): Promise<void> => ipcRenderer.invoke("chatgpt:install-cancel"),
   launchChatGpt: (): Promise<void> => ipcRenderer.invoke("chatgpt:launch"),
+  restartChatGpt: (): Promise<ProfileStatus> => ipcRenderer.invoke("chatgpt:restart"),
   getDiagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke("diagnostics:get"),
   onChatGptStatus: (handler: (status: ChatGptStatus) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: ChatGptStatus) => handler(status);

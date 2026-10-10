@@ -1,0 +1,25 @@
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+export class BridgeTrace {
+  readonly directory: string;
+  constructor(directory: string) { this.directory = directory; }
+  write(stage: string, traceId: string, metadata: Record<string, unknown>, body?: unknown) {
+    try {
+      mkdirSync(this.directory, { recursive: true });
+      let capture = false;
+      try { const config = JSON.parse(readFileSync(join(this.directory, 'capture.json'), 'utf8')); capture = config.captureBodies === true && Date.parse(config.expiresAt) > Date.now(); } catch {}
+      const entry = { time: new Date().toISOString(), stage, traceId, ...metadata, ...(capture && body !== undefined ? { body } : {}) };
+      let line = JSON.stringify(entry, (key, value) => /^(authorization|cookie|password|api.?key|access.?token|refresh.?token|dpop)$/i.test(key)
+        ? '[REDACTED]' : typeof value === 'string' ? value.replace(/\bsk-[a-zA-Z0-9_-]{8,}/g, '[REDACTED_KEY]') : value);
+      if (Buffer.byteLength(line) > 4 * 1024 * 1024) line = JSON.stringify({ ...metadata, stage, traceId, time: entry.time, bodyOmitted: 'exceeds 4 MB capture limit' });
+      const path = join(this.directory, 'requests.jsonl');
+      if (existsSync(path) && statSync(path).size + Buffer.byteLength(line) + 1 > 10 * 1024 * 1024) {
+        rmSync(path + '.4', { force: true });
+        for (let i = 3; i >= 1; i--) if (existsSync(path + '.' + i)) renameSync(path + '.' + i, path + '.' + (i + 1));
+        renameSync(path, path + '.1');
+      }
+      appendFileSync(path, line + '\n', { encoding: 'utf8', mode: 0o600 });
+    } catch { /* Diagnostics must never prevent an AI request. */ }
+  }
+}

@@ -25,6 +25,20 @@ describe("ResponsesRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("ignores reasoning items in array input", () => {
+    const result = ResponsesRequestSchema.safeParse({
+      model: "o3-mini",
+      input: [
+        { role: "assistant", type: "reasoning", summary: [] },
+        { role: "user", content: "Hello" },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.input).toEqual([{ role: "user", content: "Hello" }]);
+    }
+  });
+
   it("accepts array input with function_call and function_call_output", () => {
     const result = ResponsesRequestSchema.safeParse({
       model: "o3-mini",
@@ -165,5 +179,12 @@ describe("genId", () => {
     const a = genId("msg");
     const b = genId("msg");
     expect(a).not.toBe(b);
+  });
+});
+
+describe("compressed native history", () => {
+  it("accepts a compaction item followed by the current user message", () => {
+    const result = ResponsesRequestSchema.parse({model:"test",input:[{type:"compaction",encrypted_content:"opaque-native-history"},{role:"user",content:"hello"}]});
+    expect(result.input).toEqual([{role:"user",content:"hello"}]);
   });
 });

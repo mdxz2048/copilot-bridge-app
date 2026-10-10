@@ -71,6 +71,8 @@ export function App() {
   const onboardingTarget = useRef<AppSettings["backendMode"] | null>(null);
   const [onboardingInProgress, setOnboardingInProgress] = useState(false);
   const [restartDismissed, setRestartDismissed] = useState(false);
+  const [restartingChatGpt, setRestartingChatGpt] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
   const [pendingProvider, setPendingProvider] = useState<AIProviderId | null>(null);
   const [copilotPreflightOpen, setCopilotPreflightOpen] = useState(false);
   const [customApiOpen, setCustomApiOpen] = useState(false);
@@ -344,7 +346,10 @@ export function App() {
     try {
       setProfile(await window.copilotBridge.activateProfile(target));
     } catch (error) {
-      showError(error, "ChatGPT 环境切换失败。");
+      const fallback = error instanceof Error && error.message.trim()
+        ? `ChatGPT 环境切换失败：${error.message}`
+        : "ChatGPT 环境切换失败。";
+      showError(error, fallback);
     } finally {
       setProgressOpen(false);
       setBusy(false);
@@ -898,20 +903,30 @@ export function App() {
       )}
 
       {profile?.restartRequired && !restartDismissed && (
-        <Modal onClose={() => setRestartDismissed(true)} title="应用新的环境">
+        <Modal onClose={() => { if (!restartingChatGpt) setRestartDismissed(true); }} title="现在重启 ChatGPT？">
           <p>
             {profile.pendingProfile === "bridge"
-              ? "Copilot 环境已选择，尚未在当前 Windows 会话生效。"
-              : "原账号环境已选择，尚未在当前 Windows 会话生效。"}
+              ? "Bridge 模型连接已配置，请重新打开 ChatGPT。"
+              : "原账号模型配置已恢复，请重新打开 ChatGPT。"}
           </p>
-          <p>请先保存正在编辑的内容并退出 ChatGPT，然后从 Windows 开始菜单的用户头像选择“注销”，重新登录 Windows 后再启动 ChatGPT。不要只关闭本应用；在重新登录前，ChatGPT 仍可能使用原环境。</p>
+          <p>请先保存工作。确认后会关闭并重新打开 ChatGPT，正在执行的任务会中止，无需重启或注销 Windows。会话和工作区继续保存在现有目录。</p>
+          {restartError && <p role="alert">{restartError}</p>}
           <div className="modal-actions">
             <Button
               className="secondary"
               onClick={() => setRestartDismissed(true)}
               type="button"
+              disabled={restartingChatGpt}
             >
-              我知道了，稍后手动注销
+              稍后重启 ChatGPT
+            </Button>
+            <Button disabled={restartingChatGpt} onClick={() => {
+              setRestartError(null); setRestartingChatGpt(true);
+              void window.copilotBridge.restartChatGpt().then(setProfile)
+                .catch(error => setRestartError(error instanceof Error ? error.message : "重启失败，请重试。"))
+                .finally(() => setRestartingChatGpt(false));
+            }} type="button">
+              {restartingChatGpt ? "正在重启…" : "立即重启 ChatGPT"}
             </Button>
           </div>
         </Modal>

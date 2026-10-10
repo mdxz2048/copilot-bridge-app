@@ -12,6 +12,7 @@ dist
 dist-renderer
 dist-electron
 release
+release-fix-*/
 resources/node-runtime
 dist-ssr
 *.local

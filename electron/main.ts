@@ -1,3 +1,6 @@
+import { ConversationCache } from './cloud/conversation-cache.js';
+import { safeStorage } from 'electron';
+import { BridgeTrace } from './cloud/bridge-trace.js';
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -5,9 +8,9 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { BridgeManager } from "./bridge-manager.js";
 import { ChatGptManager, type ChatGptStatus } from "./chatgpt-manager.js";
-import { ProfileStore, defaultProfileStatePath, type ProfileId } from "./profile-store.js";
+import { type ProfileId } from "./profile-store.js";
+import { GatewayProfileStore } from "./gateway-profile-store.js";
 import { SettingsStore, type AppSettings } from "./settings-store.js";
-import { WindowsUserEnvironment } from "./windows-user-environment.js";
 import {
   CopilotAuthController,
   resolvePackagedRuntime,
@@ -47,12 +50,15 @@ const proxyEntrypoint = app.isPackaged
       "cli.js",
     )
   : join(app.getAppPath(), "node_modules", "copilot-sdk-proxy", "dist", "cli.js");
-const profileStore = new ProfileStore(
-  bridgeHome,
-  originalHome,
-  defaultProfileStatePath(app.getPath("userData")),
-  new WindowsUserEnvironment(),
-);
+const effectiveCodexHome = process.env.CODEX_HOME || originalHome;
+const localCredentialTarget = `CopilotBridge.LocalGateway.${app.getPath("userData").replace(/[^a-zA-Z0-9]/g, "_")}`;
+const localCredentials = new WindowsPasswordVaultCredentialManager();
+let localGatewayKey: string | null = null;
+const helperPath = app.isPackaged
+  ? join(process.resourcesPath, "gateway-runtime", "gateway-token-helper.mjs")
+  : join(app.getAppPath(), "dist-electron", "gateway-token-helper.mjs");
+const profileStore = new GatewayProfileStore(effectiveCodexHome,
+  join(app.getPath("userData"), "gateway-switch.json"), nodePathForCurrentBuild(), [helperPath, localCredentialTarget]);
 const chatGptManager = new ChatGptManager(logDiagnostic);
 function nodePathForCurrentBuild(): string {
   return app.isPackaged
@@ -113,6 +119,13 @@ const remoteBridge = new RemoteBridgeServer(
     const { status } = await cloudFoundation.reconcileResponse(target);
     broadcast("cloud:status", status);
   },
+  {
+    cache: new ConversationCache(join(app.getPath("userData"), "cloud-conversations.enc"),safeStorage),
+    trace: new BridgeTrace(join(app.getPath("userData"), "diagnostics")),
+    getApiKey: async () => localGatewayKey,
+    getModel: async () => (await settingsStore.read()).backendModel,
+    getReasoning: async () => (await settingsStore.read()).reasoningEffort,
+  },
 );
 const bridgeManager = new BridgeManager(
   app.getPath("userData"),
@@ -122,6 +135,7 @@ const bridgeManager = new BridgeManager(
   bridgeHome,
   8787,
   remoteBridge,
+  async () => localGatewayKey,
 );
 let authController: CopilotAuthController | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -180,9 +194,10 @@ wire_api = "responses"
       "utf8",
     );
   }
-  const existingApiKey = await new WindowsUserEnvironment().read("COPILOT_BRIDGE_API_KEY");
-  if (!existingApiKey) {
-    await new WindowsUserEnvironment().write("COPILOT_BRIDGE_API_KEY", randomUUID().replaceAll("-", ""));
+  localGatewayKey = await localCredentials.read(localCredentialTarget);
+  if (!localGatewayKey) {
+    localGatewayKey = randomUUID().replaceAll("-", "") + randomUUID().replaceAll("-", "");
+    await localCredentials.write(localCredentialTarget, localGatewayKey);
   }
 }
 
@@ -299,7 +314,7 @@ function ensureTray(): void {
 function refreshTray(): void {
   if (!tray) return;
   const bridge = bridgeManager.getStatus();
-  const profile = bridgeHome === process.env.CODEX_HOME ? "Copilot" : "原账号";
+  const profile = "模型网关";
   tray.setToolTip(`Copilot Bridge — ${bridge.state === "ready" ? "正常" : bridge.message}`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Copilot Bridge", enabled: false },
@@ -409,6 +424,7 @@ app.whenReady().then(async () => {
   nativeTheme.on("updated", updateTitleBarOverlay);
   const settings = await settingsStore.read();
   currentSettings = settings;
+  await prepareBridgeEnvironment();
   applyTheme(settings.theme);
   if (!isIsolatedTestInstance) {
     app.setLoginItemSettings({
@@ -418,7 +434,12 @@ app.whenReady().then(async () => {
   }
   ipcMain.handle("profile:status", () => profileStore.getStatus());
   ipcMain.handle("app:version", () => app.getVersion());
-  ipcMain.handle("profile:activate", (_event, target: ProfileId) => profileStore.activate(target));
+  ipcMain.handle("profile:activate", async (_event, target: ProfileId) => {
+    await prepareBridgeEnvironment();
+    const status = await profileStore.activate(target);
+    broadcast("profile:status", status);
+    return status;
+  });
   ipcMain.handle("profile:acknowledge-restart", () => profileStore.acknowledgeRestart());
   ipcMain.handle("profile:prepare-bridge", prepareBridgeEnvironment);
   ipcMain.handle("system:restart", () => {
@@ -434,6 +455,12 @@ app.whenReady().then(async () => {
     sendChatGptStatus({ state: "NOT_INSTALLED", message: "已取消 ChatGPT 安装。" });
   });
   ipcMain.handle("chatgpt:launch", () => chatGptManager.launch());
+  ipcMain.handle("chatgpt:restart", async () => {
+    await chatGptManager.restart();
+    const status = await profileStore.acknowledgeRestart();
+    broadcast("profile:status", status);
+    return status;
+  });
   ipcMain.handle("diagnostics:get", async () => ({
     appVersion: app.getVersion(),
     bridge: bridgeManager.getStatus(),
@@ -617,13 +644,14 @@ app.whenReady().then(async () => {
     await shell.openExternal(url.toString());
   });
 
+  const policyTimer = setInterval(() => {void cloudFoundation.syncPolicy().then(status=>{if(status)broadcast("cloud:status",status);}).catch(()=>undefined);},5000);
+  policyTimer.unref();
+  app.once("before-quit",()=>clearInterval(policyTimer));
   ensureTray();
   if (!process.argv.includes("--autostart")) {
     createWindow();
   }
-  void profileStore
-    .completeIfEnvironmentApplied(process.env.CODEX_HOME)
-    .then((status) => broadcast("profile:status", status));
+  void profileStore.getStatus().then((status) => broadcast("profile:status", status));
   if (settings.autoBridgeStart) {
     void startBridge();
   }

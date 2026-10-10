@@ -19,8 +19,26 @@ export function filterFunctionTools(
     .map((t) => FunctionToolSchema.parse(t));
 }
 
-// Model and input are optional in the spec but required by the proxy
-export const ResponsesRequestSchema = BaseResponsesRequestSchema.refine(
+function stripReasoningItems(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const request = value as Record<string, unknown>;
+  if (!Array.isArray(request.input)) return value;
+  const input = request.input.filter(
+    (item) =>
+      !item ||
+      typeof item !== "object" ||
+      !("type" in item) ||
+      (item.type !== "reasoning" && item.type !== "compaction"),
+  );
+  return input.length === request.input.length ? value : { ...request, input };
+}
+
+// Model and input are optional in the spec but required by the proxy. Reasoning
+// items are provider-internal history and do not have message content to relay.
+export const ResponsesRequestSchema = z.preprocess(
+  stripReasoningItems,
+  BaseResponsesRequestSchema,
+).refine(
   (
     data,
   ): data is typeof data & { model: string; input: string | BaseInputItem[] } =>

@@ -26,6 +26,7 @@ export class BridgeManager {
   private readonly workingDirectory: string;
   private readonly port: number;
   private readonly remoteBridge: RemoteBridgeServer | null;
+  private readonly getLocalApiKey?: () => Promise<string | null>;
 
   constructor(
     userDataPath: string,
@@ -35,6 +36,7 @@ export class BridgeManager {
     workingDirectory: string,
     port = 8787,
     remoteBridge: RemoteBridgeServer | null = null,
+    getLocalApiKey?: () => Promise<string | null>,
   ) {
     this.userDataPath = userDataPath;
     this.proxyEntrypoint = proxyEntrypoint;
@@ -43,6 +45,7 @@ export class BridgeManager {
     this.workingDirectory = workingDirectory;
     this.port = port;
     this.remoteBridge = remoteBridge;
+    this.getLocalApiKey = getLocalApiKey;
     this.status = {
       state: "stopped",
       message: "Copilot Bridge 未启动",
@@ -79,6 +82,7 @@ export class BridgeManager {
     const environment = {
       ...process.env,
       COPILOT_CLI_PATH: this.runtimePath,
+      COPILOT_BRIDGE_LOCAL_API_KEY: (await this.getLocalApiKey?.()) ?? "",
     };
     const child = spawn(
       this.nodePath,
@@ -159,7 +163,8 @@ export class BridgeManager {
     if (!(await this.isHealthy())) {
       throw new Error("Copilot Bridge 当前不可用。");
     }
-    const response = await fetch(`${this.status.endpoint}/bridge/models`);
+    const key = await this.getLocalApiKey?.();
+    const response = await fetch(`${this.status.endpoint}/bridge/models`, { headers: key ? { Authorization: `Bearer ${key}` } : {} });
     if (!response.ok) throw new Error("无法获取 GitHub Copilot 模型列表。");
     const payload = await response.json() as { data: BridgeModel[] };
     return payload.data;

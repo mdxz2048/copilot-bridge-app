@@ -48,6 +48,7 @@ export interface CloudServiceStatus {
   usageTokens: number | null;
   usagePointsUsed: number | null;
   remainingPoints: number | null;
+  billing?: MeV2["billing"];
   currentDevice: string;
   currentDeviceId: string | null;
   devices: Array<{
@@ -259,17 +260,19 @@ export class CloudFoundation {
   }> {
     const configuration = await this.requireContract();
     const settlement = await this.pollSettlement(target);
-    const [usage, usageHistory, walletTransactions, device] = await Promise.all([
+    const [usage, usageHistory, walletTransactions, device, account] = await Promise.all([
       this.client.getUsageV2(),
       this.client.getUsageHistory(),
       this.client.listWalletTransactions(),
       this.devices.get(),
+      this.client.getMeV2(),
     ]);
+    this.account = account;
     this.usageV2 = usage;
     this.usageHistory = usageHistory;
     this.walletTransactions = walletTransactions;
     if (this.account) {
-      this.account = { ...this.account, wallet: settlement.wallet };
+      this.account = this.account.billing ? this.account : { ...this.account, wallet: settlement.wallet };
     } else {
       this.account = await this.client.getMeV2();
     }
@@ -297,6 +300,11 @@ export class CloudFoundation {
     return this.refresh();
   }
 
+  async syncPolicy(): Promise<CloudServiceStatus | null> {
+    if (this.auth.state !== "AUTHENTICATED") return null;
+    try {this.account = await this.client.getMeV2();} catch(error) {this.applyErrorState(error);throw error;}
+    return this.getStatus();
+  }
   private async performRefresh(): Promise<CloudServiceStatus> {
     const configuration = await this.requireContract();
     const device = await this.devices.get();
@@ -500,11 +508,12 @@ export class CloudFoundation {
       usage: usage
         ? `${String(usage.pointsCharged)} points · ${String(usage.requests)} requests`
         : null,
-      usagePercent: null,
+      usagePercent: this.account?.billing?.limitRmb ? Math.min(100,Math.round(this.account.billing.usedRmb/this.account.billing.limitRmb*100)) : null,
       usageRequests: usage?.requests ?? null,
       usageTokens: null,
-      usagePointsUsed: usage?.pointsCharged ?? null,
-      remainingPoints: this.account?.wallet.balance ?? null,
+      usagePointsUsed: this.account?.billing ? Math.round(this.account.billing.usedRmb*this.account.billing.pointsPerRmb) : usage?.pointsCharged ?? null,
+      billing: this.account?.billing,
+      remainingPoints: this.account?.billing ? Math.round(this.account.billing.remainingRmb * this.account.billing.pointsPerRmb) : this.account?.wallet.balance ?? null,
       currentDevice: currentDevice?.status === "ACTIVE"
         ? `${deviceName} · 已激活`
         : deviceName,

@@ -1,7 +1,7 @@
 {
   "name": "copilot-bridge-app",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.5",
   "description": "Desktop profile switcher for ChatGPT Desktop and GitHub Copilot Bridge.",
   "author": "Copilot Bridge",
   "license": "UNLICENSED",
@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.renderer.json && tsc -p tsconfig.electron.json",
-    "test": "npm run build && node --test test/profile-store.test.mjs test/cloud-foundation.test.mjs test/device-proof.test.mjs test/service-switcher.test.mjs test/repository.test.mjs test/remote-bridge-server.test.mjs test/renderer-flows.test.mjs",
+    "test": "npm run build && node --test test/profile-store.test.mjs test/gateway-profile-store.test.mjs test/desktop-gateway.test.mjs test/cloud-foundation.test.mjs test/device-proof.test.mjs test/service-switcher.test.mjs test/repository.test.mjs test/remote-bridge-server.test.mjs test/renderer-flows.test.mjs",
     "test:proxy": "npm --prefix vendor/copilot-sdk-proxy test",
     "test:cloud-e2e": "npm run build && node scripts/cloud-e2e-harness.mjs",
     "test:cloud-loopback": "npm run build && node --test test/cloud-loopback.test.mjs",
@@ -45,6 +45,7 @@
     "copilot-sdk-proxy": "file:vendor/copilot-sdk-proxy",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "smol-toml": "^1.9.0",
     "zod": "^4.6.5"
   },
   "build": {
@@ -62,6 +63,14 @@
       "node_modules/**"
     ],
     "extraResources": [
+      {
+        "from": "dist-electron",
+        "to": "gateway-runtime",
+        "filter": [
+          "gateway-token-helper.mjs",
+          "cloud/windows-credential-manager.js"
+        ]
+      },
       {
         "from": "node_modules/@github/copilot-win32-x64/copilot.exe",
         "to": "copilot-runtime/copilot.exe"

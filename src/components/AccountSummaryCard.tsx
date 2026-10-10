@@ -39,7 +39,7 @@ export function AccountSummaryCard({
     >
       <span>
         <strong>{cloud.plan ?? "云服务"}</strong>
-        {cloud.usagePointsUsed == null
+        {cloud.billing ? ` · 本周期已用 ¥${cloud.billing.usedRmb.toFixed(4)} · 可用 ¥${cloud.billing.remainingRmb.toFixed(4)}` : cloud.usagePointsUsed == null
           ? ""
           : ` · 本月已用 ${formatPoints(cloud.usagePointsUsed)} 点`}
         {cloud.validUntil ? ` · ${formatShortDate(cloud.validUntil)}到期` : ""}

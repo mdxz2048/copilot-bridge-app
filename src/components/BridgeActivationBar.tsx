@@ -19,8 +19,8 @@ export function BridgeActivationBar({
         <span>
           {pending
             ? profile?.pendingProfile === "bridge"
-              ? "Copilot 环境待生效：请保存工作、退出 ChatGPT，手动注销并重新登录 Windows"
-              : "原账号环境待生效：请保存工作、退出 ChatGPT，手动注销并重新登录 Windows"
+              ? "Bridge 连接待生效：保存工作后重新打开 ChatGPT 即可"
+              : "原账号连接待生效：保存工作后重新打开 ChatGPT 即可"
             : enabled
               ? "ChatGPT 使用下方选择的 AI 服务"
               : "关闭时，ChatGPT 使用原账号配置"}

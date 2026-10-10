@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
+import { timingSafeEqual } from "node:crypto";
 import type { AppContext } from "#context.js";
 import type { LogLevel } from "#logger.js";
 import type { Provider } from "#providers/types.js";
@@ -27,6 +28,15 @@ export async function createServer(
   });
 
   app.server.requestTimeout = ctx.config.requestTimeoutMs;
+  const bridgeKey = process.env.COPILOT_BRIDGE_LOCAL_API_KEY;
+  if (bridgeKey) app.addHook("onRequest", async (request, reply) => {
+    if (request.url === "/health") return;
+    const expected = Buffer.from(`Bearer ${bridgeKey}`);
+    const actual = Buffer.from(request.headers.authorization ?? "");
+    if (request.headers.origin || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      return reply.code(401).send({ error: { code: "UNAUTHORIZED", message: "Local Bridge credential required" } });
+    }
+  });
 
   await app.register(cors, {
     origin: "*",

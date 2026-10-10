@@ -380,7 +380,9 @@ export const DeviceCredentialV2Schema = z.object({
   device: DeviceV2Schema,
 });
 export const LoginResponseSchema = GatewayV1LoginResponseSchema;
+export const MoneySummarySchema = z.object({pointsPerRmb:z.number().positive(),currency:z.literal("CNY"),balanceRmb:z.number().nonnegative(),usedRmb:z.number().nonnegative(),limitRmb:z.number().nonnegative().nullable(),remainingRmb:z.number().nonnegative(),accountRpm:z.number(),deviceRpm:z.number(),maxDevices:z.number()});
 export const MeV2Schema = z.object({
+  billing: MoneySummarySchema.nullable().optional(),
   account: AccountSummaryV2Schema,
   subscription: SubscriptionSummaryV2Schema,
   wallet: WalletSummaryV2Schema,
