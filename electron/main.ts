@@ -1,7 +1,7 @@
 import { ConversationCache } from './cloud/conversation-cache.js';
 import { safeStorage } from 'electron';
 import { BridgeTrace } from './cloud/bridge-trace.js';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron";
 import { UpdateManager } from './update-manager.js';
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -102,7 +102,6 @@ const updater = new UpdateManager({
   latest: async () => (await cloudClient.getLatestRelease()).release,
   changed: status => broadcast('update:status', status),
 });
-let updatePromptOpen = false;
 let installingUpdate = false;
 async function installUpdate(): Promise<void> {
   if (installingUpdate) return;
@@ -117,17 +116,7 @@ async function installUpdate(): Promise<void> {
 }
 async function checkForUpdates(manual = false): Promise<void> {
   if (isIsolatedTestInstance && !manual) return;
-  const status = await updater.check();
-  if (status.state === 'READY' && !updatePromptOpen && !installingUpdate) {
-    updatePromptOpen = true;
-    try {
-      const options = { type: 'info' as const, title: 'Copilot Bridge 升级', message: `新版 ${status.version} 已下载完成`, detail: '立即安装会退出 Bridge 并打开安装程序。稍后安装可继续使用，安装包会保留。', buttons: ['立即安装', '稍后安装'], defaultId: 0, cancelId: 1, noLink: true };
-      const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options);
-      if (result.response === 0) await installUpdate();
-    } finally { updatePromptOpen = false; }
-  } else if (manual && status.state !== 'READY') {
-    await dialog.showMessageBox({ type: status.state === 'ERROR' ? 'warning' : 'info', message: status.state === 'ERROR' ? (status.message ?? '检查升级失败，请稍后重试。') : `当前 ${app.getVersion()} 已是最新版本。` });
-  }
+  await updater.check();
 }
 function checkUpdatesOnOpen(): void {
   void checkForUpdates().catch(error => logDiagnostic(`Update failed: ${error instanceof Error ? error.message : String(error)}`));
@@ -500,11 +489,16 @@ app.whenReady().then(async () => {
   ipcMain.handle("bridge:status", () => bridgeManager.getStatus());
   ipcMain.handle("chatgpt:status", () => chatGptManager.detect());
   ipcMain.handle("chatgpt:install", () => {
-    chatGptManager.install(sendChatGptStatus, () => shell.openExternal(ChatGptManager.storeUri()));
+    chatGptManager.install(sendChatGptStatus, () => shell.openExternal(ChatGptManager.storeUri()), () => shell.openExternal(ChatGptManager.downloadPageUri()));
+  });
+  ipcMain.handle("chatgpt:download", async () => {
+    await chatGptManager.installOffline(join(app.getPath("userData"), "official-client"), sendChatGptStatus);
   });
   ipcMain.handle("chatgpt:install-cancel", () => {
-    chatGptManager.cancelInstall();
-    sendChatGptStatus({ state: "NOT_INSTALLED", message: "已取消 ChatGPT 安装。" });
+    const cancelled = chatGptManager.cancelInstall();
+    sendChatGptStatus(cancelled
+      ? { state: "NOT_INSTALLED", message: "已取消 ChatGPT 安装。" }
+      : { state: "INSTALLING", step: "INSTALLING", message: "Windows 正在完成安装，请稍候；关闭此窗口不会中止系统安装。" });
   });
   ipcMain.handle("chatgpt:launch", () => chatGptManager.launch());
   ipcMain.handle("chatgpt:restart", async () => {
@@ -699,7 +693,10 @@ app.whenReady().then(async () => {
   if (!process.argv.includes("--autostart")) {
     createWindow();
   }
-  void profileStore.getStatus().then((status) => broadcast("profile:status", status));
+  void profileStore.getStatus().then(async (status) => {
+    const updated = status.activeProfile === "bridge" ? await profileStore.activate("bridge") : status;
+    broadcast("profile:status", updated);
+  }).catch(error => logDiagnostic(`Bridge profile refresh failed: ${error instanceof Error ? error.message : String(error)}`));
   if (settings.autoBridgeStart) {
     void startBridge();
   }

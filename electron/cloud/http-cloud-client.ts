@@ -76,6 +76,7 @@ export interface HttpCloudClientOptions {
   devices: DeviceIdentityStore;
   deviceKeys: DeviceKeyStore;
   timeoutMs?: number;
+  responseTimeoutMs?: number;
   defaultHeaders?: HeadersInit;
   fetch?: typeof fetch;
 }
@@ -86,6 +87,7 @@ export class HttpCloudClient implements CloudClient {
   private readonly devices: DeviceIdentityStore;
   private readonly deviceKeys: DeviceKeyStore;
   private readonly timeoutMs: number;
+  private readonly responseTimeoutMs: number;
   private readonly defaultHeaders: Headers;
   private readonly fetch: typeof fetch;
   private refreshInFlight: Promise<void> | null = null;
@@ -96,6 +98,7 @@ export class HttpCloudClient implements CloudClient {
     this.devices = options.devices;
     this.deviceKeys = options.deviceKeys;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.responseTimeoutMs = options.responseTimeoutMs ?? 15 * 60_000;
     this.defaultHeaders = new Headers(options.defaultHeaders);
     this.fetch = options.fetch ?? globalThis.fetch;
   }
@@ -160,6 +163,16 @@ export class HttpCloudClient implements CloudClient {
       },
     );
     await this.tokens.rotate(response);
+    // A refreshed session after an app upgrade must update the existing device version.
+    // Do not use registerDevice's refresh retry here: retrying refreshInFlight would deadlock.
+    const device = await this.devices.get();
+    const registration = RegisterDeviceRequestV2Schema.parse({ ...device, publicKeyJwk: (await this.deviceKeys.get()).publicKeyJwk });
+    const registered = await this.authenticatedFetch("/api/v1/devices/register", {
+      method: "POST",
+      body: JSON.stringify(registration),
+    });
+    const verified = await parseResponse(registered, RegisterDeviceResponseSchema);
+    if (verified.device.deviceId !== device.deviceId) throw new CloudError("INVALID_SERVER_RESPONSE", "Cloud registered an unexpected device identity.");
   }
 
   async logout(): Promise<void> {
@@ -527,7 +540,7 @@ export class HttpCloudClient implements CloudClient {
   private rawFetch(path: string, init: RequestInit): Promise<Response> {
     const headers = new Headers(init.headers);
     if (init.body != null) headers.set("Content-Type", "application/json");
-    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const timeout = AbortSignal.timeout(path === "/v1/responses" ? this.responseTimeoutMs : this.timeoutMs);
     const signal = init.signal
       ? AbortSignal.any([init.signal, timeout])
       : timeout;

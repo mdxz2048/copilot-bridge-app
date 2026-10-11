@@ -458,6 +458,12 @@ export function App() {
       setChatGpt({ state: 'ERROR', message: error instanceof Error ? error.message : '无法启动 ChatGPT 安装，请重试。' });
     });
   };
+  const downloadChatGpt = () => {
+    setInstallOpen(true);
+    void window.copilotBridge.openChatGptDownload().catch(() => {
+      setChatGpt({ state: "ERROR", message: "无法下载安装 ChatGPT，请重试。" });
+    });
+  };
 
   return (
     <main>
@@ -571,6 +577,7 @@ export function App() {
           <Button disabled={chatGpt.state === 'INSTALLING'} onClick={installChatGpt} type="button">
             {chatGpt.state === 'INSTALLING' ? '正在安装 ChatGPT…' : '安装 ChatGPT'}
           </Button>
+          <Button className="secondary" disabled={chatGpt.state === "INSTALLING" && chatGpt.step !== "WAITING_FOR_STORE"} onClick={downloadChatGpt} type="button">下载并安装</Button>
         </Modal>
       )}
       {loaded && !settings.onboardingCompleted && chatGpt.state === 'INSTALLED' && !installOpen && !onboardingInProgress && (
@@ -882,7 +889,9 @@ export function App() {
             <li>{chatGpt.step === "VERIFYING" ? "◌" : "○"} 验证安装</li>
           </ul>
           <p>{chatGpt.message}</p>
+          {chatGpt.state !== "INSTALLED" && <p>Bridge 会下载并校验官方包，然后启动安装。请允许 Windows 管理员确认。</p>}
           <div className="modal-actions">
+            {chatGpt.state !== "INSTALLED" && <Button disabled={chatGpt.state === "INSTALLING" && chatGpt.step !== "WAITING_FOR_STORE"} onClick={downloadChatGpt} type="button">下载并安装</Button>}
             <Button
               className="secondary"
               onClick={() => {
@@ -898,16 +907,16 @@ export function App() {
       )}
 
       {setupOpen && (
-        <Modal onClose={() => setSetupOpen(false)} title="设置 Copilot 环境">
+        <Modal onClose={() => setSetupOpen(false)} title="准备 Bridge 连接">
           <p>
-            Copilot 将使用独立的会话和工作区，不会删除或修改你的原账号数据。
+            Bridge 将切换模型连接，继续使用现有会话和工作区。切换后重启 ChatGPT 即可生效。
           </p>
           <div className="modal-actions">
             <Button className="secondary" onClick={() => setSetupOpen(false)} type="button">
               {zhCN.common.cancel}
             </Button>
             <Button onClick={() => void prepareBridgeProfile()} type="button">
-              创建并继续
+              配置并继续
             </Button>
           </div>
         </Modal>
@@ -931,7 +940,7 @@ export function App() {
               ? "Bridge 模型连接已配置，请重新打开 ChatGPT。"
               : "原账号模型配置已恢复，请重新打开 ChatGPT。"}
           </p>
-          <p>请先保存工作。确认后会关闭并重新打开 ChatGPT，正在执行的任务会中止，无需重启或注销 Windows。会话和工作区继续保存在现有目录。</p>
+          <p>保存工作后即可重启 ChatGPT。运行中的任务会中止，会话和工作区保留；无需重启 Windows。</p>
           {restartError && <p role="alert">{restartError}</p>}
           <div className="modal-actions">
             <Button
@@ -945,7 +954,8 @@ export function App() {
             <Button disabled={restartingChatGpt} onClick={() => {
               setRestartError(null); setRestartingChatGpt(true);
               void window.copilotBridge.restartChatGpt().then(setProfile)
-                .catch(error => setRestartError(error instanceof Error ? error.message : "重启失败，请重试。"))
+                .catch(error => setRestartError(error instanceof Error && !/Command failed|powershell\.exe|Stop-Process|Error invoking remote method|FullyQualifiedErrorId/i.test(error.message)
+                  ? error.message : "ChatGPT 重启失败。请手动关闭后重新打开，或稍后重试。"))
                 .finally(() => setRestartingChatGpt(false));
             }} type="button">
               {restartingChatGpt ? "正在重启…" : "立即重启 ChatGPT"}

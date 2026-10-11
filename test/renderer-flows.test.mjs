@@ -129,6 +129,11 @@ async function mountApp({
       events.push('installChatGpt');
       if (failInstallChatGpt) throw new Error('安装程序启动失败');
     },
+    openChatGptDownload: async () => {
+      events.push('openChatGptDownload');
+      chatGptState = 'INSTALLING';
+      chatGptStatusListener({state:'INSTALLING',step:'INSTALLING',message:'正在下载官方安装包… 25%'});
+    },
     launchChatGpt: async () => { events.push('launchChatGpt'); },
     getModels: async () => initialModels,
     getCloudStatus: async () => cloud,
@@ -401,7 +406,7 @@ test("pending gateway configuration asks to reopen ChatGPT without invoking Wind
   });
   try {
     assert.match(app.text, /模型连接已配置/);
-    assert.match(app.text, /关闭并重新打开 ChatGPT/);
+    assert.match(app.text, /保存工作后即可重启 ChatGPT/);
     await app.click("稍后重启 ChatGPT");
     assert.match(app.text, /Bridge 连接待生效/);
     assert.match(app.text, /重新打开 ChatGPT/);
@@ -683,7 +688,7 @@ test("an escapable Modal restores focus to its still-mounted trigger", async () 
     const trigger = app.document.querySelector('button[role="switch"]');
     await app.clickSelector('button[role="switch"]');
     const modal = app.document.querySelector(".modal");
-    assert.equal(modal.getAttribute("aria-label"), "设置 Copilot 环境");
+    assert.equal(modal.getAttribute("aria-label"), "准备 Bridge 连接");
     assert.ok(modal.contains(app.document.activeElement));
     await app.key("Escape");
     assert.equal(app.document.querySelector(".modal"), null);
@@ -784,4 +789,21 @@ test('Old Cloud metadata falls back to normal instead of invented effort control
     assert.deepEqual([...app.document.querySelectorAll('[role="option"]')].map(m=>m.textContent.replace('✓','').trim()),['普通']);
     assert.ok(!app.text.includes('推理强度'));
   } finally { await app.dispose(); }
+});
+
+test('offline official installer starts only on click, shows progress and blocks repeated downloads', async () => {
+  const app=await mountApp({chatGptState:'NOT_INSTALLED',failInstallChatGpt:true});
+  try {
+    assert.deepEqual(app.events,[]);
+    assert.ok(app.button('下载并安装'));
+    await app.click('安装 ChatGPT',true);
+    assert.match(app.text,/安装程序启动失败/);
+    await app.click('下载并安装');assert.deepEqual(app.events,['installChatGpt','openChatGptDownload']);
+    assert.match(app.text,/正在下载官方安装包… 25%/);
+    assert.match(app.text,/下载并校验官方包/);
+    const download=[...app.document.querySelectorAll('button')].find(button=>button.textContent==='下载并安装');
+    assert.equal(download.disabled,true);
+    await app.act(async()=>download.click());assert.deepEqual(app.events,['installChatGpt','openChatGptDownload']);
+    assert.equal(app.document.querySelector('button[role="switch"]').disabled,true);
+  } finally {await app.dispose();}
 });

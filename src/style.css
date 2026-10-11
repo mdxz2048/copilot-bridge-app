@@ -1270,3 +1270,20 @@ code {
     box-shadow: none;
   }
 }
+
+.update-control { display:flex; justify-content:flex-end; height:40px; flex:none; padding:0 0 4px; }
+.update-icon-button { position:relative; display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--text-secondary); cursor:pointer; -webkit-app-region:no-drag; }
+.update-icon-button:hover { background:var(--surface-hover); }
+.update-icon-button:disabled { cursor:default; opacity:1; }
+.update-icon-button.update-ready { color:var(--success); }
+.update-icon-button.update-error { color:var(--danger); }
+.update-symbol { width:19px; height:19px; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.update-progress-ring { position:absolute; inset:0; width:36px; height:36px; transform:rotate(-90deg); pointer-events:none; }
+.update-ring-track,.update-ring-value { fill:none; stroke-width:2; }
+.update-ring-track { stroke:var(--border-control); }
+.update-ring-value { stroke:var(--success); stroke-linecap:round; transition:stroke-dashoffset .2s linear; }
+.update-ring-unknown { transform-origin:18px 18px; animation:update-spin 1.2s linear infinite; }
+@keyframes update-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .update-ring-unknown { animation:none; } .update-ring-value { transition:none; } }
+
+.update-ready .update-ring-value { transition:none; }

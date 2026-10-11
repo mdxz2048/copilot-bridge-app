@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld("copilotBridge", {
   },
   getChatGptStatus: (): Promise<ChatGptStatus> => ipcRenderer.invoke("chatgpt:status"),
   installChatGpt: (): Promise<void> => ipcRenderer.invoke("chatgpt:install"),
+  openChatGptDownload: (): Promise<void> => ipcRenderer.invoke("chatgpt:download"),
   cancelChatGptInstall: (): Promise<void> => ipcRenderer.invoke("chatgpt:install-cancel"),
   launchChatGpt: (): Promise<void> => ipcRenderer.invoke("chatgpt:launch"),
   restartChatGpt: (): Promise<ProfileStatus> => ipcRenderer.invoke("chatgpt:restart"),

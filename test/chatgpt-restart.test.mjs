@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {chatGptStopScript} from '../dist-electron/chatgpt-restart.js';
+import {chatGptStopScript, chatGptRestartCommand, chatGptRestartError} from '../dist-electron/chatgpt-restart.js';
 const exec=promisify(execFile),powershell='C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
 async function scenario(kind){
   const mock=`$global:alive=$true; $global:stopped=@(); $global:kind='${kind}';
@@ -31,3 +31,17 @@ test('handles a child exiting between lookup and force-stop',async()=>{assert.de
 test('ignores an already-exited process',async()=>{assert.deepEqual(await scenario('gone'),{stopped:[],bridgeAlive:true})});
 test('preserves permission failures instead of masking them',async()=>{await assert.rejects(scenario('denied'),/access denied/)});
 test('does not terminate a reused PID, Bridge, or another Codex installation',async()=>{assert.deepEqual(await scenario('reused'),{stopped:[],bridgeAlive:true})});
+
+test('uses a validated official package-family fallback when Appx registration lookup fails',async()=>{
+ const script=`$global:stopped=@(); function Get-AppxPackage { throw 'Appx unavailable' }; function Get-Process { param($Name,$Id); if($Name -or $Id -eq 14840){$p=[pscustomobject]@{Id=14840;Path='C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1007.2314.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe';StartTime=[datetime]'2026-01-01'};$p|Add-Member ScriptMethod CloseMainWindow {return $false};return $p} };function Stop-Process {param($Id,[switch]$Force);$global:stopped+=$Id};`;
+ const {stdout}=await exec(powershell,['-NoProfile','-NonInteractive','-Command',script+chatGptStopScript(9999,0,'OpenAI.Codex_2p2nqsd0c76g0!App')+'; ConvertTo-Json -InputObject @($stopped) -Compress'],{windowsHide:true,timeout:10000});
+ assert.deepEqual(JSON.parse(stdout),[14840]);
+ assert.throws(()=>chatGptStopScript(9999,0,"OpenAI.Codex_x';evil"),/Invalid official/);
+});
+test('restart uses encoded Unicode command and exposes actionable errors without full script',()=>{
+ const args=chatGptRestartCommand(9999,'OpenAI.Codex_2p2nqsd0c76g0!App');assert.equal(args[2],'-EncodedCommand');assert.match(Buffer.from(args[3],'base64').toString('utf16le'),/RESTART_STOP_FAILED/);
+ assert.match(chatGptRestartError({stderr:'{"detail":"Access is denied"}'}),/Windows/);
+ assert.match(chatGptRestartError({killed:true}),/超时/);
+ assert.match(chatGptRestartError({stderr:''}),/未返回错误详情/);
+ assert.doesNotMatch(chatGptRestartError({message:'Command failed: private long script'}),/private long script/);
+});

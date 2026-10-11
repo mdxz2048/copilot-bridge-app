@@ -174,6 +174,10 @@ test("registers persistent vault-backed P-256 JWK and signs refresh, JSON and SS
           expiresIn: 1800,
         });
       }
+      if (url.endsWith("/api/v1/devices/register")) {
+        assert.deepEqual(JSON.parse(body), { ...device, publicKeyJwk });
+        return Response.json({ device: loginResponse.device });
+      }
       if (url.endsWith("/api/v1/me")) {
         return Response.json({
           account: { id: user.id, email: user.email, status: "ACTIVE" },
@@ -212,11 +216,11 @@ test("registers persistent vault-backed P-256 JWK and signs refresh, JSON and SS
     { threadId: "thread-1" },
   );
   assert.match(transport.contentType, /event-stream/);
-  assert.equal(seen.length, 3);
-  assert.equal(new Set(seen.map((proof) => proof.jti)).size, 3);
+  assert.equal(seen.length, 4);
+  assert.equal(new Set(seen.map((proof) => proof.jti)).size, 4);
   assert.equal(seen[0].ath, hash("refresh-1"));
   assert.equal(seen[1].ath, hash("access-2"));
-  assert.equal(seen[2].bth, hash(JSON.stringify({
+  assert.equal(seen[3].bth, hash(JSON.stringify({
     model: "mock", input: "hello", stream: true,
   })));
 });
@@ -347,6 +351,7 @@ test("concurrent expired requests share one signed token rotation and retry with
           expiresIn: 1800,
         });
       }
+      if (url.endsWith("/devices/register")) return Response.json({ device: loginResponse.device });
       if (token === "access-1") {
         if (++oldRequests === 2) signalOldRequests();
         return Response.json({ error: {
@@ -480,4 +485,26 @@ test("concurrent first-run key requests persist a single key", async () => {
   assert.equal(first, second);
   assert.equal(second, third);
   assert.ok(stored.includes("PRIVATE KEY"));
+});
+
+
+test("refresh after upgrade updates the same UUID and P-256 key before model access", async () => {
+ const vault=new MemoryVault(),keys=new DeviceKeyStore(vault,'key');const publicKey=(await keys.get()).publicKeyJwk;
+ const tokens=new CloudTokenSession(new WindowsCredentialManagerTokenStore(vault,'token'));await tokens.rotate({accessToken:'old-access',refreshToken:'old-refresh'});
+ const upgraded={...device,appVersion:'0.3.1'};const paths=[];
+ const client=new HttpCloudClient({baseUrl:'https://cloud.example.test',tokens,devices:{get:async()=>upgraded},deviceKeys:keys,fetch:async(input,init)=>{
+  const url=String(input),body=String(init.body??'');paths.push(new URL(url).pathname);
+  if(url.endsWith('/auth/refresh')){checkProof(url,init,publicKey,'old-refresh',body);return Response.json({accessToken:'new-access',refreshToken:'new-refresh',expiresIn:1800})}
+  if(url.endsWith('/devices/register')){checkProof(url,init,publicKey,'new-access',body);assert.deepEqual(JSON.parse(body),{...upgraded,publicKeyJwk:publicKey});return Response.json({device:{...loginResponse.device,appVersion:'0.3.1'}})}
+  checkProof(url,init,publicKey,'new-access',body);return Response.json({object:'list',data:[]});
+ }});
+ await client.refresh();await client.listModels();assert.deepEqual(paths,['/api/v1/auth/refresh','/api/v1/devices/register','/v1/models']);assert.deepEqual((await keys.get()).publicKeyJwk,publicKey);
+});
+test("device update failure rejects refresh without recursive retry or silent success", async () => {
+ const vault=new MemoryVault(),keys=new DeviceKeyStore(vault,'key');const tokens=new CloudTokenSession(new WindowsCredentialManagerTokenStore(vault,'token'));await tokens.rotate({accessToken:'old-access',refreshToken:'old-refresh'});let refreshes=0,registrations=0;
+ const client=new HttpCloudClient({baseUrl:'https://cloud.example.test',tokens,devices:{get:async()=>({...device,appVersion:'0.3.1'})},deviceKeys:keys,fetch:async(input)=>{
+  if(String(input).endsWith('/auth/refresh')){refreshes++;return Response.json({accessToken:'new-access',refreshToken:'new-refresh',expiresIn:1800})}
+  registrations++;return Response.json({error:{code:'TOKEN_EXPIRED',message:'Registration denied',requestId:'registration-error'}},{status:401});
+ }});
+ await assert.rejects(client.refresh(),error=>error.code==='TOKEN_EXPIRED'&&error.requestId==='registration-error');assert.equal(refreshes,1);assert.equal(registrations,1);
 });

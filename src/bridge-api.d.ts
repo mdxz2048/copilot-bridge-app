@@ -17,6 +17,7 @@ export interface ChatGptStatus {
   version?: string;
   appId?: string;
   step?: "CHECKING" | "INSTALLING" | "WAITING_FOR_STORE" | "VERIFYING";
+  downloadAvailable?: boolean;
 }
 
 export interface Diagnostics {
@@ -333,6 +334,7 @@ declare global {
       onProfileStatus(handler: (status: ProfileStatus) => void): () => void;
       getChatGptStatus(): Promise<ChatGptStatus>;
       installChatGpt(): Promise<void>;
+      openChatGptDownload(): Promise<void>;
       cancelChatGptInstall(): Promise<void>;
       launchChatGpt(): Promise<void>;
       restartChatGpt(): Promise<ProfileStatus>;

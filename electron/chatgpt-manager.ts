@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { promisify } from "node:util";
-import { chatGptStopScript } from "./chatgpt-restart.js";
+import { chatGptRestartCommand, chatGptRestartError } from "./chatgpt-restart.js";
+import { installOfficialClient } from "./official-client-installer.js";
 
 const execFileAsync = promisify(execFile);
 const windowsPowerShell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
@@ -17,20 +18,33 @@ export interface ChatGptStatus {
   version?: string;
   appId?: string;
   step?: ChatGptInstallStep;
+  downloadAvailable?: boolean;
 }
+
+type CommandExecutor = (file: string, args: string[], options?: { timeout?: number; windowsHide?: boolean }) => Promise<{ stdout: string; stderr: string }>;
+interface ManagerOptions { execute?: CommandExecutor; spawnInstaller?: () => ChildProcessWithoutNullStreams; installationPollMs?: number; installationAttempts?: number; installerTimeoutMs?: number; offlineFetch?: typeof fetch }
 
 export class ChatGptManager {
   private installProcess: ChildProcessWithoutNullStreams | null = null;
   private installTimeout: ReturnType<typeof setTimeout> | null = null;
   private readonly onDiagnostic: ((message: string) => void) | undefined;
+  private readonly execute: CommandExecutor;
+  private readonly options: ManagerOptions;
+  private installAttempt = 0;
+  private installing = false;
+  private offlineInstalling = false;
+  private offlineAbort: AbortController | undefined;
+  private offlineSystemInstall = false;
 
-  constructor(onDiagnostic?: (message: string) => void) {
+  constructor(onDiagnostic?: (message: string) => void, options: ManagerOptions = {}) {
     this.onDiagnostic = onDiagnostic;
+    this.options = options;
+    this.execute = options.execute ?? (async (file, args, settings) => execFileAsync(file, args, { ...settings, encoding: "utf8", windowsHide: true }));
   }
 
   async detect(): Promise<ChatGptStatus> {
     try {
-      const { stdout } = await execFileAsync(windowsPowerShell, [
+      const { stdout } = await this.execute(windowsPowerShell, [
         "-NoProfile",
         "-NonInteractive",
         "-Command",
@@ -86,13 +100,15 @@ export class ChatGptManager {
     }
   }
 
-  install(onStatus: (status: ChatGptStatus) => void, openStore: () => Promise<void>): void {
-    if (this.installProcess) {
+  install(onStatus: (status: ChatGptStatus) => void, openStore: () => Promise<void>, openDownload?: () => Promise<void>): void {
+    if (this.installing) {
       throw new Error("ChatGPT 安装已在进行中。");
     }
+    this.installing = true;
+    const attempt = ++this.installAttempt;
     onStatus({ state: "INSTALLING", step: "CHECKING", message: "正在检查系统环境…" });
     onStatus({ state: "INSTALLING", step: "INSTALLING", message: "正在通过官方 Microsoft Store 安装…" });
-    const child = spawn(
+    const child = this.options.spawnInstaller?.() ?? spawn(
       "winget.exe",
       [
         "install",
@@ -106,22 +122,22 @@ export class ChatGptManager {
       ],
       { windowsHide: true, stdio: "pipe" },
     );
+    // winget progress output can fill a pipe and block installation if it is not drained.
+    child.stdout.on("data", () => {});
+    child.stderr.on("data", () => {});
     this.installProcess = child;
     this.installTimeout = setTimeout(() => {
       if (this.installProcess !== child) return;
       child.kill();
       this.installProcess = null;
-      void openStore();
-      onStatus({ state: "INSTALLING", step: "WAITING_FOR_STORE", message: "官方安装未在预期时间内启动，已打开 Microsoft Store。" });
-      void this.waitForInstallation(onStatus);
-    }, 60_000);
+      this.clearInstallTimeout();
+      void this.storeFallback(onStatus, openStore, openDownload, attempt);
+    }, this.options.installerTimeoutMs ?? 60_000);
     child.on("error", async () => {
       if (this.installProcess !== child) return;
       this.clearInstallTimeout();
       this.installProcess = null;
-      await openStore();
-      onStatus({ state: "INSTALLING", step: "WAITING_FOR_STORE", message: "已打开 Microsoft Store，正在等待安装完成…" });
-      await this.waitForInstallation(onStatus);
+      await this.storeFallback(onStatus, openStore, openDownload, attempt);
     });
     child.on("exit", async (code) => {
       if (this.installProcess !== child) return;
@@ -129,18 +145,12 @@ export class ChatGptManager {
       this.installProcess = null;
       const status = await this.detect();
       if (status.state === "INSTALLED") {
+        this.installing = false;
         onStatus({ ...status, step: "VERIFYING", message: "正在验证 ChatGPT 安装…" });
         onStatus(status);
       } else {
-        await openStore();
-        onStatus({
-          state: "INSTALLING",
-          step: "WAITING_FOR_STORE",
-          message: code === 0
-            ? "正在等待 ChatGPT 完成注册…"
-            : "已打开 Microsoft Store，请完成官方安装。",
-        });
-        await this.waitForInstallation(onStatus);
+        this.onDiagnostic?.(`Official installer exited: ${String(code)}`);
+        await this.storeFallback(onStatus, openStore, openDownload, attempt);
       }
     });
   }
@@ -158,45 +168,103 @@ export class ChatGptManager {
     child.unref();
   }
 
+  async installOffline(directory: string, onStatus: (status: ChatGptStatus) => void): Promise<void> {
+    if(this.offlineInstalling) throw new Error("官方安装包正在下载或安装，请稍候。");
+    // Take over a Store watcher, but never terminate any official client process.
+    this.cancelInstall();
+    this.offlineInstalling=true;this.installing=true;this.offlineAbort=new AbortController();
+    try {
+      const existing=await this.detect();
+      if(existing.state==="INSTALLED"){onStatus(existing);return;}
+      await installOfficialClient(directory,{execute:this.execute,fetch:this.options.offlineFetch,signal:this.offlineAbort.signal,installationStarted:()=>{this.offlineSystemInstall=true;},progress:message=>onStatus({state:"INSTALLING",step:"INSTALLING",message})});
+      onStatus({state:"INSTALLING",step:"VERIFYING",message:"正在确认 ChatGPT 安装结果…"});
+      const status=await this.detect();
+      if(status.state!=="INSTALLED")throw new Error("安装已执行，但尚未检测到 ChatGPT 注册成功。请检查 Windows 安装策略后重试。");
+      onStatus(status);
+    } catch(error) {
+      const detail=this.offlineAbort?.signal.aborted ? "已取消安装包下载。" : error instanceof Error ? error.message : "Windows 安装操作失败。";
+      const message=detail.startsWith("Command failed:")?"离线安装未完成。请允许管理员授权，并检查 Windows 应用安装策略；可重试下载安装。":detail;
+      this.onDiagnostic?.("Official offline installation failed");
+      onStatus({state:"ERROR",downloadAvailable:true,message});
+    } finally {this.offlineInstalling=false;this.installing=false;this.offlineAbort=undefined;this.offlineSystemInstall=false;}
+  }
+
   async restart(): Promise<void> {
     const status = await this.detect();
     if (status.state !== "INSTALLED" || !status.appId) throw new Error("尚未检测到可重启的 ChatGPT。");
     this.onDiagnostic?.("ChatGPT restart requested; Bridge remains running");
-    await execFileAsync(windowsPowerShell, ["-NoProfile", "-NonInteractive", "-Command", chatGptStopScript(process.pid)], { timeout: 20000, windowsHide: true });
+    try {
+      await this.execute(windowsPowerShell, chatGptRestartCommand(process.pid, status.appId), { timeout: 30000, windowsHide: true });
+    } catch (error) {
+      const message = chatGptRestartError(error);
+      this.onDiagnostic?.(message);
+      throw new Error(message);
+    }
     await this.launch();
     this.onDiagnostic?.("ChatGPT restart launch completed");
   }
 
-  cancelInstall(): void {
+  cancelInstall(): boolean {
+    // Windows owns the elevated deployment once it starts. Do not pretend to cancel it.
+    if(this.offlineSystemInstall)return false;
+    this.offlineAbort?.abort();
+    this.installing = false;
+    this.installAttempt++;
     this.clearInstallTimeout();
     const child = this.installProcess;
     this.installProcess = null;
     if (child && child.exitCode === null) {
       child.kill();
     }
+    return true;
   }
 
   static storeUri(): string {
     return `ms-windows-store://pdp/?ProductId=${officialStoreProductId}`;
   }
 
-  private async waitForInstallation(onStatus: (status: ChatGptStatus) => void): Promise<void> {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      await delay(10_000);
-      onStatus({ state: "INSTALLING", step: "WAITING_FOR_STORE", message: "正在等待 ChatGPT 完成安装…" });
+  static downloadPageUri(): string { return "https://ai.mddxz.top/download#chatgpt"; }
+
+  private async storeFallback(onStatus: (status: ChatGptStatus) => void, openStore: () => Promise<void>, openDownload: (() => Promise<void>) | undefined, attempt: number): Promise<void> {
+    if (attempt !== this.installAttempt) return;
+    try {
+      await openStore();
+      if (attempt !== this.installAttempt) return;
+      onStatus({ state: "INSTALLING", step: "WAITING_FOR_STORE", downloadAvailable: true, message: "已打开 Microsoft Store；商店无法连接时，可以点击“下载安装包”离线安装。" });
+      await this.waitForInstallation(onStatus, openDownload, attempt);
+    } catch {
+      await this.downloadFallback(onStatus, openDownload, attempt);
+    }
+  }
+
+  private async downloadFallback(onStatus: (status: ChatGptStatus) => void, openDownload: (() => Promise<void>) | undefined, attempt: number): Promise<void> {
+    if (attempt !== this.installAttempt) return;
+    this.installing = false;
+    if (openDownload) try { await openDownload(); } catch { /* The visible button permits a later retry. */ }
+    if (attempt !== this.installAttempt) return;
+    onStatus({ state: "ERROR", downloadAvailable: true, message: "Microsoft Store 未能完成安装。请点击“下载安装包”，使用官网提供的官方离线安装包。" });
+  }
+
+  private async waitForInstallation(onStatus: (status: ChatGptStatus) => void, openDownload: (() => Promise<void>) | undefined, installAttempt: number): Promise<void> {
+    for (let attempt = 0; attempt < (this.options.installationAttempts ?? 18); attempt += 1) {
+      await delay(this.options.installationPollMs ?? 5_000);
+      if (installAttempt !== this.installAttempt) return;
+      onStatus({ state: "INSTALLING", step: "WAITING_FOR_STORE", downloadAvailable: true, message: "正在等待 ChatGPT 安装；商店不可用时可以下载安装包。" });
       const status = await this.detect();
+      if (installAttempt !== this.installAttempt) return;
       if (status.state === "INSTALLED") {
+        this.installing = false;
         onStatus({ ...status, step: "VERIFYING", message: "正在验证 ChatGPT 安装…" });
         onStatus(status);
         return;
       }
     }
-    onStatus({ state: "ERROR", message: "未能在预期时间内检测到 ChatGPT 安装完成。" });
+    await this.downloadFallback(onStatus, openDownload, installAttempt);
   }
 
   private async isOfficialStorePackageInstalled(): Promise<boolean | undefined> {
     try {
-      await execFileAsync("winget.exe", [
+      await this.execute("winget.exe", [
         "list",
         "--id",
         officialStoreProductId,

@@ -30,6 +30,7 @@ function bridgeConfiguration(
   const applied = [`model = ${JSON.stringify(model)}`, `model_provider = ${JSON.stringify(providerId)}`, ...root,
     ...lines.slice(rootEnd), "", `[model_providers.${JSON.stringify(providerId)}]`, 'name = "Copilot Bridge"',
     `base_url = ${JSON.stringify(endpoint)}`, 'wire_api = "responses"', 'supports_websockets = false', 'requires_openai_auth = false',
+    'request_max_retries = 0', 'stream_max_retries = 0', 'stream_idle_timeout_ms = 300000',
     "", `[model_providers.${JSON.stringify(providerId)}.auth]`, `command = ${JSON.stringify(helperCommand)}`,
     `args = ${JSON.stringify(helperArgs)}`, "timeout_ms = 15000", "refresh_interval_ms = 300000", ""].join("\n");
   parse(applied);
@@ -121,6 +122,16 @@ export class GatewayProfileStore {
     }
     if (previous?.active) {
       this.checkConflict(previous, current.text);
+      const selected = previous.providerId;
+      const parsed = parse(current.text);
+      const provider = selected ? (parsed.model_providers as Record<string, Record<string, unknown>> | undefined)?.[selected] : undefined;
+      if (selected && provider && (provider.request_max_retries !== 0 || provider.stream_max_retries !== 0 || provider.stream_idle_timeout_ms !== 300000)) {
+        const original = this.restoreConfiguration(previous, current.text);
+        const applied = bridgeConfiguration(original, selected, this.helperCommand, this.helperArgs, this.endpoint);
+        await this.save({ ...previous, original, appliedHash: hash(applied), pending: "bridge" });
+        try { await this.writeConfiguration(applied); }
+        catch (error) { await this.save(previous); throw error; }
+      }
       return this.getStatus();
     }
     const parsed = parse(current.text);
@@ -164,8 +175,14 @@ export class GatewayProfileStore {
       const applied = parse(expected);
       const currentProviders = current.model_providers as Record<string, unknown> | undefined;
       const appliedProviders = applied.model_providers as Record<string, unknown> | undefined;
+      const expectedProvider = { ...(appliedProviders?.[snapshot.providerId] as Record<string, unknown> | undefined) };
+      const currentProvider = currentProviders?.[snapshot.providerId] as Record<string, unknown> | undefined;
+      // Older Bridge versions did not write these owned retry fields.
+      for (const key of ["request_max_retries", "stream_max_retries", "stream_idle_timeout_ms"]) {
+        if (currentProvider?.[key] === undefined) delete expectedProvider[key];
+      }
       if (current.model === applied.model && current.model_provider === applied.model_provider
-        && isDeepStrictEqual(currentProviders?.[snapshot.providerId], appliedProviders?.[snapshot.providerId])) return;
+        && isDeepStrictEqual({ ...currentProvider }, expectedProvider)) return;
     }
     throw new Error("Bridge 模型连接配置在切换后被修改，已保留现有内容。请先恢复原账号再重新启用 Bridge。");
   }

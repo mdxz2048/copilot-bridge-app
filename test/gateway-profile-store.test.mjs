@@ -3,8 +3,26 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import { parse, stringify } from "smol-toml";
 import { GatewayProfileStore } from "../dist-electron/gateway-profile-store.js";
+
+test("upgrades old active Bridge retry policy and preserves original and external settings", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-retry-upgrade-"));
+  try {
+    const file=join(directory,"config.toml"),state=join(directory,"switch.json");
+    const original='model="my-model"\n[features]\nfoo=true\n';
+    await writeFile(file,original);
+    const store=new GatewayProfileStore(directory,state,"node",["helper"]);
+    await store.activate("bridge");await store.acknowledgeRestart();
+    const old=(await readFile(file,"utf8")).replace(/^request_max_retries.*\n|^stream_max_retries.*\n|^stream_idle_timeout_ms.*\n/gm,"");
+    const snapshot=JSON.parse(await readFile(state,"utf8"));snapshot.appliedHash=createHash("sha256").update(old).digest("hex");
+    await writeFile(state,JSON.stringify(snapshot));await writeFile(file,old.replace('foo=true','foo=false'));
+    assert.equal((await store.activate("bridge")).restartRequired,true);
+    const updated=parse(await readFile(file,"utf8"));assert.equal(updated.features.foo,false);assert.equal(updated.model_providers.copilot_bridge_desktop.request_max_retries,0);
+    await store.activate("original");assert.equal(parse(await readFile(file,"utf8")).features.foo,false);assert.equal(parse(await readFile(file,"utf8")).model_provider,undefined);
+  } finally {await rm(directory,{recursive:true,force:true});}
+});
 
 test("switches gateway with an app restart and restores original config byte for byte", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bridge-gateway-"));
@@ -21,6 +39,8 @@ test("switches gateway with an app restart and restores original config byte for
     assert.equal(config.model_provider, "copilot_bridge_desktop");
     assert.equal(config.model_providers.copilot_bridge_desktop.auth.command, "C:\\runtime\\node.exe");
     assert.equal(config.model_providers.copilot_bridge_desktop.requires_openai_auth, false);
+    assert.equal(config.model_providers.copilot_bridge_desktop.request_max_retries, 0);
+    assert.equal(config.model_providers.copilot_bridge_desktop.stream_max_retries, 0);
     assert.match(applied, /keep my comments/);
     await store.acknowledgeRestart();
     assert.equal((await store.getStatus()).restartRequired, false);
