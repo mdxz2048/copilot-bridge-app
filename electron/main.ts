@@ -371,8 +371,8 @@ function refreshTray(): void {
 
 function titleBarOverlayColors() {
   return nativeTheme.shouldUseDarkColors
-    ? { color: "#1C1C1E", symbolColor: "#F5F5F7", height: 48 }
-    : { color: "#F5F5F7", symbolColor: "#1D1D1F", height: 48 };
+    ? { color: "#202633", symbolColor: "#F5F5F7", height: 48 }
+    : { color: "#F4F7FC", symbolColor: "#142033", height: 48 };
 }
 
 function updateTitleBarOverlay(): void {
@@ -392,8 +392,8 @@ function createWindow(): void {
     return;
   }
   const window = new BrowserWindow({
-    width: 760,
-    height: 560,
+    width: 900,
+    height: 700,
     minWidth: 720,
     minHeight: 520,
     center: true,

@@ -24,7 +24,7 @@ export function AccountSummaryCard({
         onClick={onLogin}
         type="button"
       >
-        <span>Copilot Bridge 云服务 · 未登录</span>
+        <span className="account-summary-content"><span className="account-plan-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m4 7 4 4 4-7 4 7 4-4-2 11H6L4 7Z"/></svg></span><span>Copilot Bridge 云服务 · 未登录</span></span>
         <strong>登录 ›</strong>
       </button>
     );
@@ -37,13 +37,15 @@ export function AccountSummaryCard({
       title={cloud.account}
       type="button"
     >
-      <span>
-        <strong>{cloud.plan ?? "云服务"}</strong>
-        {cloud.billing ? ` · 本周期已用 ¥${cloud.billing.usedRmb.toFixed(4)} · 可用 ¥${cloud.billing.remainingRmb.toFixed(4)}` : cloud.usagePointsUsed == null
-          ? ""
-          : ` · 本月已用 ${formatPoints(cloud.usagePointsUsed)} 点`}
-        {cloud.validUntil ? ` · ${formatShortDate(cloud.validUntil)}到期` : ""}
-        {service === "LOCAL" ? " · 当前使用我的 GitHub Copilot" : ""}
+      <span className="account-summary-content">
+        <span className="account-plan-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m4 7 4 4 4-7 4 7 4-4-2 11H6L4 7Z"/></svg></span>
+        <strong className="account-plan-name">{cloud.plan ?? "云服务"}</strong>
+        <span className="account-summary-metrics">
+          {cloud.billing ? <><span>本周期已用 ¥{cloud.billing.usedRmb.toFixed(4)}</span><span>可用 ¥{cloud.billing.remainingRmb.toFixed(4)}</span></> : cloud.usagePointsUsed == null
+            ? null : <span>本月已用 {formatPoints(cloud.usagePointsUsed)} 点</span>}
+          {cloud.validUntil && <span>{formatShortDate(cloud.validUntil)}到期</span>}
+          {service === "LOCAL" && <span>当前使用我的 GitHub Copilot</span>}
+        </span>
       </span>
       <strong>账户 ›</strong>
     </button>

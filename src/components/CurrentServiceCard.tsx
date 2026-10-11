@@ -12,6 +12,7 @@ import { zhCN } from "../locales/zh-CN";
 import { displayModel } from "../model-display";
 import { Button } from "./Button";
 import { Select, SelectRow } from "./Select";
+import {ServiceMark,ServiceActionIcon} from './ServiceMark';
 
 interface CurrentServiceCardProps {
   bridge: BridgeStatus | null;
@@ -83,7 +84,7 @@ export function CurrentServiceCard({
         <h2 id="current-service-heading">AI 服务</h2>
         <div className="card current-service-card bridge-disabled-card">
           <div className="service-card-header">
-            <p className="service-name">ChatGPT 原账号</p>
+            <div className="service-identity"><ServiceMark original/><p className="service-name">ChatGPT 原账号</p></div>
             <span className={`service-state state-${profilePending ? "neutral" : "success"}`}>
               <span aria-hidden="true">●</span>
               {profilePending ? "待生效" : "当前使用"}
@@ -100,7 +101,7 @@ export function CurrentServiceCard({
               onClick={chatGpt.state !== "INSTALLED" ? onInstallChatGpt : profilePending ? onRestartChatGpt : onOpenChatGpt}
               type="button"
             >
-              {chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
+              <ServiceActionIcon/>{chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
                 ? copy.installChatGpt
                 : profilePending
                   ? "重启 ChatGPT"
@@ -117,9 +118,9 @@ export function CurrentServiceCard({
       <h2 id="current-service-heading">{copy.currentService}</h2>
       <div className="card current-service-card" aria-live="polite">
         <div className="service-card-header">
-          <p className="service-name">
+          <div className="service-identity"><ServiceMark/><p className="service-name">
             {provider.name}
-          </p>
+          </p></div>
           <div className="service-header-state">
             <span className={`service-state state-${profilePending ? "neutral" : state.tone}`}>
               <span aria-hidden="true">{state.symbol}</span>
@@ -233,7 +234,7 @@ export function CurrentServiceCard({
             }
             type="button"
           >
-            {chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
+            <ServiceActionIcon/>{chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
               ? copy.installChatGpt
               : profilePending
                 ? "重启 ChatGPT"

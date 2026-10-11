@@ -35,18 +35,19 @@ export function UpdateControl() {
     finally{setInstalling(false);actionPending.current=false;}
   }
   return <div className="update-control">
-    <button type="button" className={`update-icon-button update-${status.state.toLowerCase()}`} disabled={working}
+    <button type="button" className={`title-tool-button update-icon-button update-${status.state.toLowerCase()}`} disabled={working}
       title={label} aria-label={label} onClick={()=>void activate()}>
       <svg className="update-progress-ring" viewBox="0 0 36 36" aria-hidden="true">
         {downloading&&<circle className="update-ring-track" cx="18" cy="18" r="16"/>}
-        {(downloading||status.state==='READY')&&<circle className={`update-ring-value ${downloading&&!determinate?'update-ring-unknown':''}`} cx="18" cy="18" r="16"
+        {downloading&&<circle className={`update-ring-value ${!determinate?'update-ring-unknown':''}`} cx="18" cy="18" r="16"
           pathLength="100" strokeDasharray={downloading&&!determinate?'22 78':'100'} strokeDashoffset={percent!==undefined?100-percent:0}/>}
       </svg>
       <svg className="update-symbol" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         {status.state==='ERROR'?<><path d="M12 5v9"/><path d="M12 18h.01"/></>:status.state==='READY'||downloading
-          ?<><path d="M12 4v11m-4-4 4 4 4-4"/><path d="M5 16v4h14v-4"/></>
+          ?<><path d="M12 19V5m-4 4 4-4 4 4"/><path d="M5 17v3h14v-3"/></>
           :<><path d="M19 7a8 8 0 0 0-13-1L3 9m0-5v5h5"/><path d="M5 17a8 8 0 0 0 13 1l3-3m0 5v-5h-5"/></>}
       </svg>
+      {(downloading||status.state==='READY')&&<span className="update-notification-dot" aria-hidden="true"/>}
     </button>
     {downloading&&<span className="visually-hidden" role="progressbar" aria-label="安装包下载进度" aria-valuemin={percent!==undefined?0:undefined}
       aria-valuemax={percent!==undefined?100:undefined} aria-valuenow={percent!==undefined?Math.floor(percent):undefined} aria-valuetext={label}/>}

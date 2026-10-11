@@ -1,0 +1,1407 @@
+{
+  "result": "PASS",
+  "level": "MOCK_BROWSER_ACTUAL_APP_RENDERER",
+  "source": "src/App.tsx + all imported components + src/style.css",
+  "nativeCaption": "Not captured: browser renderer only; no simulated native Windows caption",
+  "noNativeActions": true,
+  "noPaidRequests": true,
+  "browser": "155.0.4283.45",
+  "screens": [
+    {
+      "name": "original",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "original-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "cloud-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud-scrolled-actions",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "cloud-scrolled-actions-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "missing",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "missing-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "pending",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "pending-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 447,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": {
+          "left": 130,
+          "top": 148.96875,
+          "right": 590,
+          "bottom": 371.03125,
+          "scrollHeight": 222,
+          "clientHeight": 222
+        }
+      }
+    },
+    {
+      "name": "update-download",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "update-download-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "update-ready",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "update-ready-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "original",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "original-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 500,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "cloud-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "missing",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "missing-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 500,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "pending",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "pending-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 575,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": {
+          "left": 150,
+          "top": 188.96875,
+          "right": 610,
+          "bottom": 411.03125,
+          "scrollHeight": 222,
+          "clientHeight": 222
+        }
+      }
+    },
+    {
+      "name": "update-download",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "update-download-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "update-ready",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "update-ready-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "original",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "original-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 578,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "cloud-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "missing",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "missing-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 578,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "pending",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "pending-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 659,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": {
+          "left": 220,
+          "top": 238.96875,
+          "right": 680,
+          "bottom": 461.03125,
+          "scrollHeight": 222,
+          "clientHeight": 222
+        }
+      }
+    },
+    {
+      "name": "update-download",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "update-download-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "update-ready",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "update-ready-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "original",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "original-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "cloud-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud-scrolled-actions",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "cloud-scrolled-actions-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "missing",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "missing-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "pending",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "pending-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 447,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": {
+          "left": 130.00094604492188,
+          "top": 148.96920776367188,
+          "right": 589.9990234375,
+          "bottom": 371.0307922363281,
+          "scrollHeight": 222,
+          "clientHeight": 222
+        }
+      }
+    },
+    {
+      "name": "update-download",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "update-download-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "update-ready",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "update-ready-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "original",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "original-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 500,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "cloud-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "missing",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "missing-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 500,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "pending",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "pending-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 575,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": {
+          "left": 150,
+          "top": 188.96875,
+          "right": 610,
+          "bottom": 411.03125,
+          "scrollHeight": 222,
+          "clientHeight": 222
+        }
+      }
+    },
+    {
+      "name": "update-download",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "update-download-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "update-ready",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "update-ready-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "original",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "original-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 578,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "cloud",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "cloud-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "missing",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "missing-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 578,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "pending",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "pending-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 659,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": {
+          "left": 220,
+          "top": 238.96875,
+          "right": 680,
+          "bottom": 461.03125,
+          "scrollHeight": 222,
+          "clientHeight": 222
+        }
+      }
+    },
+    {
+      "name": "update-download",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "update-download-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "update-ready",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "update-ready-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "settings",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "settings-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": {
+          "left": 304,
+          "top": 16,
+          "right": 704,
+          "bottom": 504,
+          "scrollHeight": 756,
+          "clientHeight": 486
+        }
+      }
+    },
+    {
+      "name": "account",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "account-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": {
+          "left": 304,
+          "top": 16,
+          "right": 704,
+          "bottom": 504,
+          "scrollHeight": 982,
+          "clientHeight": 486
+        }
+      }
+    },
+    {
+      "name": "services",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "services-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": {
+          "left": 304,
+          "top": 16,
+          "right": 704,
+          "bottom": 504,
+          "scrollHeight": 486,
+          "clientHeight": 486
+        }
+      }
+    },
+    {
+      "name": "models",
+      "theme": "light",
+      "width": 720,
+      "height": 520,
+      "file": "models-light-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "settings",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "settings-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": {
+          "left": 344,
+          "top": 16,
+          "right": 744,
+          "bottom": 584,
+          "scrollHeight": 756,
+          "clientHeight": 566
+        }
+      }
+    },
+    {
+      "name": "account",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "account-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": {
+          "left": 344,
+          "top": 16,
+          "right": 744,
+          "bottom": 584,
+          "scrollHeight": 982,
+          "clientHeight": 566
+        }
+      }
+    },
+    {
+      "name": "services",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "services-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": {
+          "left": 344,
+          "top": 16,
+          "right": 744,
+          "bottom": 584,
+          "scrollHeight": 566,
+          "clientHeight": 566
+        }
+      }
+    },
+    {
+      "name": "models",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "models-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "settings",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "settings-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": {
+          "left": 484,
+          "top": 16,
+          "right": 884,
+          "bottom": 684,
+          "scrollHeight": 762,
+          "clientHeight": 666
+        }
+      }
+    },
+    {
+      "name": "account",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "account-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": {
+          "left": 484,
+          "top": 16,
+          "right": 884,
+          "bottom": 684,
+          "scrollHeight": 982,
+          "clientHeight": 666
+        }
+      }
+    },
+    {
+      "name": "services",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "services-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": {
+          "left": 484,
+          "top": 16,
+          "right": 884,
+          "bottom": 684,
+          "scrollHeight": 666,
+          "clientHeight": 666
+        }
+      }
+    },
+    {
+      "name": "models",
+      "theme": "light",
+      "width": 900,
+      "height": 700,
+      "file": "models-light-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "light",
+        "dialog": null
+      }
+    },
+    {
+      "name": "settings",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "settings-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": {
+          "left": 304,
+          "top": 16,
+          "right": 704,
+          "bottom": 504,
+          "scrollHeight": 756,
+          "clientHeight": 486
+        }
+      }
+    },
+    {
+      "name": "account",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "account-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": {
+          "left": 304,
+          "top": 16,
+          "right": 704,
+          "bottom": 504,
+          "scrollHeight": 982,
+          "clientHeight": 486
+        }
+      }
+    },
+    {
+      "name": "services",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "services-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": {
+          "left": 304,
+          "top": 16,
+          "right": 704,
+          "bottom": 504,
+          "scrollHeight": 486,
+          "clientHeight": 486
+        }
+      }
+    },
+    {
+      "name": "models",
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "file": "models-dark-720x520.png",
+      "metrics": {
+        "documentWidth": 720,
+        "viewportWidth": 720,
+        "documentHeight": 520,
+        "viewportHeight": 520,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 420,
+        "contentClientHeight": 420,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "settings",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "settings-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": {
+          "left": 344,
+          "top": 16,
+          "right": 744,
+          "bottom": 584,
+          "scrollHeight": 756,
+          "clientHeight": 566
+        }
+      }
+    },
+    {
+      "name": "account",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "account-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": {
+          "left": 344,
+          "top": 16,
+          "right": 744,
+          "bottom": 584,
+          "scrollHeight": 982,
+          "clientHeight": 566
+        }
+      }
+    },
+    {
+      "name": "services",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "services-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": {
+          "left": 344,
+          "top": 16,
+          "right": 744,
+          "bottom": 584,
+          "scrollHeight": 566,
+          "clientHeight": 566
+        }
+      }
+    },
+    {
+      "name": "models",
+      "theme": "dark",
+      "width": 760,
+      "height": 600,
+      "file": "models-dark-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 539,
+        "contentClientHeight": 500,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "settings",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "settings-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": {
+          "left": 484,
+          "top": 16,
+          "right": 884,
+          "bottom": 684,
+          "scrollHeight": 762,
+          "clientHeight": 666
+        }
+      }
+    },
+    {
+      "name": "account",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "account-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": {
+          "left": 484,
+          "top": 16,
+          "right": 884,
+          "bottom": 684,
+          "scrollHeight": 982,
+          "clientHeight": 666
+        }
+      }
+    },
+    {
+      "name": "services",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "services-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": {
+          "left": 484,
+          "top": 16,
+          "right": 884,
+          "bottom": 684,
+          "scrollHeight": 666,
+          "clientHeight": 666
+        }
+      }
+    },
+    {
+      "name": "models",
+      "theme": "dark",
+      "width": 900,
+      "height": 700,
+      "file": "models-dark-900x700.png",
+      "metrics": {
+        "documentWidth": 900,
+        "viewportWidth": 900,
+        "documentHeight": 700,
+        "viewportHeight": 700,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 623,
+        "contentClientHeight": 578,
+        "theme": "dark",
+        "dialog": null
+      }
+    },
+    {
+      "name": "offline-download",
+      "theme": "light",
+      "width": 760,
+      "height": 600,
+      "file": "offline-download-light-760x600.png",
+      "metrics": {
+        "documentWidth": 760,
+        "viewportWidth": 760,
+        "documentHeight": 600,
+        "viewportHeight": 600,
+        "fontFamily": "\"Segoe UI Variable\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"SF Pro Display\", sans-serif",
+        "titleToolsCenterY": 24,
+        "contentScrollHeight": 500,
+        "contentClientHeight": 500,
+        "theme": "light",
+        "dialog": {
+          "left": 150,
+          "top": 136.46875,
+          "right": 610,
+          "bottom": 463.53125,
+          "scrollHeight": 327,
+          "clientHeight": 327
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "scenario": "offline-download",
+      "mockCalls": [
+        {
+          "name": "installChatGpt"
+        },
+        {
+          "name": "openChatGptDownload"
+        }
+      ]
+    },
+    {
+      "scenario": "ready-install",
+      "mockCalls": [
+        {
+          "name": "installUpdate",
+          "args": []
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "networkRequests": []
+}

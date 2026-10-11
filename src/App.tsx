@@ -11,7 +11,6 @@ import type {
   ProfileStatus,
 } from "./bridge-api";
 import { AppTitleBar } from "./components/AppTitleBar";
-import { UpdateControl } from './components/UpdateControl';
 import { AccountSummaryCard } from "./components/AccountSummaryCard";
 import { BridgeActivationBar } from "./components/BridgeActivationBar";
 import { Button } from "./components/Button";
@@ -468,8 +467,7 @@ export function App() {
   return (
     <main>
       <AppTitleBar onSettings={() => setSettingsOpen(true)} />
-      <UpdateControl />
-
+      <div className="app-content">
       {cloud && cloud.updateState !== "CURRENT" && (
         <div className="product-alert" role="status">
           <span>
@@ -549,6 +547,7 @@ export function App() {
         onUpdateSettings={(next) => void persistSettings(next)}
       />
 
+      </div>
       <footer className="status-bar">
         <span aria-hidden="true">{serviceHealthy ? "●" : "○"}</span>
         {profile?.activeProfile !== "bridge"
@@ -567,6 +566,7 @@ export function App() {
           {bridge?.state === "failed"
             ? zhCN.product.restartBridge
             : zhCN.product.details}
+          <svg aria-hidden="true" viewBox="0 0 16 16" fill="none"><path d="m6 3 5 5-5 5"/></svg>
         </button>
       </footer>
 
