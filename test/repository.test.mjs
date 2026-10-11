@@ -22,7 +22,7 @@ test("preserves the reviewed 2.2 Server baseline while the Desktop adapter requi
     await readFile("docs/protocol/SERVER_CONTRACT_BASELINE.json", "utf8"),
   );
 
-  assert.equal(CLOUD_CONTRACT_VERSION, "2.3.0");
+  assert.equal(CLOUD_CONTRACT_VERSION, "2.6.0");
   assert.equal(baseline.contractVersion, "2.2.0");
   assert.equal(baseline.contractTag, "api-v2.2.0");
   assert.match(baseline.openApiSha256, /^[a-f0-9]{64}$/);

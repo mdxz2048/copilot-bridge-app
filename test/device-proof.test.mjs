@@ -47,7 +47,7 @@ class MemoryVault {
 const hash = (value) => createHash("sha256").update(value).digest("base64url");
 
 test("keeps the V1 login wire shape distinct from the V2 2.3 contract", () => {
-  assert.equal(CLOUD_CONTRACT_VERSION, "2.3.0");
+  assert.equal(CLOUD_CONTRACT_VERSION, "2.6.0");
   assert.deepEqual(LoginResponseSchema.parse(loginResponse), GatewayV1LoginResponseSchema.parse(loginResponse));
   assert.equal(LoginResponseSchema.safeParse({
     ...loginResponse,

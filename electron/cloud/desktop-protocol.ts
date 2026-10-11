@@ -3,17 +3,21 @@ import type { ResponseRequest } from "./contract.js";
 
 /** Normalize the official runtime wire shape before the frozen Cloud function contract. */
 export type DesktopToolBinding = { name: string; namespace?: string; custom: boolean };
-export function normalizeDesktopRequest(value: unknown, native = false, context?: { input: Record<string, unknown>[]; toolBindings?: Map<string, DesktopToolBinding> }): { request: ResponseRequest; customTools: Set<string>; toolBindings: Map<string, DesktopToolBinding> } {
+export type ResponsesProfile = "deepseek" | "openai";
+export function normalizeDesktopRequest(value: unknown, native = false, context?: { input: Record<string, unknown>[]; toolBindings?: Map<string, DesktopToolBinding> }, profile: ResponsesProfile = "deepseek"): { request: ResponseRequest; customTools: Set<string>; toolBindings: Map<string, DesktopToolBinding>; transformations: string[] } {
   if (!value || typeof value !== "object") throw new Error("Invalid Desktop request");
   const raw = value as Record<string, unknown>;
   const customTools = new Set<string>();
   const toolBindings = new Map<string, DesktopToolBinding>();
+  const transformations = new Set<string>();
+  if(profile==="openai")return {request:raw as ResponseRequest,customTools,toolBindings,transformations:[]};
   const tools: Record<string, unknown>[] = [];
   const addTools = (values: unknown[], namespace?: string): void => {
     for (const value of values) {
     if (!value || typeof value !== "object") continue;
     const tool = value as Record<string, unknown>;
     if (tool.type === "namespace" && typeof tool.name === "string" && Array.isArray(tool.tools)) {
+      transformations.add("namespace_flatten");
       addTools(tool.tools, namespace ? `${namespace}.${tool.name}` : tool.name); continue;
     }
     if ((tool.type !== "function" && tool.type !== "custom") || typeof tool.name !== "string") { if (native) { tools.push(tool); continue; } throw new CloudError("UNSUPPORTED_CAPABILITY", `Unsupported tool type: ${String(tool.type)}`, { httpStatus: 422 }); }
@@ -26,6 +30,7 @@ export function normalizeDesktopRequest(value: unknown, native = false, context?
     if (native && tool.name === "apply_patch" && !namespace) { tools.push(tool); continue; }
     if (tool.type === "custom" && typeof tool.name === "string") {
       customTools.add(name);
+      transformations.add("custom_function_wrapper");
       tools.push({ type: "function", name, description: `${tool.description ?? ""}\nSupply the tool's raw input in the input field.`,
         parameters: { type: "object", properties: { input: { type: "string" } }, required: ["input"], additionalProperties: false } });
     }
@@ -37,6 +42,7 @@ export function normalizeDesktopRequest(value: unknown, native = false, context?
       const item = value as Record<string, unknown>;
       if (!Array.isArray(item.tools)) throw new Error("additional_tools 缺少工具定义。");
       addTools(item.tools);
+      transformations.add("additional_tools_promoted");
     }
   }
   const callName = (item: Record<string, unknown>): unknown => [...toolBindings, ...(context?.toolBindings ?? [])].find(([alias, binding]) =>
@@ -47,16 +53,28 @@ export function normalizeDesktopRequest(value: unknown, native = false, context?
     if (item.type === "additional_tools") return [];
     if (item.type === "function_call") return [{ ...item, name: callName(item) }];
     if (native && item.type === "custom_tool_call" && item.name === "apply_patch" && !item.namespace) return [item];
-    if (item.type === "custom_tool_call") return [{ type: "function_call", name: callName(item), call_id: item.call_id, arguments: JSON.stringify({ input: item.input }) }];
+    if (item.type === "custom_tool_call") { transformations.add("custom_call_wrapper");const {input:_input,namespace:_namespace,...rest}=item;return [{ ...rest, type: "function_call", name: callName(item), arguments: JSON.stringify({ input: item.input }) }]; }
     if (native && item.type === "custom_tool_call_output") {
       const call = [...(Array.isArray(raw.input) ? raw.input : []), ...(context?.input ?? [])].find(value => value && typeof value === "object" && ["custom_tool_call", "function_call"].includes(String(value.type)) && value.call_id === item.call_id);
       if (!call || (call.type === "custom_tool_call" && call.name === "apply_patch" && !call.namespace)) return [item];
     }
-    if (item.type === "custom_tool_call_output") return [{ type: "function_call_output", call_id: item.call_id,
-      output: typeof item.output === "string" ? item.output : JSON.stringify(item.output) }];
+    if (item.type === "custom_tool_call_output") { transformations.add("custom_output_wrapper");return [{ ...item, type: "function_call_output",
+      output: native || typeof item.output === "string" ? item.output : JSON.stringify(item.output) }]; }
     return [item];
   }) : raw.input;
-  return { request: { ...raw, tools: tools.length ? tools : undefined, input } as ResponseRequest, customTools, toolBindings };
+  let toolChoice=raw.tool_choice;
+  if(toolChoice&&typeof toolChoice==="object"){
+    const choice=toolChoice as Record<string,unknown>;
+    if(!["function","custom"].includes(String(choice.type))||typeof choice.name!=="string")throw new CloudError("UNSUPPORTED_CAPABILITY","该资源不支持此工具选择格式。",{httpStatus:422});
+    const matches=[...new Map([...(context?.toolBindings??[]),...toolBindings])].filter(([alias,binding])=>alias===choice.name||(binding.name===choice.name&&(choice.namespace===undefined||binding.namespace===choice.namespace)));
+    if(matches.length!==1)throw new CloudError("UNSUPPORTED_CAPABILITY","工具选择未匹配唯一的已声明工具。",{httpStatus:422});
+    const [alias,binding]=matches[0]!;
+    const {namespace:_namespace,...rest}=choice;
+    const type=native&&binding.custom&&binding.name==="apply_patch"&&!binding.namespace?"custom":"function";
+    toolChoice={...rest,type,name:alias};
+    if(alias!==choice.name||type!==choice.type||choice.namespace!==undefined)transformations.add("tool_choice_alias");
+  }
+  return { request: { ...raw, tools: tools.length ? tools : undefined, input, ...(toolChoice!==undefined?{tool_choice:toolChoice}:{}) } as ResponseRequest, customTools, toolBindings, transformations:[...transformations] };
 }
 
 export function desktopOutputItem(value: unknown, customTools: Set<string>, toolBindings?: Map<string, DesktopToolBinding>): unknown {

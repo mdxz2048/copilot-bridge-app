@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CLOUD_CONTRACT_VERSION = "2.3.0";
+export const CLOUD_CONTRACT_VERSION = "2.6.0";
 
 export const DeviceInfoSchema = z.object({
   deviceId: z.uuid(),
@@ -215,6 +215,7 @@ export const ModelSchema = z.object({
     vision: z.boolean(),
     reasoning: z.boolean(),
     nativeResponses: z.boolean().default(false),
+    responsesProfile: z.enum(["deepseek", "openai"]).default("deepseek"),
     reasoningModes: z.array(ReasoningModeSchema).default(["normal"]),
     defaultReasoningMode: ReasoningModeSchema.default("normal"),
     streaming: z.boolean(),
@@ -430,6 +431,7 @@ export const ModelV2Schema = z.object({
     vision: z.boolean(),
     reasoning: z.boolean(),
     nativeResponses: z.boolean().default(false),
+    responsesProfile: z.enum(["deepseek", "openai"]).default("deepseek"),
     reasoningModes: z.array(ReasoningModeSchema).default(["normal"]),
     defaultReasoningMode: ReasoningModeSchema.default("normal"),
     streaming: z.boolean(),

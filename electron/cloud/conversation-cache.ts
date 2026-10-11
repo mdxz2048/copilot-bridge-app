@@ -12,7 +12,7 @@ export class ConversationCache {
       const data=JSON.parse(this.encryption.decryptString(readFileSync(this.path)));
       if(data.accountId!==accountId||data.version!==1||Date.parse(data.expiresAt)<Date.now()||!Array.isArray(data.items))return[];
       return data.items.slice(-8).map((c:RemoteConversation&{toolBindings?:[string,unknown][];customTools?:string[]})=>({
-        threadId:String(c.threadId),sessionKey:c.sessionKey,responseIds:c.responseIds,responseHistory:c.responseHistory,model:c.model,reasoningMode:c.reasoningMode,input:c.input.map(item=>InputItemSchema.parse(item)),tools:c.tools,
+        threadId:String(c.threadId),sessionKey:c.sessionKey,responseIds:c.responseIds,responseHistory:c.responseHistory,model:c.model,reasoningMode:c.reasoningMode,responsesProfile:c.responsesProfile,input:c.input.map(item=>InputItemSchema.parse(item)),tools:c.tools,
         customTools:new Set(c.customTools??[]),toolBindings:new Map(c.toolBindings??[]),
       })) as RemoteConversation[];
     }catch{return[];}

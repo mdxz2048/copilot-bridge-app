@@ -17,7 +17,8 @@ import {
 } from "./contract.js";
 import type { CloudClient } from "./cloud-client.js";
 import { CloudError } from "./cloud-error.js";
-import { normalizeDesktopRequest, createDesktopEventTranslator, desktopOutputItem, type DesktopToolBinding } from "./desktop-protocol.js";
+import { requestShape, modifiedRequestFields } from "./request-diagnostics.js";
+import { normalizeDesktopRequest, createDesktopEventTranslator, desktopOutputItem, type DesktopToolBinding, type ResponsesProfile } from "./desktop-protocol.js";
 
 export interface RemoteConversation {
   traceId?: string;
@@ -31,6 +32,7 @@ export interface RemoteConversation {
   responseHistory?: Record<string, InputItem[]>;
   model?: string;
   reasoningMode?: string;
+  responsesProfile?: ResponsesProfile;
 }
 
 export interface CloudResponseSettlementTarget {
@@ -44,6 +46,11 @@ interface StreamLifecycle {
   requestId: string | null;
   completed: boolean;
   translate: (value: unknown) => unknown[];
+  started: number;
+  receivedBytes: number;
+  eventCount: number;
+  firstEvent: boolean;
+  firstText: boolean;
 }
 interface GatewayOptions {
   cache?: {load(accountId:string):RemoteConversation[];save(items:RemoteConversation[],accountId:string):void};
@@ -193,8 +200,9 @@ export class RemoteBridgeServer {
     response: ServerResponse,
   ): Promise<void> {
     const traceId = randomUUID();
+    const started=performance.now();
     response.setHeader("X-Bridge-Trace-Id", traceId);
-    response.once("finish", () => this.gatewayOptions?.trace?.write("desktop_finished",traceId,{status:response.statusCode}));
+    response.once("finish", () => this.gatewayOptions?.trace?.write("desktop_finished",traceId,{status:response.statusCode,totalMs:Math.round(performance.now()-started)}));
     try {
       const url = new URL(request.url ?? "/", this.status.endpoint);
       this.gatewayOptions?.trace?.write("desktop_received",traceId,{method:request.method,path:url.pathname});
@@ -260,54 +268,70 @@ export class RemoteBridgeServer {
     outgoing: ServerResponse,
     traceId: string,
   ): Promise<void> {
-    const raw = await readJson(incoming);
+    const started=performance.now();let bodyBytes=0;
+    const raw = await readJson(incoming,bytes=>{bodyBytes=bytes;});
+    const parseMs=Math.round(performance.now()-started);
     this.gatewayOptions?.trace?.write("desktop_request",traceId,{sessionId:incoming.headers["session_id"],conversationId:incoming.headers["conversation_id"],model:(raw as Record<string, unknown>).model,stream:(raw as Record<string, unknown>).stream,previousResponseId:(raw as Record<string, unknown>).previous_response_id,reasoning:(raw as Record<string, unknown>).reasoning},raw);
     const selectedModel = (await this.gatewayOptions?.getModel?.()) ?? String((raw as Record<string, unknown>).model);
+    const modelStarted=performance.now();
     const models = this.gatewayOptions?.getModel ? await this.client.listModels() : { data: [] };
+    const modelLookupMs=Math.round(performance.now()-modelStarted);
+    const capabilities=models.data.find(model => model.id === selectedModel)?.capabilities;
+    const profile=capabilities?.responsesProfile??"deepseek";
     const rawRequest=raw as Record<string,unknown>;
-    const context=typeof rawRequest.previous_response_id==="string"?this.responses.get(rawRequest.previous_response_id):Array.isArray(rawRequest.input)?rawRequest.input.map(item=>item&&typeof item==="object"&&typeof item.call_id==="string"?this.calls.get(item.call_id)??this.historyCalls.get(item.call_id):undefined).find(Boolean):undefined;
-    const normalized = normalizeDesktopRequest(raw, models.data.find(model => model.id === selectedModel)?.capabilities.nativeResponses === true, context);
-    const parsed = ResponseRequestSchema.parse(normalized.request);
-    const selectedMode = await this.gatewayOptions?.getReasoning?.();
     const sessionKey = [incoming.headers["conversation_id"], incoming.headers["session_id"]].find(value => typeof value === "string" && value.length <= 200) as string | undefined;
     const sessionOwner = sessionKey ? this.sessions.get(sessionKey) : undefined;
+    const context=typeof rawRequest.previous_response_id==="string"?this.responses.get(rawRequest.previous_response_id):Array.isArray(rawRequest.input)?rawRequest.input.map(item=>item&&typeof item==="object"&&typeof item.call_id==="string"?this.calls.get(item.call_id)??this.historyCalls.get(item.call_id):undefined).find(Boolean):undefined;
+    const owner=context??sessionOwner;
+    if(owner?.model&&owner.model!==selectedModel)throw new CloudError("VALIDATION_ERROR","Conversation model changed. Start a new conversation.",{httpStatus:409});
+    if(owner&&(owner.responsesProfile??"deepseek")!==profile)throw new CloudError("VALIDATION_ERROR","Conversation protocol profile changed. Start a new conversation.",{httpStatus:409});
+    const normalizeStarted=performance.now();
+    const normalized = normalizeDesktopRequest(raw, capabilities?.nativeResponses === true, context,profile);
+    const parsed = ResponseRequestSchema.parse(normalized.request);
+    const normalizeMs=Math.round(performance.now()-normalizeStarted);
+    const selectedMode = await this.gatewayOptions?.getReasoning?.();
+    if(owner?.reasoningMode&&selectedMode&&owner.reasoningMode!==selectedMode)throw new CloudError("VALIDATION_ERROR","Conversation reasoning mode changed. Start a new conversation.",{httpStatus:409});
+    const historyStarted=performance.now();
     const hasToolOutputs = Array.isArray(parsed.input) && parsed.input.some(item => ["function_call_output", "custom_tool_call_output"].includes(String(item.type)));
     const conversation = sessionOwner && !hasToolOutputs && !parsed.previous_response_id ? sessionOwner : this.resolveConversation(parsed);
     if (sessionOwner && conversation === sessionOwner && !hasToolOutputs && !parsed.previous_response_id) conversation.input = normalizeInput(parsed.input);
     if (sessionKey) { conversation.sessionKey = sessionKey; this.sessions.set(sessionKey, conversation); if (this.sessions.size > 512) this.sessions.delete(this.sessions.keys().next().value!); }
     if (conversation.model && conversation.model !== selectedModel) throw new CloudError("VALIDATION_ERROR", "Conversation model changed. Start a new conversation.", { httpStatus: 409 });
+    if(conversation.responsesProfile&&conversation.responsesProfile!==profile)throw new CloudError("VALIDATION_ERROR","Conversation protocol profile changed. Start a new conversation.",{httpStatus:409});
     if (conversation.reasoningMode && selectedMode && conversation.reasoningMode !== selectedMode) throw new CloudError("VALIDATION_ERROR", "Conversation reasoning mode changed. Start a new conversation.", { httpStatus: 409 });
     conversation.model = selectedModel;
     conversation.reasoningMode = selectedMode ?? String(parsed.reasoning?.mode ?? "auto");
+    conversation.responsesProfile=profile;
     conversation.traceId = traceId;
     this.persistConversations();
     if (normalized.customTools.size) conversation.customTools = normalized.customTools;
     if (normalized.toolBindings.size) conversation.toolBindings = normalized.toolBindings;
-    if ([...this.calls.values()].some((owner) => owner === conversation)) {
-      sendPendingToolAcknowledgment(outgoing, parsed);
-      return;
-    }
+    if(parsed.tools!==undefined)conversation.tools=parsed.tools;
     const request: ResponseRequest = {
       ...parsed,
       model: selectedModel,
       reasoning: selectedMode ? { ...Object.fromEntries(Object.entries(parsed.reasoning ?? {}).filter(([key]) => key !== "effort")), mode: selectedMode } : parsed.reasoning,
       previous_response_id: undefined,
-      input: conversation.input.map(item => item.type === "custom_tool_call_output" && conversation.input.some(call => call.type === "function_call" && call.call_id === item.call_id) ? { ...item, type: "function_call_output" as const } : item),
+      input: profile==="deepseek"?conversation.input.map(item => item.type === "custom_tool_call_output" && conversation.input.some(call => call.type === "function_call" && call.call_id === item.call_id) ? { ...item, type: "function_call_output" as const } : item):conversation.input,
       tools: parsed.tools ?? conversation.tools,
     };
+    const pending=[...this.calls.values()].some(owner=>owner===conversation);
+    this.gatewayOptions?.trace?.write("request_normalized",traceId,{responsesProfile:profile,bodyBytes,inputItemCount:Array.isArray(request.input)?request.input.length:1,toolCount:request.tools?.length??0,transformations:Object.fromEntries(normalized.transformations.map(name=>[name,true])),modifiedFields:modifiedRequestFields(raw,request),requestShapeBefore:requestShape(raw),requestShapeAfter:requestShape(request),cloudForwarded:!pending,timings:{parseMs,modelLookupMs,normalizeMs,historyMs:Math.round(performance.now()-historyStarted)},...contentShape(request.input)});
+    if(pending){sendPendingToolAcknowledgment(outgoing,parsed);return;}
     const abort = new AbortController();
     incoming.once("aborted", () => abort.abort());
     outgoing.once("close", () => {
       if (!outgoing.writableEnded) abort.abort();
     });
-    this.gatewayOptions?.trace?.write("cloud_request",traceId,{threadId:conversation.threadId,logicalModelId:request.model,reasoningMode:request.reasoning?.mode,stream:request.stream,toolCount:request.tools?.length ?? 0,pendingCalls:[...this.calls].filter(([,owner])=>owner===conversation).map(([id])=>id)},request);
+    this.gatewayOptions?.trace?.write("cloud_request",traceId,{threadId:conversation.threadId,logicalModelId:request.model,responsesProfile:profile,bodyBytes:Buffer.byteLength(JSON.stringify(request)),reasoningMode:request.reasoning?.mode,stream:request.stream,toolCount:request.tools?.length ?? 0,pendingCalls:[...this.calls].filter(([,owner])=>owner===conversation).map(([id])=>id)},request);
+    const cloudStarted=performance.now();
     const transport = await this.client.createResponse(request, {
       threadId: conversation.threadId,
       traceId,
       signal: abort.signal,
       providerConnectionId: await this.getProviderConnectionId?.(),
     });
-    this.gatewayOptions?.trace?.write("cloud_headers",traceId,{status:transport.response.status,requestId:transport.response.headers.get("X-Request-Id"),aiRequestId:transport.response.headers.get("X-Bridge-AI-Request-Id"),instanceId:transport.response.headers.get("X-Bridge-Instance-Id"),protocolMode:transport.response.headers.get("X-Bridge-Protocol-Mode"),providerKind:transport.response.headers.get("X-Bridge-Provider-Kind")});
+    this.gatewayOptions?.trace?.write("cloud_headers",traceId,{cloudHeadersMs:Math.round(performance.now()-cloudStarted),status:transport.response.status,requestId:transport.response.headers.get("X-Request-Id"),aiRequestId:transport.response.headers.get("X-Bridge-AI-Request-Id"),instanceId:transport.response.headers.get("X-Bridge-Instance-Id"),protocolMode:transport.response.headers.get("X-Bridge-Protocol-Mode"),providerKind:transport.response.headers.get("X-Bridge-Provider-Kind")});
     if (transport.contentType.includes("text/event-stream")) {
       await this.relayStream(transport.response, outgoing, conversation);
       return;
@@ -430,12 +454,14 @@ export class RemoteBridgeServer {
       requestId: cloudResponse.headers.get("X-Bridge-AI-Request-Id"),
       completed: false,
       translate: createDesktopEventTranslator(conversation.customTools ?? new Set(), conversation.toolBindings),
+      started:performance.now(),receivedBytes:0,eventCount:0,firstEvent:false,firstText:false,
     };
     let eventBuffer = "";
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        lifecycle.receivedBytes+=value.byteLength;
         eventBuffer += decoder.decode(value, { stream: true });
         eventBuffer = this.captureSseEvents(
           eventBuffer,
@@ -452,6 +478,7 @@ export class RemoteBridgeServer {
     } finally {
       await reader.cancel().catch(() => {});
       reader.releaseLock();
+      this.gatewayOptions?.trace?.write("stream_finished",conversation.traceId??conversation.threadId,{streamMs:Math.round(performance.now()-lifecycle.started),receivedBytes:lifecycle.receivedBytes,eventCount:lifecycle.eventCount,terminalDetected:lifecycle.completed});
       if (!lifecycle.completed && (lifecycle.responseId || lifecycle.requestId)) {
         this.notifyResponseSettlement({
           responseId: lifecycle.responseId,
@@ -477,6 +504,9 @@ export class RemoteBridgeServer {
       if (data === "[DONE]") { desktopResponse?.write("data: [DONE]\n\n"); continue; }
       const payload: unknown = JSON.parse(data);
       const event = namedEvent ?? (payload && typeof payload === "object" && "type" in payload ? String(payload.type) : undefined);
+      lifecycle.eventCount++;
+      if(!lifecycle.firstEvent){lifecycle.firstEvent=true;this.gatewayOptions?.trace?.write("stream_first_event",conversation.traceId??conversation.threadId,{event,elapsedMs:Math.round(performance.now()-lifecycle.started)});}
+      if(!lifecycle.firstText&&event==="response.output_text.delta"){lifecycle.firstText=true;this.gatewayOptions?.trace?.write("stream_first_text",conversation.traceId??conversation.threadId,{elapsedMs:Math.round(performance.now()-lifecycle.started)});}
       this.gatewayOptions?.trace?.write("cloud_event",conversation.traceId??conversation.threadId,{event,outputIndex:payload && typeof payload === "object" && "output_index" in payload ? payload.output_index : undefined,itemId:payload && typeof payload === "object" && "item_id" in payload ? payload.item_id : undefined},payload);
       for(const translated of lifecycle.translate(payload)){
         const translatedType=translated&&typeof translated==="object"&&"type" in translated?String(translated.type):namedEvent;
@@ -594,7 +624,7 @@ function responseFromEvent(
   return parsed.success ? parsed.data : null;
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+async function readJson(request: IncomingMessage, onBytes?: (bytes:number)=>void): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
@@ -607,7 +637,18 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
     }
     chunks.push(buffer);
   }
+  onBytes?.(size);
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+/** Counts only: document text, filenames, URLs, tool arguments/results remain private. */
+function contentShape(input: unknown): Record<string,number> {
+  let imageParts=0,fileParts=0,toolOutputCount=0;
+  if(Array.isArray(input))for(const value of input){if(!value||typeof value!=="object")continue;const item=value as Record<string,unknown>;
+    if(["function_call_output","custom_tool_call_output"].includes(String(item.type)))toolOutputCount++;
+    for(const parts of [item.content,item.output])if(Array.isArray(parts))for(const part of parts){if(!part||typeof part!=="object")continue;if(part.type==="input_image")imageParts++;if(part.type==="input_file")fileParts++;}
+  }
+  return {imageParts,fileParts,toolOutputCount};
 }
 
 function normalizeInput(input: ResponseRequest["input"]): InputItem[] {

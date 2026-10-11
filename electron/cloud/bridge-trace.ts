@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { safeModifiedFields, safeProtocolEnum } from './request-diagnostics.js';
 
 export class BridgeTrace {
   readonly directory: string;
@@ -25,13 +26,15 @@ export class BridgeTrace {
 
 /** Capture records structure, never prompts, document contents or tool arguments/results. */
 export function redactTrace(value: unknown, key = ""): unknown {
+  if(key==="modifiedFields")return safeModifiedFields(value);
+  const protocolEnum=safeProtocolEnum(value,key);if(protocolEnum!==undefined)return protocolEnum;
   if (key === "path" && typeof value === "string" && ["/v1/responses", "/v1/models", "/bridge/models", "/health"].includes(value)) return value;
   if (/^(authorization|cookie|password|api.?key|access.?token|refresh.?token|dpop|instructions|text|content|arguments|input|output|delta|encrypted_content|reasoning_content|image_url|file_data|file_url|url|path|local_path|message)$/i.test(key)) {
     return { redacted: true, kind: Array.isArray(value) ? "array" : typeof value, length: typeof value === "string" || Array.isArray(value) ? value.length : undefined };
   }
   if (Array.isArray(value)) return value.map(item => redactTrace(item));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redactTrace(item, name)]));
-  if (typeof value === "string" && !/^(time|stage|traceId|threadId|sessionId|conversationId|previousResponseId|requestId|aiRequestId|responseId|event|model|mode|effort|type|status|code|name|method|id|call_id|item_id|itemId|logicalModelId|instanceId|providerKind|protocolMode|inputProtocol|outputProtocol)$/i.test(key)) return { redacted: true, kind: "string", length: value.length };
+  if (typeof value === "string" && !/^(time|stage|traceId|threadId|sessionId|conversationId|previousResponseId|requestId|aiRequestId|responseId|event|model|mode|effort|type|status|code|name|method|id|call_id|item_id|itemId|logicalModelId|instanceId|providerKind|protocolMode|responsesProfile|inputProtocol|outputProtocol)$/i.test(key)) return { redacted: true, kind: "string", length: value.length };
   if (typeof value === "string" && (value.length > 200 || !/^[A-Za-z0-9_.:/+\- ]+$/.test(value))) return { redacted: true, kind: "string", length: value.length };
   if (typeof value === "string") return value.replace(/\bsk-[a-zA-Z0-9_-]{8,}/g, "[REDACTED_KEY]").replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[REDACTED_EMAIL]");
   return value;
