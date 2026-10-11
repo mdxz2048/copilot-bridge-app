@@ -449,6 +449,7 @@ export class HttpCloudClient implements CloudClient {
         signal: options.signal,
         headers: {
           "X-Client-Thread-ID": options.threadId,
+          ...(options.traceId ? { "X-Bridge-Trace-ID": options.traceId } : {}),
           ...(options.providerConnectionId && {
             "X-Provider-Connection-ID": options.providerConnectionId,
           }),

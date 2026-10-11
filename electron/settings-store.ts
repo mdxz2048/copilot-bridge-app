@@ -2,12 +2,14 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type ReasoningMode = "normal" | "thinking" | "auto";
 export type BackendMode = "LOCAL" | "REMOTE";
 export type ThemeMode = "system" | "light" | "dark";
 
 export interface AppSettings {
   backendModel: string | null;
   reasoningEffort: ReasoningEffort | null;
+  reasoningMode?: ReasoningMode;
   autoLaunch: boolean;
   minimizeToTray: boolean;
   autoBridgeStart: boolean;
@@ -20,6 +22,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   backendModel: null,
   reasoningEffort: null,
+  reasoningMode: "auto",
   autoLaunch: true,
   minimizeToTray: true,
   autoBridgeStart: true,
@@ -42,6 +45,7 @@ export class SettingsStore {
       return {
         backendModel: typeof parsed.backendModel === "string" ? parsed.backendModel : null,
         reasoningEffort: isReasoningEffort(parsed.reasoningEffort) ? parsed.reasoningEffort : null,
+        reasoningMode: parsed.reasoningMode === "normal" || parsed.reasoningMode === "thinking" ? parsed.reasoningMode : "auto",
         autoLaunch: parsed.autoLaunch !== false,
         minimizeToTray: parsed.minimizeToTray !== false,
         autoBridgeStart: parsed.autoBridgeStart !== false,

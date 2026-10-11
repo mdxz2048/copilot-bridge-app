@@ -34,6 +34,7 @@ export interface CloudResponseTransport {
 
 export interface CreateResponseOptions {
   threadId: string;
+  traceId?: string;
   signal?: AbortSignal;
   providerConnectionId?: string | null;
 }

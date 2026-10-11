@@ -25,6 +25,8 @@ export interface AIModel {
   providerId: AIProviderId;
   capabilities: {
     reasoning: boolean;
+    reasoningModes?: Array<"normal" | "thinking" | "auto">;
+    defaultReasoningMode?: "normal" | "thinking" | "auto";
   };
 }
 
@@ -82,11 +84,7 @@ export function buildProviders(
   bridge: BridgeStatus | null,
   models: BridgeModel[],
 ): AIProvider[] {
-  const activeId: AIProviderId = settings.providerConnectionId
-    ? "custom-api"
-    : settings.backendMode === "REMOTE"
-      ? "bridge-cloud"
-      : "github-copilot";
+  const activeId: AIProviderId = settings.backendMode === "REMOTE" ? "bridge-cloud" : "github-copilot";
   const deepSeek = cloud?.providers.find(
     (provider) => provider.code.toUpperCase() === "DEEPSEEK",
   );
@@ -128,7 +126,7 @@ export function buildProviders(
         : "使用自己的 API Key 和兼容服务",
       connection: deepSeekConnection ? "connected" : "not_configured",
       available: deepSeek?.status === "ACTIVE",
-      active: activeId === "custom-api",
+      active: false,
       models: (deepSeek?.models ?? []).map((model) => ({
         id: model.publicId,
         displayName: model.displayName,
@@ -153,7 +151,7 @@ function toModel(model: BridgeModel, providerId: AIProviderId): AIModel {
     id: model.id,
     displayName: model.id,
     providerId,
-    capabilities: { reasoning: model.supportsReasoningEffort },
+    capabilities: { reasoning: model.supportsReasoningEffort, reasoningModes: model.reasoningModes ?? ["normal"], defaultReasoningMode: model.defaultReasoningMode ?? "normal" },
   };
 }
 

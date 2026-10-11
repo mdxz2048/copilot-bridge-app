@@ -52,6 +52,8 @@ export interface BridgeStatus {
 export interface BridgeModel {
   id: string;
   supportsReasoningEffort: boolean;
+  reasoningModes?: Array<"normal" | "thinking" | "auto">;
+  defaultReasoningMode?: "normal" | "thinking" | "auto";
 }
 
 export type CloudAuthState =
@@ -178,6 +180,7 @@ export interface CloudServiceStatus {
   serviceConfigurationError: string | null;
   updateState: "CURRENT" | "AVAILABLE" | "REQUIRED" | "MAINTENANCE";
   lastError: {
+    requestId?: string;
     code: string;
     message: string;
     action:
@@ -251,6 +254,7 @@ export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
 export interface AppSettings {
   backendModel: string | null;
   reasoningEffort: ReasoningEffort | null;
+  reasoningMode?: "normal" | "thinking" | "auto";
   autoLaunch: boolean;
   minimizeToTray: boolean;
   autoBridgeStart: boolean;

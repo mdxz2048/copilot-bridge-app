@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import {
   createServer,
@@ -10,7 +11,6 @@ import {
   OutputItemSchema,
   ResponseRequestSchema,
   ResponseSchema,
-  type FunctionTool,
   type InputItem,
   type OutputItem,
   type ResponseRequest,
@@ -25,7 +25,12 @@ export interface RemoteConversation {
   customTools?: Set<string>;
   threadId: string;
   input: InputItem[];
-  tools: FunctionTool[];
+  tools: Record<string, unknown>[];
+  sessionKey?: string;
+  responseIds?: string[];
+  responseHistory?: Record<string, InputItem[]>;
+  model?: string;
+  reasoningMode?: string;
 }
 
 export interface CloudResponseSettlementTarget {
@@ -64,6 +69,8 @@ export class RemoteBridgeServer {
   private readonly port: number;
   private cacheAccountId = "";
   private readonly historyCalls = new Map<string, RemoteConversation>();
+  private readonly sessions = new Map<string, RemoteConversation>();
+  private readonly responses = new Map<string, RemoteConversation>();
   private readonly calls = new Map<string, RemoteConversation>();
   private server: Server | null = null;
   private status: RemoteBridgeStatus;
@@ -106,8 +113,10 @@ export class RemoteBridgeServer {
       const account=await this.client.getMe();
       this.cacheAccountId=account.id;
       for(const conversation of this.gatewayOptions?.cache?.load(account.id)??[]) {
-        const completed=new Set(conversation.input.filter(item=>"type" in item&&item.type==="function_call_output").map(item=>String(item.call_id)));
-        for(const item of conversation.input) if("type" in item&&item.type==="function_call") {this.historyCalls.set(String(item.call_id),conversation);if(!completed.has(String(item.call_id)))this.calls.set(String(item.call_id),conversation);}
+        if (conversation.sessionKey) this.sessions.set(conversation.sessionKey, conversation);
+        for (const id of conversation.responseIds ?? []) this.responses.set(id, conversation);
+        const completed=new Set(conversation.input.filter(item=>"type" in item&&["function_call_output", "custom_tool_call_output"].includes(String(item.type))).map(item=>String(item.call_id)));
+        for(const item of conversation.input) if("type" in item&&["function_call", "custom_tool_call"].includes(String(item.type))) {this.historyCalls.set(String(item.call_id),conversation);if(!completed.has(String(item.call_id)))this.calls.set(String(item.call_id),conversation);}
       }
       const server = createServer((request, response) => {
         void this.handle(request, response);
@@ -139,6 +148,8 @@ export class RemoteBridgeServer {
     this.server = null;
     this.calls.clear();
     this.historyCalls.clear();
+    this.responses.clear();
+    this.sessions.clear();
     if (server) {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
@@ -164,11 +175,15 @@ export class RemoteBridgeServer {
   async models(): Promise<Array<{
     id: string;
     supportsReasoningEffort: boolean;
+    reasoningModes: Array<"normal" | "thinking" | "auto">;
+    defaultReasoningMode: "normal" | "thinking" | "auto";
   }>> {
     const models = await this.client.listModels();
     return models.data.map((model) => ({
       id: model.id,
       supportsReasoningEffort: model.capabilities.reasoning,
+      reasoningModes: model.capabilities.reasoningModes,
+      defaultReasoningMode: model.capabilities.defaultReasoningMode,
     }));
   }
 
@@ -213,6 +228,8 @@ export class RemoteBridgeServer {
                 data: models.data.map((model) => ({
                   id: model.id,
                   supportsReasoningEffort: model.capabilities.reasoning,
+      reasoningModes: model.capabilities.reasoningModes,
+      defaultReasoningMode: model.capabilities.defaultReasoningMode,
                 })),
               }
             : models,
@@ -243,10 +260,22 @@ export class RemoteBridgeServer {
     traceId: string,
   ): Promise<void> {
     const raw = await readJson(incoming);
-    this.gatewayOptions?.trace?.write("desktop_request",traceId,{sessionId:incoming.headers["session_id"],conversationId:incoming.headers["conversation_id"]},raw);
-    const normalized = normalizeDesktopRequest(raw);
+    this.gatewayOptions?.trace?.write("desktop_request",traceId,{sessionId:incoming.headers["session_id"],conversationId:incoming.headers["conversation_id"],model:(raw as Record<string, unknown>).model,stream:(raw as Record<string, unknown>).stream,previousResponseId:(raw as Record<string, unknown>).previous_response_id,reasoning:(raw as Record<string, unknown>).reasoning},raw);
+    const selectedModel = (await this.gatewayOptions?.getModel?.()) ?? String((raw as Record<string, unknown>).model);
+    const models = this.gatewayOptions?.getModel ? await this.client.listModels() : { data: [] };
+    const normalized = normalizeDesktopRequest(raw, models.data.find(model => model.id === selectedModel)?.capabilities.nativeResponses === true);
     const parsed = ResponseRequestSchema.parse(normalized.request);
-    const conversation = this.resolveConversation(parsed);
+    const selectedMode = await this.gatewayOptions?.getReasoning?.();
+    const sessionKey = [incoming.headers["conversation_id"], incoming.headers["session_id"]].find(value => typeof value === "string" && value.length <= 200) as string | undefined;
+    const sessionOwner = sessionKey ? this.sessions.get(sessionKey) : undefined;
+    const hasToolOutputs = Array.isArray(parsed.input) && parsed.input.some(item => ["function_call_output", "custom_tool_call_output"].includes(String(item.type)));
+    const conversation = sessionOwner && !hasToolOutputs && !parsed.previous_response_id ? sessionOwner : this.resolveConversation(parsed);
+    if (sessionOwner && conversation === sessionOwner && !hasToolOutputs && !parsed.previous_response_id) conversation.input = normalizeInput(parsed.input);
+    if (sessionKey) { conversation.sessionKey = sessionKey; this.sessions.set(sessionKey, conversation); if (this.sessions.size > 512) this.sessions.delete(this.sessions.keys().next().value!); }
+    if (conversation.model && conversation.model !== selectedModel) throw new CloudError("VALIDATION_ERROR", "Conversation model changed. Start a new conversation.", { httpStatus: 409 });
+    if (conversation.reasoningMode && selectedMode && conversation.reasoningMode !== selectedMode) throw new CloudError("VALIDATION_ERROR", "Conversation reasoning mode changed. Start a new conversation.", { httpStatus: 409 });
+    conversation.model = selectedModel;
+    conversation.reasoningMode = selectedMode ?? String(parsed.reasoning?.mode ?? "auto");
     conversation.traceId = traceId;
     this.persistConversations();
     if (normalized.customTools.size) conversation.customTools = normalized.customTools;
@@ -257,10 +286,10 @@ export class RemoteBridgeServer {
     }
     const request: ResponseRequest = {
       ...parsed,
-      model: (await this.gatewayOptions?.getModel?.()) ?? parsed.model,
-      reasoning: (await this.gatewayOptions?.getReasoning?.())
-        ? { effort: await this.gatewayOptions?.getReasoning?.() } : parsed.reasoning,
-      input: conversation.input,
+      model: selectedModel,
+      reasoning: selectedMode ? { ...Object.fromEntries(Object.entries(parsed.reasoning ?? {}).filter(([key]) => key !== "effort")), mode: selectedMode } : parsed.reasoning,
+      previous_response_id: undefined,
+      input: conversation.input.map(item => item.type === "custom_tool_call_output" && conversation.input.some(call => call.type === "function_call" && call.call_id === item.call_id) ? { ...item, type: "function_call_output" as const } : item),
       tools: parsed.tools ?? conversation.tools,
     };
     const abort = new AbortController();
@@ -268,21 +297,25 @@ export class RemoteBridgeServer {
     outgoing.once("close", () => {
       if (!outgoing.writableEnded) abort.abort();
     });
-    this.gatewayOptions?.trace?.write("cloud_request",traceId,{threadId:conversation.threadId,pendingCalls:[...this.calls].filter(([,owner])=>owner===conversation).map(([id])=>id)},request);
+    this.gatewayOptions?.trace?.write("cloud_request",traceId,{threadId:conversation.threadId,logicalModelId:request.model,reasoningMode:request.reasoning?.mode,stream:request.stream,toolCount:request.tools?.length ?? 0,pendingCalls:[...this.calls].filter(([,owner])=>owner===conversation).map(([id])=>id)},request);
     const transport = await this.client.createResponse(request, {
       threadId: conversation.threadId,
+      traceId,
       signal: abort.signal,
       providerConnectionId: await this.getProviderConnectionId?.(),
     });
-    this.gatewayOptions?.trace?.write("cloud_headers",traceId,{status:transport.response.status,requestId:transport.response.headers.get("X-Request-Id"),aiRequestId:transport.response.headers.get("X-Bridge-AI-Request-Id")});
+    this.gatewayOptions?.trace?.write("cloud_headers",traceId,{status:transport.response.status,requestId:transport.response.headers.get("X-Request-Id"),aiRequestId:transport.response.headers.get("X-Bridge-AI-Request-Id"),instanceId:transport.response.headers.get("X-Bridge-Instance-Id"),protocolMode:transport.response.headers.get("X-Bridge-Protocol-Mode"),providerKind:transport.response.headers.get("X-Bridge-Provider-Kind")});
     if (transport.contentType.includes("text/event-stream")) {
       await this.relayStream(transport.response, outgoing, conversation);
       return;
     }
     const payload: unknown = await transport.response.json();
     this.gatewayOptions?.trace?.write("cloud_response",traceId,{},payload);
-    const result = ResponseSchema.parse(payload);
+    const validated = ResponseSchema.safeParse(payload);
+    if (!validated.success) throw new CloudError("INVALID_SERVER_RESPONSE", "Cloud returned malformed response.", { httpStatus: 502 });
+    const result = validated.data;
     this.captureOutput(result.output, conversation);
+    this.rememberResponse(result.id, conversation);
     sendJson(outgoing, 200, { ...result, output: result.output.map(item => desktopOutputItem(item, conversation.customTools ?? new Set(), conversation.toolBindings)) });
     this.notifyResponseSettlement({
       responseId: result.id,
@@ -296,13 +329,27 @@ export class RemoteBridgeServer {
   private resolveConversation(
     request: ResponseRequest,
   ): RemoteConversation {
+    const previous = request.previous_response_id ? this.responses.get(request.previous_response_id) : undefined;
+    if (request.previous_response_id && !previous) throw new CloudError("VALIDATION_ERROR", "Previous response is unavailable for this account. Supply complete history.", { httpStatus: 422 });
+    if (previous) {
+      const extra = normalizeInput(request.input).flatMap(item => {
+        if ("type" in item && item.type === "item_reference") {
+          const found = previous.input.find(candidate => "id" in candidate && candidate.id === item.id);
+          if (!found) throw new CloudError("VALIDATION_ERROR", "Unknown item reference.", { httpStatus: 422 });
+          return [found];
+        }
+        return [item];
+      });
+      request = { ...request, input: [...(previous.responseHistory?.[request.previous_response_id!] ?? previous.input), ...extra] };
+    }
     const outputs = Array.isArray(request.input)
       ? request.input.filter(
           (item): item is Extract<InputItem, { type: "function_call_output" }> =>
-            "type" in item && item.type === "function_call_output",
+            "type" in item && ["function_call_output", "custom_tool_call_output"].includes(String(item.type)),
         )
       : [];
     if (outputs.length === 0) {
+      if (previous) { previous.input = normalizeInput(request.input); return previous; }
       return {
         threadId: randomUUID(),
         input: normalizeInput(request.input),
@@ -316,28 +363,28 @@ export class RemoteBridgeServer {
     const owners = new Set(active.map(output => this.calls.get(output.call_id)!));
     if (owners.size > 1) throw new CloudError("VALIDATION_ERROR", "Tool outputs span active conversations.", { httpStatus: 400 });
     const input = normalizeInput(request.input);
-    const fullHistory = input.some(item => "type" in item && item.type === "function_call")
+    const fullHistory = input.some(item => "type" in item && ["function_call", "custom_tool_call"].includes(String(item.type)))
       && input.some(item => "role" in item);
     const previousOwner = [...outputs].reverse().map(output => this.historyCalls.get(output.call_id)).find(Boolean);
     const conversation = [...owners][0] ?? previousOwner;
     if (fullHistory) {
       for (const output of outputs) {
-        const outputIndex = input.findIndex(item => "type" in item && item.type === "function_call_output" && item.call_id === output.call_id);
-        const callIndex = input.findIndex(item => "type" in item && item.type === "function_call" && item.call_id === output.call_id);
+        const outputIndex = input.findIndex(item => "type" in item && ["function_call_output", "custom_tool_call_output"].includes(String(item.type)) && item.call_id === output.call_id);
+        const callIndex = input.findIndex(item => "type" in item && ["function_call", "custom_tool_call"].includes(String(item.type)) && item.call_id === output.call_id);
         if (callIndex < 0 || callIndex >= outputIndex) throw new CloudError("VALIDATION_ERROR", "Tool output has no preceding call in supplied history.", { httpStatus: 400 });
-        const existing = conversation?.input.find(item => "type" in item && item.type === "function_call_output" && item.call_id === output.call_id);
-        if (existing && "output" in existing && existing.output !== output.output) throw new CloudError("VALIDATION_ERROR", "Previous tool output changed.", { httpStatus: 400 });
+        const existing = conversation?.input.find(item => "type" in item && ["function_call_output", "custom_tool_call_output"].includes(String(item.type)) && item.call_id === output.call_id);
+        if (existing && "output" in existing && JSON.stringify(existing.output) !== JSON.stringify(output.output)) throw new CloudError("VALIDATION_ERROR", "Previous tool output changed.", { httpStatus: 400 });
       }
       const restored = conversation ?? { threadId: randomUUID(), input: [], tools: request.tools ?? [] };
       for (const item of input) {
-        if (!("type" in item) || item.type !== "function_call") continue;
+        if (!("type" in item) || !["function_call", "custom_tool_call"].includes(String(item.type))) continue;
         const owner = this.calls.get(String(item.call_id));
         if (owner && owner !== restored) throw new CloudError("VALIDATION_ERROR", "History contains another active conversation's call.", { httpStatus: 400 });
       }
       restored.input = input;
       restored.tools = request.tools ?? restored.tools;
       for (const item of input) {
-        if (!("type" in item) || item.type !== "function_call") continue;
+        if (!("type" in item) || !["function_call", "custom_tool_call"].includes(String(item.type))) continue;
         this.historyCalls.set(String(item.call_id), restored);
         if (outputs.some(output => output.call_id === item.call_id)) this.calls.delete(String(item.call_id));
         else this.calls.set(String(item.call_id), restored);
@@ -347,12 +394,12 @@ export class RemoteBridgeServer {
     if (!conversation) throw new CloudError("VALIDATION_ERROR", "Tool history is unavailable. Retry with the complete conversation history.", { httpStatus: 400 });
     for (const output of outputs) {
       if (this.calls.get(output.call_id) === conversation) continue;
-      const previous = conversation.input.find(item => "type" in item && item.type === "function_call_output" && item.call_id === output.call_id);
-      if (!previous || !("output" in previous) || previous.output !== output.output) throw new CloudError("VALIDATION_ERROR", "Previous function call output does not match this Cloud conversation.", { httpStatus: 400 });
+      const previous = conversation.input.find(item => "type" in item && ["function_call_output", "custom_tool_call_output"].includes(String(item.type)) && item.call_id === output.call_id);
+      if (!previous || !("output" in previous) || JSON.stringify(previous.output) !== JSON.stringify(output.output)) throw new CloudError("VALIDATION_ERROR", "Previous function call output does not match this Cloud conversation.", { httpStatus: 400 });
     }
     for (const output of active) {
       this.calls.delete(output.call_id);
-      if (!conversation.input.some(item => "type" in item && item.type === "function_call_output" && item.call_id === output.call_id)) conversation.input.push(InputItemSchema.parse(output));
+      if (!conversation.input.some(item => "type" in item && ["function_call_output", "custom_tool_call_output"].includes(String(item.type)) && item.call_id === output.call_id)) conversation.input.push(InputItemSchema.parse(output));
     }
     return conversation;
   }
@@ -392,11 +439,15 @@ export class RemoteBridgeServer {
           lifecycle,
           desktopResponse,
         );
+        if (desktopResponse.writableNeedDrain && !desktopResponse.destroyed) await new Promise<void>(resolve => { const finish = () => { desktopResponse.off("drain", finish); desktopResponse.off("close", finish); resolve(); }; desktopResponse.once("drain", finish); desktopResponse.once("close", finish); });
+        if (desktopResponse.destroyed) break;
       }
       eventBuffer += decoder.decode();
       this.captureSseEvents(`${eventBuffer}\n\n`, conversation, lifecycle, desktopResponse);
       desktopResponse.end();
     } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
       if (!lifecycle.completed && (lifecycle.responseId || lifecycle.requestId)) {
         this.notifyResponseSettlement({
           responseId: lifecycle.responseId,
@@ -416,19 +467,20 @@ export class RemoteBridgeServer {
     const blocks = buffer.split(/\r?\n\r?\n/);
     const remainder = blocks.pop() ?? "";
     for (const block of blocks) {
-      const event = /^event:\s*(.+)$/m.exec(block)?.[1];
-      const data = /^data:\s*(.+)$/m.exec(block)?.[1];
+      const namedEvent = /^event:\s*(.+)$/m.exec(block)?.[1];
+      const data = block.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
       if (!data) continue;
       if (data === "[DONE]") { desktopResponse?.write("data: [DONE]\n\n"); continue; }
       const payload: unknown = JSON.parse(data);
-      this.gatewayOptions?.trace?.write("cloud_event",conversation.traceId??conversation.threadId,{event},payload);
-      desktopResponse?.write(`${event ? `event: ${event}\n` : ""}data: ${JSON.stringify(desktopEvent(payload, conversation.customTools ?? new Set(), conversation.toolBindings))}\n\n`);
+      const event = namedEvent ?? (payload && typeof payload === "object" && "type" in payload ? String(payload.type) : undefined);
+      this.gatewayOptions?.trace?.write("cloud_event",conversation.traceId??conversation.threadId,{event,outputIndex:payload && typeof payload === "object" && "output_index" in payload ? payload.output_index : undefined,itemId:payload && typeof payload === "object" && "item_id" in payload ? payload.item_id : undefined},payload);
+      desktopResponse?.write(`${block.split(/\r?\n/).filter(line => !line.startsWith("data:")).join("\n")}\ndata: ${JSON.stringify(desktopEvent(payload, conversation.customTools ?? new Set(), conversation.toolBindings))}\n\n`);
       if (event === "response.created") {
         lifecycle.responseId = responseIdFromEvent(payload)
           ?? lifecycle.responseId;
         continue;
       }
-      if (event === "response.completed") {
+      if (event === "response.completed" || event === "response.incomplete" || event === "response.failed") {
         const result = responseFromEvent(payload);
         if (!result) continue;
         lifecycle.responseId = result.id;
@@ -437,6 +489,7 @@ export class RemoteBridgeServer {
           ?? lifecycle.requestId;
         lifecycle.completed = true;
         this.captureOutput(result.output, conversation);
+        this.rememberResponse(result.id, conversation);
         this.notifyResponseSettlement({
           responseId: lifecycle.responseId,
           requestId: lifecycle.requestId,
@@ -465,15 +518,27 @@ export class RemoteBridgeServer {
     });
   }
 
+  private rememberResponse(id: string, conversation: RemoteConversation) {
+    this.responses.set(id, conversation);
+    conversation.responseIds = [...new Set([...(conversation.responseIds ?? []), id])].slice(-32);
+    conversation.responseHistory = Object.fromEntries(conversation.responseIds.map(responseId => [responseId, responseId === id ? structuredClone(conversation.input) : conversation.responseHistory?.[responseId] ?? []]));
+    this.persistConversations();
+    if (this.responses.size > 512) this.responses.delete(this.responses.keys().next().value!);
+  }
   private persistConversations(){
-    this.gatewayOptions?.cache?.save([...new Set([...this.historyCalls.values(),...this.calls.values()])],this.cacheAccountId);
+    this.gatewayOptions?.cache?.save([...new Set([...this.sessions.values(),...this.responses.values(),...this.historyCalls.values(),...this.calls.values()])],this.cacheAccountId);
   }
   private captureOutput(
     output: OutputItem[],
     conversation: RemoteConversation,
   ): void {
     for (const item of output) {
-      if (item.type !== "function_call") continue;
+      if (!["function_call", "custom_tool_call"].includes(String(item.type))) {
+        const existingIndex = typeof item.id === "string" ? conversation.input.findIndex(existing => existing.id === item.id) : -1;
+        if (existingIndex >= 0) conversation.input[existingIndex] = InputItemSchema.parse(item);
+        else if (!conversation.input.some(existing => JSON.stringify(existing) === JSON.stringify(item))) conversation.input.push(InputItemSchema.parse(item));
+        continue;
+      }
       const owner = this.calls.get(String(item.call_id));
       if (owner && owner !== conversation) {
         throw new CloudError(
@@ -484,16 +549,16 @@ export class RemoteBridgeServer {
       }
     }
     for (const item of output) {
-      if (item.type !== "function_call") continue;
+      if (!["function_call", "custom_tool_call"].includes(String(item.type))) continue;
       if (!conversation.input.some(
         (existing) => "type" in existing
-          && existing.type === "function_call"
+          && ["function_call", "custom_tool_call"].includes(String(existing.type))
           && existing.call_id === item.call_id,
       )) {
-        conversation.input.push(item);
+        conversation.input.push(InputItemSchema.parse(item));
       }
-      this.calls.set(item.call_id, conversation);
-      this.historyCalls.set(item.call_id, conversation);
+      this.calls.set(String(item.call_id), conversation);
+      this.historyCalls.set(String(item.call_id), conversation);
       if (this.historyCalls.size > 2000) {const oldest=this.historyCalls.keys().next().value;if(oldest&&!this.calls.has(oldest))this.historyCalls.delete(oldest);}
     }
     this.persistConversations();
@@ -590,6 +655,7 @@ function sendCloudError(response: ServerResponse, error: unknown): void {
     response.destroy(error instanceof Error ? error : undefined);
     return;
   }
+  if (error instanceof ZodError) { sendJson(response, 400, { error: { code: "INVALID_REQUEST", message: "Malformed Responses request.", requestId: randomUUID() } }); return; }
   if (error instanceof CloudError) {
     sendJson(response, error.httpStatus ?? statusForCode(error.code), {
       error: {

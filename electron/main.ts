@@ -151,7 +151,7 @@ const remoteBridge = new RemoteBridgeServer(
       broadcast("cloud:status", status);
     });
   },
-  async () => (await settingsStore.read()).providerConnectionId,
+  undefined,
   async (target) => {
     const { status } = await cloudFoundation.reconcileResponse(target);
     broadcast("cloud:status", status);
@@ -161,7 +161,7 @@ const remoteBridge = new RemoteBridgeServer(
     trace: new BridgeTrace(join(app.getPath("userData"), "diagnostics")),
     getApiKey: async () => localGatewayKey,
     getModel: async () => (await settingsStore.read()).backendModel,
-    getReasoning: async () => (await settingsStore.read()).reasoningEffort,
+    getReasoning: async () => (await settingsStore.read()).reasoningMode ?? "auto",
   },
 );
 const bridgeManager = new BridgeManager(
@@ -652,10 +652,11 @@ app.whenReady().then(async () => {
     const requiresBridgeRestart =
       previous.backendModel !== next.backendModel
       || previous.reasoningEffort !== next.reasoningEffort
+      || previous.reasoningMode !== next.reasoningMode
       || previous.backendMode !== next.backendMode;
-    const status = requiresBridgeRestart
-      ? await bridgeManager.restart(next)
-      : bridgeManager.getStatus();
+    const status = next.backendMode === "REMOTE"
+      ? requiresBridgeRestart ? await remoteBridge.restart() : remoteBridge.getStatus()
+      : requiresBridgeRestart ? await bridgeManager.restart(next) : bridgeManager.getStatus();
     broadcast("bridge:status", status);
     return next;
   });

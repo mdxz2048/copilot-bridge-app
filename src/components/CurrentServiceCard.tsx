@@ -68,6 +68,10 @@ export function CurrentServiceCard({
   const state = isCloud ? cloudStatePresentation(cloud) : localStatePresentation(bridge);
   const selectedModel = settings.backendModel ?? models[0]?.id ?? "";
   const selected = models.find((model) => model.id === selectedModel);
+  const reasoningModes = selected?.reasoningModes?.length ? selected.reasoningModes : ["normal"];
+  const reasoningMode = reasoningModes.includes(settings.reasoningMode ?? "auto")
+    ? settings.reasoningMode ?? "auto" : reasoningModes.includes(selected?.defaultReasoningMode ?? "normal")
+      ? selected?.defaultReasoningMode ?? "normal" : reasoningModes[0];
   const modelOptions = models.map((model) => ({
     value: model.id,
     label: displayModel(model.id),
@@ -135,13 +139,25 @@ export function CurrentServiceCard({
               <SelectRow label="模型">
                 <Select
                   label="模型"
-                  onChange={(backendModel) =>
-                    onUpdateSettings({ ...settings, backendModel })}
+                  onChange={(backendModel) => {
+                    const nextModel = models.find(model => model.id === backendModel);
+                    const modes = nextModel?.reasoningModes?.length ? nextModel.reasoningModes : ["normal"];
+                    const mode = modes.includes(settings.reasoningMode ?? "auto") ? settings.reasoningMode ?? "auto"
+                      : modes.includes(nextModel?.defaultReasoningMode ?? "normal") ? nextModel?.defaultReasoningMode ?? "normal" : modes[0];
+                    onUpdateSettings({ ...settings, backendModel, ...(isCloud ? { reasoningMode: mode as AppSettings["reasoningMode"], reasoningEffort: null } : {}) });
+                  }}
                   options={modelOptions}
                   value={selectedModel}
                 />
               </SelectRow>
-              {selected?.supportsReasoningEffort && (
+              {isCloud && (
+                <SelectRow label="思考模式">
+                  <Select label="思考模式" value={reasoningMode}
+                    options={reasoningModes.map(value => ({ value, label: value === "thinking" ? "思考" : value === "auto" ? "自动" : "普通" }))}
+                    onChange={value => onUpdateSettings({ ...settings, reasoningMode: value as AppSettings["reasoningMode"], reasoningEffort: null })}/>
+                </SelectRow>
+              )}
+              {!isCloud && selected?.supportsReasoningEffort && (
                 <SelectRow label="推理强度">
                   <Select
                     label="推理强度"
@@ -164,6 +180,7 @@ export function CurrentServiceCard({
           : (
             <div className="service-message">
               <p>{state.message}</p>
+              {cloud?.lastError?.requestId && <p className="local-inline-note">请求 ID：<code>{cloud.lastError.requestId}</code> · 联系管理员时请提供此编号。</p>}
               <Button
                 className="secondary compact"
                 disabled={busy}

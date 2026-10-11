@@ -1,0 +1,141 @@
+{
+  "evidence": "real bundled official runtime -> Local Bridge -> synthetic provider (not production E2E)",
+  "date": "2026-10-11",
+  "runtimeBuild": "2e5e00daee91c61d",
+  "requestFieldNames": [
+    "client_metadata",
+    "include",
+    "input",
+    "model",
+    "parallel_tool_calls",
+    "prompt_cache_key",
+    "reasoning",
+    "store",
+    "stream",
+    "text",
+    "tool_choice",
+    "tools"
+  ],
+  "inputShapes": [
+    {
+      "type": "message",
+      "role": "developer",
+      "contentTypes": [
+        "input_text"
+      ]
+    },
+    {
+      "type": "message",
+      "role": "developer",
+      "contentTypes": [
+        "input_text",
+        "input_text"
+      ]
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "contentTypes": [
+        "input_text"
+      ]
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "contentTypes": [
+        "input_text"
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "exec_command",
+      "parameterNames": [
+        "cmd",
+        "justification",
+        "login",
+        "max_output_tokens",
+        "prefix_rule",
+        "sandbox_permissions",
+        "shell",
+        "tty",
+        "workdir",
+        "yield_time_ms"
+      ]
+    },
+    {
+      "type": "function",
+      "name": "write_stdin",
+      "parameterNames": [
+        "chars",
+        "max_output_tokens",
+        "session_id",
+        "yield_time_ms"
+      ]
+    },
+    {
+      "type": "function",
+      "name": "request_user_input",
+      "parameterNames": [
+        "questions"
+      ]
+    },
+    {
+      "type": "custom",
+      "name": "apply_patch",
+      "parameterNames": []
+    },
+    {
+      "type": "function",
+      "name": "view_image",
+      "parameterNames": [
+        "detail",
+        "path"
+      ]
+    },
+    {
+      "type": "function",
+      "name": "get_goal",
+      "parameterNames": []
+    },
+    {
+      "type": "function",
+      "name": "create_goal",
+      "parameterNames": [
+        "objective",
+        "token_budget"
+      ]
+    },
+    {
+      "type": "function",
+      "name": "update_goal",
+      "parameterNames": [
+        "status"
+      ]
+    },
+    {
+      "type": "tool_search",
+      "name": null,
+      "parameterNames": [
+        "limit",
+        "query"
+      ]
+    },
+    {
+      "type": "web_search",
+      "name": null,
+      "parameterNames": []
+    }
+  ],
+  "fixtureResults": {
+    "textCompleted": true,
+    "functionToolOutputReturned": true,
+    "requestsInToolFlow": 2
+  },
+  "limitations": [
+    "No real DeepSeek request",
+    "No Desktop UI attachment or artifact verification",
+    "No user home/session capture"
+  ]
+}

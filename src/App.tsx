@@ -31,6 +31,7 @@ import {
 const DEFAULT_SETTINGS: AppSettings = {
   backendModel: null,
   reasoningEffort: null,
+  reasoningMode: "auto",
   autoLaunch: true,
   minimizeToTray: true,
   autoBridgeStart: true,

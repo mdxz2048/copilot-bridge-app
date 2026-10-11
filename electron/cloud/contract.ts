@@ -112,7 +112,7 @@ export const ErrorCodeSchema = z.enum([
   "VALIDATION_ERROR",
   "WALLET_LEDGER_MISMATCH",
   "WALLET_LIMIT_REACHED",
-]);
+]).or(z.string().min(1));
 
 export const ErrorResponseV2Schema = z.object({
   error: z.object({
@@ -205,6 +205,7 @@ export const AccountSchema = z.object({
   usage: UsageSchema.nullable(),
 });
 
+export const ReasoningModeSchema = z.enum(["normal", "thinking", "auto"]);
 export const ModelSchema = z.object({
   id: z.string(),
   object: z.literal("model"),
@@ -213,6 +214,9 @@ export const ModelSchema = z.object({
     tools: z.boolean(),
     vision: z.boolean(),
     reasoning: z.boolean(),
+    nativeResponses: z.boolean().default(false),
+    reasoningModes: z.array(ReasoningModeSchema).default(["normal"]),
+    defaultReasoningMode: ReasoningModeSchema.default("normal"),
     streaming: z.boolean(),
   }),
 });
@@ -244,11 +248,11 @@ export const FunctionToolSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   parameters: z.record(z.string(), z.unknown()).optional(),
-});
+}).passthrough();
 
 export const InputItemSchema = z.union([
   z.object({
-    role: z.enum(["system", "user", "assistant"]),
+    role: z.enum(["system", "developer", "user", "assistant"]),
     content: z.union([z.string(), z.array(z.unknown())]),
   }).passthrough(),
   z.object({
@@ -256,43 +260,56 @@ export const InputItemSchema = z.union([
     call_id: z.string(),
     name: z.string(),
     arguments: z.string(),
-  }),
+  }).passthrough(),
   z.object({
     type: z.literal("function_call_output"),
     call_id: z.string(),
-    output: z.string(),
-  }),
+    output: z.union([z.string(), z.array(z.unknown())]),
+  }).passthrough(),
+  z.object({ type: z.literal("custom_tool_call"), call_id: z.string(), name: z.string(), input: z.string() }).passthrough(),
+  z.object({ type: z.literal("custom_tool_call_output"), call_id: z.string(), output: z.union([z.string(), z.array(z.unknown())]) }).passthrough(),
+  z.object({ type: z.enum(["reasoning", "compaction", "item_reference", "additional_tools"]), id: z.string().optional() }).passthrough(),
+  z.object({ type: z.string() }).passthrough().refine(item => !["message", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output", "reasoning", "compaction", "item_reference", "additional_tools"].includes(item.type), "Malformed known input item"),
 ]);
 
 export const ResponseRequestSchema = z.object({
   model: z.string().min(1),
   input: z.union([z.string(), z.array(InputItemSchema)]),
   stream: z.boolean().default(false),
-  tools: z.array(FunctionToolSchema).optional(),
+  tools: z.array(z.record(z.string(), z.unknown())).optional(),
   reasoning: z.record(z.string(), z.unknown()).optional(),
-});
+  instructions: z.string().nullable().optional(),
+  tool_choice: z.unknown().optional(),
+  parallel_tool_calls: z.boolean().optional(),
+  text: z.record(z.string(), z.unknown()).optional(),
+  previous_response_id: z.string().nullable().optional(),
+  include: z.array(z.string()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  max_output_tokens: z.number().int().positive().optional(),
+}).passthrough();
 
 export const OutputItemSchema = z.union([
   z.object({
     type: z.literal("message"),
     role: z.literal("assistant"),
     content: z.array(z.object({
-      type: z.literal("output_text"),
-      text: z.string(),
-    })),
-  }),
+      type: z.string(),
+      text: z.string().optional(),
+    }).passthrough()),
+  }).passthrough(),
   z.object({
     type: z.literal("function_call"),
     call_id: z.string(),
     name: z.string(),
     arguments: z.string(),
-  }),
+  }).passthrough(),
+  z.object({ type: z.string() }).passthrough().refine(item => !["message", "function_call"].includes(item.type), "Malformed known output item"),
 ]);
 
 export const ResponseSchema = z.object({
   id: z.string(),
   object: z.literal("response"),
-  status: z.literal("completed"),
+  status: z.enum(["completed", "incomplete", "failed", "cancelled", "in_progress"]),
   model: z.string(),
   output: z.array(OutputItemSchema),
   usage: z.object({
@@ -412,6 +429,9 @@ export const ModelV2Schema = z.object({
     tools: z.boolean(),
     vision: z.boolean(),
     reasoning: z.boolean(),
+    nativeResponses: z.boolean().default(false),
+    reasoningModes: z.array(ReasoningModeSchema).default(["normal"]),
+    defaultReasoningMode: ReasoningModeSchema.default("normal"),
     streaming: z.boolean(),
   }),
 });

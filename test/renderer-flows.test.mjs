@@ -52,6 +52,7 @@ async function mountApp({
   activeProfile = "original",
   chatGptState = "INSTALLED",
   failInstallChatGpt = false,
+  initialModels = [{ id: "test-model", supportsReasoningEffort: false }],
 } = {}) {
   const dom = new JSDOM("<div id='app'></div>", {
     url: "http://localhost/",
@@ -129,7 +130,7 @@ async function mountApp({
       if (failInstallChatGpt) throw new Error('安装程序启动失败');
     },
     launchChatGpt: async () => { events.push('launchChatGpt'); },
-    getModels: async () => [{ id: "test-model", supportsReasoningEffort: false }],
+    getModels: async () => initialModels,
     getCloudStatus: async () => cloud,
     getAppVersion: async () => "0.1.0",
     restartChatGpt: async () => {
@@ -758,4 +759,29 @@ test("failed app restart leaves the configuration pending and allows retry", asy
     assert.match(app.text,/无法重启 ChatGPT/);
     assert.ok(app.button("立即重启 ChatGPT"));
   } finally {await app.dispose();}
+});
+
+test('Cloud reasoning uses only advertised modes and persists mode without effort', async () => {
+  const app = await mountApp({ initialSettings: { backendMode: 'REMOTE', onboardingCompleted: true, reasoningEffort: 'high' }, initialBridgeState: 'ready', initialCloudState: 'AUTHENTICATED', activeProfile: 'bridge', initialModels: [{ id: 'test-model', supportsReasoningEffort: true, reasoningModes: ['normal','thinking','auto'], defaultReasoningMode: 'auto' }] });
+  try {
+    assert.ok(!app.text.includes('推理强度'));
+    await app.clickSelector('button[aria-label="思考模式"]');
+    const modes=[...app.document.querySelectorAll('[role="option"]')];
+    assert.deepEqual(modes.map(m=>m.textContent.replace('✓','').trim()),['普通','思考','自动']);
+    await app.act(async()=>modes[1].click());
+    assert.equal(app.settings.reasoningMode,'thinking');
+    assert.equal(app.settings.reasoningEffort,null);
+    await app.click('切换 AI 服务');
+    assert.ok(!app.text.includes('我的 API'));
+    assert.ok(!app.text.includes('本地模型'));
+  } finally { await app.dispose(); }
+});
+
+test('Old Cloud metadata falls back to normal instead of invented effort controls', async () => {
+  const app=await mountApp({initialSettings:{backendMode:'REMOTE',onboardingCompleted:true,reasoningMode:'thinking'},initialBridgeState:'ready',initialCloudState:'AUTHENTICATED',activeProfile:'bridge'});
+  try {
+    await app.clickSelector('button[aria-label="思考模式"]');
+    assert.deepEqual([...app.document.querySelectorAll('[role="option"]')].map(m=>m.textContent.replace('✓','').trim()),['普通']);
+    assert.ok(!app.text.includes('推理强度'));
+  } finally { await app.dispose(); }
 });

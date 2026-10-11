@@ -22,7 +22,7 @@ export function ServiceSelectionSheet({
         </Button>
       </div>
       <div className="provider-choice-list">
-        {providers.map((provider) => (
+        {providers.filter(provider => provider.id === "bridge-cloud" || provider.id === "github-copilot").map((provider) => (
           <ProviderChoice
             busy={busy}
             key={provider.id}

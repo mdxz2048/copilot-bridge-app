@@ -86,6 +86,7 @@ export interface CloudServiceStatus {
   serviceConfigurationError: string | null;
   updateState: "CURRENT" | "AVAILABLE" | "REQUIRED" | "MAINTENANCE";
   lastError: {
+    requestId?: string;
     code: string;
     message: string;
     action: CloudErrorAction;
@@ -429,6 +430,7 @@ export class CloudFoundation {
   private applyErrorState(error: unknown): void {
     const policy = cloudErrorPolicy(error);
     this.lastError = {
+      requestId: error && typeof error === "object" && "requestId" in error && typeof error.requestId === "string" ? error.requestId : undefined,
       code: cloudErrorCode(error) ?? "UNKNOWN",
       message: error instanceof Error
         ? error.message
