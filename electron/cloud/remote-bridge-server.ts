@@ -17,7 +17,7 @@ import {
 } from "./contract.js";
 import type { CloudClient } from "./cloud-client.js";
 import { CloudError } from "./cloud-error.js";
-import { normalizeDesktopRequest, desktopEvent, desktopOutputItem, type DesktopToolBinding } from "./desktop-protocol.js";
+import { normalizeDesktopRequest, createDesktopEventTranslator, desktopOutputItem, type DesktopToolBinding } from "./desktop-protocol.js";
 
 export interface RemoteConversation {
   traceId?: string;
@@ -43,6 +43,7 @@ interface StreamLifecycle {
   responseId: string | null;
   requestId: string | null;
   completed: boolean;
+  translate: (value: unknown) => unknown[];
 }
 interface GatewayOptions {
   cache?: {load(accountId:string):RemoteConversation[];save(items:RemoteConversation[],accountId:string):void};
@@ -263,7 +264,9 @@ export class RemoteBridgeServer {
     this.gatewayOptions?.trace?.write("desktop_request",traceId,{sessionId:incoming.headers["session_id"],conversationId:incoming.headers["conversation_id"],model:(raw as Record<string, unknown>).model,stream:(raw as Record<string, unknown>).stream,previousResponseId:(raw as Record<string, unknown>).previous_response_id,reasoning:(raw as Record<string, unknown>).reasoning},raw);
     const selectedModel = (await this.gatewayOptions?.getModel?.()) ?? String((raw as Record<string, unknown>).model);
     const models = this.gatewayOptions?.getModel ? await this.client.listModels() : { data: [] };
-    const normalized = normalizeDesktopRequest(raw, models.data.find(model => model.id === selectedModel)?.capabilities.nativeResponses === true);
+    const rawRequest=raw as Record<string,unknown>;
+    const context=typeof rawRequest.previous_response_id==="string"?this.responses.get(rawRequest.previous_response_id):Array.isArray(rawRequest.input)?rawRequest.input.map(item=>item&&typeof item==="object"&&typeof item.call_id==="string"?this.calls.get(item.call_id)??this.historyCalls.get(item.call_id):undefined).find(Boolean):undefined;
+    const normalized = normalizeDesktopRequest(raw, models.data.find(model => model.id === selectedModel)?.capabilities.nativeResponses === true, context);
     const parsed = ResponseRequestSchema.parse(normalized.request);
     const selectedMode = await this.gatewayOptions?.getReasoning?.();
     const sessionKey = [incoming.headers["conversation_id"], incoming.headers["session_id"]].find(value => typeof value === "string" && value.length <= 200) as string | undefined;
@@ -426,6 +429,7 @@ export class RemoteBridgeServer {
       responseId: null,
       requestId: cloudResponse.headers.get("X-Bridge-AI-Request-Id"),
       completed: false,
+      translate: createDesktopEventTranslator(conversation.customTools ?? new Set(), conversation.toolBindings),
     };
     let eventBuffer = "";
     try {
@@ -474,7 +478,11 @@ export class RemoteBridgeServer {
       const payload: unknown = JSON.parse(data);
       const event = namedEvent ?? (payload && typeof payload === "object" && "type" in payload ? String(payload.type) : undefined);
       this.gatewayOptions?.trace?.write("cloud_event",conversation.traceId??conversation.threadId,{event,outputIndex:payload && typeof payload === "object" && "output_index" in payload ? payload.output_index : undefined,itemId:payload && typeof payload === "object" && "item_id" in payload ? payload.item_id : undefined},payload);
-      desktopResponse?.write(`${block.split(/\r?\n/).filter(line => !line.startsWith("data:")).join("\n")}\ndata: ${JSON.stringify(desktopEvent(payload, conversation.customTools ?? new Set(), conversation.toolBindings))}\n\n`);
+      for(const translated of lifecycle.translate(payload)){
+        const translatedType=translated&&typeof translated==="object"&&"type" in translated?String(translated.type):namedEvent;
+        const prefix=block.split(/\r?\n/).filter(line=>!line.startsWith("data:")&&!line.startsWith("event:")).join("\n");
+        desktopResponse?.write(`${prefix}${translatedType?`\nevent: ${translatedType}`:""}\ndata: ${JSON.stringify(translated)}\n\n`);
+      }
       if (event === "response.created") {
         lifecycle.responseId = responseIdFromEvent(payload)
           ?? lifecycle.responseId;
@@ -651,8 +659,11 @@ function sendPendingToolAcknowledgment(
 }
 
 function sendCloudError(response: ServerResponse, error: unknown): void {
-  if (response.headersSent || response.writableEnded) {
-    response.destroy(error instanceof Error ? error : undefined);
+  if (response.writableEnded) return;
+  if (response.headersSent) {
+    const code=error instanceof CloudError?error.code:"INVALID_SERVER_RESPONSE";
+    const message=error instanceof CloudError?error.message:"Cloud returned an invalid response stream.";
+    response.end(`event: error\ndata: ${JSON.stringify({type:"error",code,message,requestId:error instanceof CloudError?error.requestId??randomUUID():randomUUID()})}\n\n`);
     return;
   }
   if (error instanceof ZodError) { sendJson(response, 400, { error: { code: "INVALID_REQUEST", message: "Malformed Responses request.", requestId: randomUUID() } }); return; }

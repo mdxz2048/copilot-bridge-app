@@ -40,4 +40,53 @@ test('trace redacts private contents and unknown strings even in fallback metada
 });
 
 import { InputItemSchema, OutputItemSchema } from '../dist-electron/cloud/contract.js';
+import {createDesktopEventTranslator,normalizeDesktopRequest} from '../dist-electron/cloud/desktop-protocol.js';
 test('unknown items preserve shape while malformed known calls cannot bypass validation',()=>{assert.equal(InputItemSchema.safeParse({type:'future_type',data:1}).success,true);assert.equal(InputItemSchema.safeParse({type:'function_call',arguments:'{}'}).success,false);assert.equal(InputItemSchema.safeParse({type:'function_call_output',call_id:'x'}).success,false);assert.equal(OutputItemSchema.safeParse({type:'function_call',arguments:'{}'}).success,false)});
+
+const sseEvents=text=>text.split(/\n\n/).flatMap(block=>{const data=block.split('\n').find(line=>line.startsWith('data: '));return data?[JSON.parse(data.slice(6))]:[]});
+const splitStream=events=>{
+ const bytes=new TextEncoder().encode(events.map(event=>`id: fixture\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''));
+ return new Response(new ReadableStream({start(controller){for(let i=0;i<bytes.length;i+=7)controller.enqueue(bytes.slice(i,i+7));controller.close()}}));
+};
+test('custom wrapper SSE handles empty added, split JSON escapes, complete terminal and output-only native continuation',async()=>{
+ const rawInput='text("你好\\n")\n// \\u0041 "quoted" 🧪',args=JSON.stringify({input:rawInput});
+ const call={type:'function_call',id:'item_custom',call_id:'call_custom',name:'functions__exec',arguments:args};
+ const meta={item_id:call.id,output_index:2};
+ const events=[{type:'response.created',response:response('r_custom')},{type:'response.output_item.added',output_index:2,item:{...call,arguments:'',status:'in_progress'}},...[...args].map(delta=>({type:'response.function_call_arguments.delta',...meta,delta})),{type:'response.function_call_arguments.done',...meta,arguments:args},{type:'response.output_item.done',output_index:2,item:{...call,status:'completed'}},{type:'response.completed',response:response('r_custom',[call])}];
+ const requests=[];const {bridge,post}=await setup(async(request,options)=>{
+  requests.push({request:structuredClone(request),threadId:options.threadId});
+  if(requests.length===1){assert.equal(request.tools[0].type,'function');assert.equal(request.tools[0].name,'functions__exec');return{contentType:'text/event-stream',response:splitStream(events)}}
+  // Verify the real native Cloud wire contract instead of accepting any mock payload.
+  const replay=request.input.find(item=>item.call_id==='call_custom'&&item.type==='function_call');assert.equal(replay.arguments,args);
+  const output=request.input.at(-1);assert.deepEqual(output,{type:'function_call_output',call_id:'call_custom',output:'marker-ok'});
+  assert.equal(request.tools[0].type,'function');return{contentType:'application/json',response:Response.json(response('r_final'))};
+ });
+ try{
+  const stream=await post({input:'safe fixture',stream:true,tools:[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]}]});
+  const text=await stream.text(),received=sseEvents(text);assert.equal(received[1].item.type,'custom_tool_call');assert.equal(received[1].item.input,'');assert.equal(received[1].item.namespace,'functions');assert.equal(received[1].output_index,2);assert.equal(received[1].item.call_id,'call_custom');
+  assert.equal(received.filter(event=>event.type==='response.custom_tool_call_input.delta').map(event=>event.delta).join(''),rawInput);
+  assert.equal(received.find(event=>event.type==='response.custom_tool_call_input.done').input,rawInput);
+  assert.equal(received.at(-1).response.output[0].input,rawInput);assert.ok(!received.some(event=>event.type.startsWith('response.function_call_arguments')));assert.doesNotMatch(text,/"arguments":/);assert.match(text,/event: response.custom_tool_call_input.delta/);
+  assert.equal((await post({input:[{type:'custom_tool_call_output',call_id:'call_custom',output:'marker-ok'}]})).status,200);assert.equal(requests[0].threadId,requests[1].threadId);
+ }finally{await bridge.stop()}
+});
+test('malformed final custom JSON becomes a clear SSE protocol error, not a disconnected socket',async()=>{
+ const {bridge,post}=await setup(async()=>({contentType:'text/event-stream',response:splitStream([{type:'response.output_item.added',output_index:0,item:{type:'function_call',id:'bad',call_id:'bad_call',name:'exec',arguments:''}},{type:'response.function_call_arguments.done',item_id:'bad',output_index:0,arguments:'{"input":"private unfinished'}])}));
+ try{const stream=await post({input:'safe',stream:true,tools:[{type:'custom',name:'exec'}]});const text=await stream.text();const events=sseEvents(text);assert.equal(events.at(-1).type,'error');assert.equal(events.at(-1).code,'INVALID_SERVER_RESPONSE');assert.doesNotMatch(text,/private unfinished|Unexpected end of JSON/);}finally{await bridge.stop()}
+});
+test('per-stream custom state cannot contaminate another stream and ordinary function deltas pass unchanged',()=>{
+ const custom=new Set(['exec']),binding=new Map([['exec',{name:'exec',custom:true}]]),first=createDesktopEventTranslator(custom,binding),second=createDesktopEventTranslator(custom,binding);
+ const added={type:'response.output_item.added',output_index:0,item:{type:'function_call',id:'same',call_id:'c',name:'exec',arguments:''}};
+ first(added);second(added);first({type:'response.function_call_arguments.delta',item_id:'same',output_index:0,delta:'{"input":"A'});
+ assert.equal(second({type:'response.function_call_arguments.done',item_id:'same',output_index:0,arguments:'{"input":"B"}'}).at(-1).input,'B');
+ const fn={type:'response.function_call_arguments.delta',item_id:'ordinary',output_index:1,delta:'{"x":'};assert.deepEqual(first(fn),[fn]);
+ const normalized=normalizeDesktopRequest({model:'logical',input:[{type:'custom_tool_call_output',call_id:'c',output:'ok'}]},true,{input:[{type:'function_call',call_id:'c',name:'exec',arguments:'{"input":"x"}'}],toolBindings:binding});assert.equal(normalized.request.input[0].type,'function_call_output');
+});
+test('surrogate pairs split across JSON deltas stay intact and item.done completes missing arguments.done',()=>{
+ const translate=createDesktopEventTranslator(new Set(['exec']));
+ translate({type:'response.output_item.added',output_index:2,item:{type:'function_call',id:'unicode',call_id:'c',name:'exec',arguments:''}});
+ assert.deepEqual(translate({type:'response.function_call_arguments.delta',item_id:'unicode',output_index:2,delta:'{"input":"\\uD83D'}),[]);
+ const next=translate({type:'response.function_call_arguments.delta',item_id:'unicode',output_index:2,delta:'\\uDE00'});assert.equal(next[0].delta,'😀');
+ const done=translate({type:'response.output_item.done',output_index:2,item:{type:'function_call',id:'unicode',call_id:'c',name:'exec',arguments:'{"input":"\\uD83D\\uDE00!"}'}});
+ assert.equal(done[0].delta,'!');assert.equal(done[1].type,'response.custom_tool_call_input.done');assert.equal(done[1].input,'😀!');assert.equal(done[2].item.input,'😀!');
+});

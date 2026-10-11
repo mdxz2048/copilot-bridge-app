@@ -3,7 +3,7 @@ import type { ResponseRequest } from "./contract.js";
 
 /** Normalize the official runtime wire shape before the frozen Cloud function contract. */
 export type DesktopToolBinding = { name: string; namespace?: string; custom: boolean };
-export function normalizeDesktopRequest(value: unknown, native = false): { request: ResponseRequest; customTools: Set<string>; toolBindings: Map<string, DesktopToolBinding> } {
+export function normalizeDesktopRequest(value: unknown, native = false, context?: { input: Record<string, unknown>[]; toolBindings?: Map<string, DesktopToolBinding> }): { request: ResponseRequest; customTools: Set<string>; toolBindings: Map<string, DesktopToolBinding> } {
   if (!value || typeof value !== "object") throw new Error("Invalid Desktop request");
   const raw = value as Record<string, unknown>;
   const customTools = new Set<string>();
@@ -39,7 +39,7 @@ export function normalizeDesktopRequest(value: unknown, native = false): { reque
       addTools(item.tools);
     }
   }
-  const callName = (item: Record<string, unknown>): unknown => [...toolBindings].find(([alias, binding]) =>
+  const callName = (item: Record<string, unknown>): unknown => [...toolBindings, ...(context?.toolBindings ?? [])].find(([alias, binding]) =>
     (binding.name === item.name && binding.namespace === item.namespace) || alias === item.name)?.[0] ?? item.name;
   const input = Array.isArray(raw.input) ? raw.input.flatMap(value => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new CloudError("VALIDATION_ERROR", "Invalid input item.", { httpStatus: 400 });
@@ -48,7 +48,10 @@ export function normalizeDesktopRequest(value: unknown, native = false): { reque
     if (item.type === "function_call") return [{ ...item, name: callName(item) }];
     if (native && item.type === "custom_tool_call" && item.name === "apply_patch" && !item.namespace) return [item];
     if (item.type === "custom_tool_call") return [{ type: "function_call", name: callName(item), call_id: item.call_id, arguments: JSON.stringify({ input: item.input }) }];
-    if (native && item.type === "custom_tool_call_output") return [item];
+    if (native && item.type === "custom_tool_call_output") {
+      const call = [...(Array.isArray(raw.input) ? raw.input : []), ...(context?.input ?? [])].find(value => value && typeof value === "object" && ["custom_tool_call", "function_call"].includes(String(value.type)) && value.call_id === item.call_id);
+      if (!call || (call.type === "custom_tool_call" && call.name === "apply_patch" && !call.namespace)) return [item];
+    }
     if (item.type === "custom_tool_call_output") return [{ type: "function_call_output", call_id: item.call_id,
       output: typeof item.output === "string" ? item.output : JSON.stringify(item.output) }];
     return [item];
@@ -63,10 +66,68 @@ export function desktopOutputItem(value: unknown, customTools: Set<string>, tool
   const binding = toolBindings?.get(String(item.name));
   const restored = binding ? { ...item, name: binding.name, ...(binding.namespace ? { namespace: binding.namespace } : {}) } : item;
   if (!customTools.has(String(item.name))) return restored;
-  const args = JSON.parse(String(item.arguments ?? "{}")) as { input?: string };
-  if (typeof args.input !== "string") throw new Error("Custom tool input missing");
+  const args = customArguments(item.arguments);
   const { arguments: _arguments, ...rest } = restored;
   return { ...rest, type: "custom_tool_call", input: args.input };
+}
+
+function customArguments(value: unknown): { input: string } {
+  try { const args=JSON.parse(String(value));if(args&&typeof args.input==="string")return args; } catch { /* Never expose partial arguments or provider text in errors. */ }
+  throw new CloudError("INVALID_SERVER_RESPONSE", "Cloud returned invalid custom tool arguments.", { httpStatus: 502 });
+}
+
+// Decode only complete characters from the wrapper's JSON string, retaining split
+// escapes in the buffer. The surrounding function JSON is never sent to Desktop.
+function partialCustomInput(buffer: string): string {
+  const prefix=/^\s*\{\s*"input"\s*:\s*"/.exec(buffer);if(!prefix)return "";
+  let result="";
+  for(let i=prefix[0].length;i<buffer.length;i++){
+    const char=buffer[i];if(char==='"')break;
+    if(char!=="\\"){result+=char;continue;}
+    const count=buffer[i+1]==="u"?6:2;if(i+count>buffer.length)break;
+    try{result+=JSON.parse(`"${buffer.slice(i,i+count)}"`);}catch{throw new CloudError("INVALID_SERVER_RESPONSE","Cloud returned invalid custom tool arguments.",{httpStatus:502});}
+    i+=count-1;
+  }
+  // Hold a high surrogate until its low surrogate arrives in a later delta.
+  // A final genuinely unpaired surrogate remains representable at arguments.done.
+  return /[\uD800-\uDBFF]$/.test(result)?result.slice(0,-1):result;
+}
+
+/** One translator per SSE response: call IDs and argument buffers never cross streams. */
+export function createDesktopEventTranslator(customTools: Set<string>, toolBindings?: Map<string, DesktopToolBinding>): (value: unknown) => unknown[] {
+  type Pending={buffer:string;emitted:string;done:boolean};
+  const calls=new Map<string,Pending>();
+  return value=>{
+    if(!value||typeof value!=="object")return [value];
+    const event=value as Record<string,unknown>, item=event.item as Record<string,unknown>|undefined;
+    const keys=[event.item_id??item?.id].filter(v=>v!==undefined).map(v=>`id:${String(v)}`);
+    if(event.output_index!==undefined)keys.push(`index:${String(event.output_index)}`);
+    if(event.type==="response.output_item.added"&&item?.type==="function_call"&&customTools.has(String(item.name))){
+      const state={buffer:String(item.arguments??""),emitted:"",done:false};for(const key of keys)calls.set(key,state);
+      const binding=toolBindings?.get(String(item.name));const {arguments:_arguments,...rest}=item;
+      return [{...event,item:{...rest,type:"custom_tool_call",name:binding?.name??item.name,...(binding?.namespace?{namespace:binding.namespace}:{}),input:""}}];
+    }
+    const state=keys.map(key=>calls.get(key)).find(Boolean);
+    if(state&&!state.done&&event.type==="response.output_item.done"&&item?.type==="function_call"&&customTools.has(String(item.name))){
+      const input=customArguments(item.arguments).input;
+      if(!input.startsWith(state.emitted))throw new CloudError("INVALID_SERVER_RESPONSE","Cloud changed streamed custom tool input.",{httpStatus:502});
+      const delta=input.slice(state.emitted.length);state.emitted=input;state.done=true;
+      const {item:_item,...rest}=event;
+      return [...(delta?[{...rest,type:"response.custom_tool_call_input.delta",item_id:item.id,delta}]:[]),{...rest,type:"response.custom_tool_call_input.done",item_id:item.id,input},desktopEvent(value,customTools,toolBindings)];
+    }
+    if(state&&(event.type==="response.function_call_arguments.delta"||event.type==="response.function_call_arguments.done")){
+      const done=event.type.endsWith(".done");
+      if(done)state.buffer=typeof event.arguments==="string"?event.arguments:state.buffer;else state.buffer+=String(event.delta??"");
+      const decoded=done?customArguments(state.buffer).input:partialCustomInput(state.buffer);
+      if(!decoded.startsWith(state.emitted))throw new CloudError("INVALID_SERVER_RESPONSE","Cloud changed streamed custom tool input.",{httpStatus:502});
+      const delta=decoded.slice(state.emitted.length);state.emitted=decoded;
+      const {arguments:_arguments,delta:_delta,...rest}=event;
+      const result:unknown[]=delta?[{...rest,type:"response.custom_tool_call_input.delta",delta}]:[];
+      if(done&&!state.done){result.push({...rest,type:"response.custom_tool_call_input.done",input:decoded});state.done=true;}
+      return result;
+    }
+    return [desktopEvent(value,customTools,toolBindings)];
+  };
 }
 
 export function desktopEvent(value: unknown, customTools: Set<string>, toolBindings?: Map<string, DesktopToolBinding>): unknown {
