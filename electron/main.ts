@@ -38,6 +38,7 @@ import {
 } from "./cloud/windows-credential-manager.js";
 import { RemoteBridgeServer } from "./cloud/remote-bridge-server.js";
 import { performServiceSwitch } from "./service-switcher.js";
+import { prepareOfficialClientConnection, restartOfficialClientForProfile } from "./official-client-flow.js";
 
 const bridgeHome = join(process.env.USERPROFILE ?? "", ".copilot-bridge", "profiles", "bridge", "codex-home");
 const originalHome = join(process.env.USERPROFILE ?? "", ".codex");
@@ -60,7 +61,7 @@ const helperPath = app.isPackaged
   : join(app.getAppPath(), "dist-electron", "gateway-token-helper.mjs");
 const profileStore = new GatewayProfileStore(effectiveCodexHome,
   join(app.getPath("userData"), "gateway-switch.json"), nodePathForCurrentBuild(), [helperPath, localCredentialTarget]);
-const chatGptManager = new ChatGptManager(logDiagnostic);
+const chatGptManager = new ChatGptManager(logDiagnostic, { offlineDirectory:join(app.getPath("userData"),"official-client") });
 function nodePathForCurrentBuild(): string {
   return app.isPackaged
     ? join(process.resourcesPath, "node-runtime", "node.exe")
@@ -406,6 +407,13 @@ function createWindow(): void {
     },
   });
   mainWindow = window;
+  window.webContents.once("did-finish-load", () => {
+    if(isIsolatedTestInstance)return;
+    void chatGptManager.ensureInstalledOnOpen(sendChatGptStatus,
+      () => shell.openExternal(ChatGptManager.storeUri()),
+      () => shell.openExternal(ChatGptManager.downloadPageUri()))
+      .catch(error=>logDiagnostic(`Automatic official installation check failed: ${error instanceof Error?error.message:String(error)}`));
+  });
   checkUpdatesOnOpen();
   window.on("closed", () => {
     logDiagnostic("Bridge window closed");
@@ -500,10 +508,17 @@ app.whenReady().then(async () => {
       ? { state: "NOT_INSTALLED", message: "已取消 ChatGPT 安装。" }
       : { state: "INSTALLING", step: "INSTALLING", message: "Windows 正在完成安装，请稍候；关闭此窗口不会中止系统安装。" });
   });
-  ipcMain.handle("chatgpt:launch", () => chatGptManager.launch());
+  const prepareOfficialConnection=() => prepareOfficialClientConnection({
+    getProfile:()=>profileStore.getStatus(),
+    startBridge:async()=>{
+      await prepareBridgeEnvironment();
+      const status=await bridgeManager.start(await settingsStore.read());
+      broadcast("bridge:status",status);refreshTray();return status;
+    },
+  });
+  ipcMain.handle("chatgpt:launch", async () => {await prepareOfficialConnection();await chatGptManager.launch();});
   ipcMain.handle("chatgpt:restart", async () => {
-    await chatGptManager.restart();
-    const status = await profileStore.acknowledgeRestart();
+    const status = await restartOfficialClientForProfile({prepare:prepareOfficialConnection,restart:()=>chatGptManager.restart(),acknowledge:()=>profileStore.acknowledgeRestart()});
     broadcast("profile:status", status);
     return status;
   });
