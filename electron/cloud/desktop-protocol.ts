@@ -45,13 +45,20 @@ export function normalizeDesktopRequest(value: unknown, native = false, context?
       transformations.add("additional_tools_promoted");
     }
   }
-  const callName = (item: Record<string, unknown>): unknown => [...toolBindings, ...(context?.toolBindings ?? [])].find(([alias, binding]) =>
-    (binding.name === item.name && binding.namespace === item.namespace) || alias === item.name)?.[0] ?? item.name;
+  const callName = (item: Record<string, unknown>): unknown => {
+    const bindings=new Map([...(context?.toolBindings??[]),...toolBindings]);
+    const exact=[...bindings].find(([,binding])=>binding.name===item.name&&binding.namespace===item.namespace);
+    return exact?.[0]??resolveDesktopTool(String(item.name),bindings)?.[0]??item.name;
+  };
   const input = Array.isArray(raw.input) ? raw.input.flatMap(value => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new CloudError("VALIDATION_ERROR", "Invalid input item.", { httpStatus: 400 });
     const item = value as Record<string, unknown>;
     if (item.type === "additional_tools") return [];
-    if (item.type === "function_call") return [{ ...item, name: callName(item) }];
+    if (item.type === "agent_message") {
+      transformations.add("agent_message_envelope");
+      return [{ type: "message", role: "user", content: [{ type: "input_text", text: `Sub-agent message (author and recipient retained):\n${JSON.stringify(item)}` }] }];
+    }
+    if (item.type === "function_call") { const {namespace:_namespace,...rest}=item;return [{ ...rest, name: callName(item) }]; }
     if (native && item.type === "custom_tool_call" && item.name === "apply_patch" && !item.namespace) return [item];
     if (item.type === "custom_tool_call") { transformations.add("custom_call_wrapper");const {input:_input,namespace:_namespace,...rest}=item;return [{ ...rest, type: "function_call", name: callName(item), arguments: JSON.stringify({ input: item.input }) }]; }
     if (native && item.type === "custom_tool_call_output") {
@@ -77,13 +84,29 @@ export function normalizeDesktopRequest(value: unknown, native = false, context?
   return { request: { ...raw, tools: tools.length ? tools : undefined, input, ...(toolChoice!==undefined?{tool_choice:toolChoice}:{}) } as ResponseRequest, customTools, toolBindings, transformations:[...transformations] };
 }
 
+/** Accept alternate spellings only when they identify exactly one advertised tool. */
+export function resolveDesktopTool(name: string, bindings?: Map<string, DesktopToolBinding>): [string, DesktopToolBinding] | undefined {
+  if (!bindings?.size) return undefined;
+  const exact = bindings.get(name);
+  if (exact) return [name, exact];
+  const matches = [...bindings].filter(([, binding]) => name === binding.name ||
+    (binding.namespace && [
+      `${binding.namespace}::${binding.name}`, `${binding.namespace}.${binding.name}`,
+      `${binding.namespace}__${binding.name}`, `${binding.namespace}::${binding.namespace}__${binding.name}`,
+      `${binding.namespace}__${binding.namespace}__${binding.name}`,
+    ].includes(name)));
+  if (matches.length !== 1) throw new CloudError("INVALID_SERVER_RESPONSE", "模型返回的工具名称未匹配唯一的已声明工具，请重试。", { httpStatus: 502 });
+  return matches[0];
+}
+
 export function desktopOutputItem(value: unknown, customTools: Set<string>, toolBindings?: Map<string, DesktopToolBinding>): unknown {
   if (!value || typeof value !== "object") return value;
   const item = value as Record<string, unknown>;
   if (item.type !== "function_call") return item;
-  const binding = toolBindings?.get(String(item.name));
+  const match = resolveDesktopTool(String(item.name), toolBindings);
+  const binding = match?.[1];
   const restored = binding ? { ...item, name: binding.name, ...(binding.namespace ? { namespace: binding.namespace } : {}) } : item;
-  if (!customTools.has(String(item.name))) return restored;
+  if (!customTools.has(match?.[0] ?? String(item.name))) return restored;
   const args = customArguments(item.arguments);
   const { arguments: _arguments, ...rest } = restored;
   return { ...rest, type: "custom_tool_call", input: args.input };
@@ -118,15 +141,17 @@ export function createDesktopEventTranslator(customTools: Set<string>, toolBindi
   return value=>{
     if(!value||typeof value!=="object")return [value];
     const event=value as Record<string,unknown>, item=event.item as Record<string,unknown>|undefined;
+    const match=item?.type==="function_call"?resolveDesktopTool(String(item.name),toolBindings):undefined;
+    const isCustom=customTools.has(match?.[0]??String(item?.name));
     const keys=[event.item_id??item?.id].filter(v=>v!==undefined).map(v=>`id:${String(v)}`);
     if(event.output_index!==undefined)keys.push(`index:${String(event.output_index)}`);
-    if(event.type==="response.output_item.added"&&item?.type==="function_call"&&customTools.has(String(item.name))){
+    if(event.type==="response.output_item.added"&&item?.type==="function_call"&&isCustom){
       const state={buffer:String(item.arguments??""),emitted:"",done:false};for(const key of keys)calls.set(key,state);
-      const binding=toolBindings?.get(String(item.name));const {arguments:_arguments,...rest}=item;
+      const binding=match?.[1];const {arguments:_arguments,...rest}=item;
       return [{...event,item:{...rest,type:"custom_tool_call",name:binding?.name??item.name,...(binding?.namespace?{namespace:binding.namespace}:{}),input:""}}];
     }
     const state=keys.map(key=>calls.get(key)).find(Boolean);
-    if(state&&!state.done&&event.type==="response.output_item.done"&&item?.type==="function_call"&&customTools.has(String(item.name))){
+    if(state&&!state.done&&event.type==="response.output_item.done"&&item?.type==="function_call"&&isCustom){
       const input=customArguments(item.arguments).input;
       if(!input.startsWith(state.emitted))throw new CloudError("INVALID_SERVER_RESPONSE","Cloud changed streamed custom tool input.",{httpStatus:502});
       const delta=input.slice(state.emitted.length);state.emitted=input;state.done=true;

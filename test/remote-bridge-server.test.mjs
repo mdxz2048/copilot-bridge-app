@@ -177,7 +177,7 @@ test("SSE done and completed capture a call once without stealing another conver
         model: "mock/mock-chat",
         input,
         stream: streamResponse,
-        ...(streamResponse && { tools: [{ type: "function", name: "read_file" }] }),
+        ...(streamResponse && { tools: [{ type: "function", name: "read_file" }, {type:"function",name:"edit_file"}] }),
       }),
     });
     const first = await post("original prompt", true);
@@ -191,12 +191,9 @@ test("SSE done and completed capture a call once without stealing another conver
     const continuation = await post([
       { type: "function_call_output", call_id: call.call_id, output: "marker" },
     ]);
-    assert.equal(continuation.status, 200);
+    assert.equal(continuation.status, 409);
     const acknowledgment = await continuation.json();
-    assert.deepEqual(acknowledgment.output, []);
-    assert.deepEqual(acknowledgment.usage, {
-      input_tokens: 0, output_tokens: 0, total_tokens: 0,
-    });
+    assert.equal(acknowledgment.error.code, "TOOL_RESULTS_PENDING");
     assert.equal(requests.length, 2, "partial tool outputs must not reach Cloud");
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(notifications.length, 1, "local acknowledgment must not report settlement");
@@ -236,7 +233,7 @@ test("SSE done and completed capture a call once without stealing another conver
   }
 });
 
-test("streaming partial tool output completes locally without Cloud usage or settlement", async () => {
+test("streaming partial tool output explicitly waits without Cloud usage or settlement", async () => {
   const calls = ["call_a", "call_b"].map((call_id) => ({
     type: "function_call", call_id, name: "read_file", arguments: "{}",
   }));
@@ -275,16 +272,8 @@ test("streaming partial tool output completes locally without Cloud usage or set
     const partial = await post([
       { type: "function_call_output", call_id: "call_a", output: "first" },
     ], true);
-    assert.equal(partial.status, 200);
-    assert.match(partial.headers.get("content-type") ?? "", /text\/event-stream/);
-    const text = await partial.text();
-    const completed = JSON.parse(/^data: (.+)$/m.exec(text.split("event: response.completed")[1])?.[1]);
-    assert.equal(completed.response.status, "completed");
-    assert.deepEqual(completed.response.output, []);
-    assert.deepEqual(completed.response.usage, {
-      input_tokens: 0, output_tokens: 0, total_tokens: 0,
-    });
-    assert.match(text, /data: \[DONE\]/);
+    assert.equal(partial.status, 409);
+    assert.equal((await partial.json()).error.code, "TOOL_RESULTS_PENDING");
     assert.equal(requested.length, 1);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(settlements.length, 1);
@@ -348,8 +337,8 @@ test("cumulative history from another active conversation cannot satisfy a pendi
     const b1 = { type: "function_call_output", call_id: "b1", output: "other" };
     for (const partial of [a1, b1]) {
       const response = await post([partial]);
-      assert.equal(response.status, 200);
-      assert.deepEqual((await response.json()).output, []);
+      assert.equal(response.status, 409);
+      assert.equal((await response.json()).error.code, "TOOL_RESULTS_PENDING");
     }
     assert.equal(received.length, 2);
     const mixed = await post([b1, a2]);

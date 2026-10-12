@@ -41,6 +41,83 @@ test('trace redacts private contents and unknown strings even in fallback metada
 
 import { InputItemSchema, OutputItemSchema } from '../dist-electron/cloud/contract.js';
 import {createDesktopEventTranslator,normalizeDesktopRequest} from '../dist-electron/cloud/desktop-protocol.js';
+import {desktopOutputItem} from '../dist-electron/cloud/desktop-protocol.js';
+
+test('alternate provider names restore only a unique advertised custom tool in JSON and SSE',()=>{
+ const normalized=normalizeDesktopRequest({input:'fixture',tools:[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]}]},true);
+ for(const name of ['functions__exec','exec','functions::exec','functions::functions__exec','functions__functions__exec']) {
+  const call={type:'function_call',id:'fc',call_id:'call',name,arguments:'{"input":"text(1)"}'};
+  const restored=desktopOutputItem(call,normalized.customTools,normalized.toolBindings);
+  assert.equal(restored.type,'custom_tool_call');assert.equal(restored.name,'exec');assert.equal(restored.namespace,'functions');assert.equal(restored.input,'text(1)');
+  const translate=createDesktopEventTranslator(normalized.customTools,normalized.toolBindings);
+  assert.equal(translate({type:'response.output_item.added',output_index:0,item:{...call,arguments:''}})[0].item.type,'custom_tool_call');
+  assert.equal(translate({type:'response.function_call_arguments.done',item_id:'fc',output_index:0,arguments:call.arguments}).at(-1).input,'text(1)');
+ }
+ const ambiguous=normalizeDesktopRequest({input:'fixture',tools:['a','b'].map(name=>({type:'namespace',name,tools:[{type:'custom',name:'exec'}]}))},true);
+ for(const name of ['exec','invented'])assert.throws(()=>desktopOutputItem({type:'function_call',name,arguments:'{}'},ambiguous.customTools,ambiguous.toolBindings),e=>e.code==='INVALID_SERVER_RESPONSE');
+});
+
+test('missing tool result can resume with new instruction and cannot block a new session',async()=>{
+ const requests=[];const tools=[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]}];
+ const {bridge,post}=await setup(async request=>{requests.push(structuredClone(request));return{contentType:'application/json',response:Response.json(response('r'+requests.length,requests.length===1?[{type:'function_call',id:'f',call_id:'c',name:'exec',arguments:'{"input":"text(1)"}'}]:[{type:'message',id:'m'+requests.length,role:'assistant',content:[{type:'output_text',text:'resumed'}]}]))}});
+ try {
+  const first=await post({input:'write fixture',tools},{session_id:'original'});assert.equal((await first.json()).output[0].type,'custom_tool_call');
+  const independent=await post({input:'new fixture',tools},{session_id:'new'});assert.equal(independent.status,200);
+  const continued=await post({input:'continue',tools},{session_id:'original'});assert.equal(continued.status,200);assert.equal((await continued.json()).output[0].content[0].text,'resumed');
+  assert.equal(requests.length,3);assert.equal(requests[2].input.find(item=>item.call_id==='c'&&item.type==='function_call').name,'functions__exec');
+  assert.match(requests[2].input.find(item=>item.call_id==='c'&&item.type==='function_call_output').output,/not received/);
+  assert.equal((await post({input:'continue again',tools},{session_id:'original'})).status,200);assert.equal(requests.length,4);
+ }finally{await bridge.stop()}
+});
+
+test('incremental sub-agent message stays attached to its tool continuation',async()=>{
+ const requests=[];const message={type:'agent_message',id:'agent_msg',author:{agent_id:'child'},recipient:{agent_id:'parent'},content:'fixture completed',internal_chat_message_metadata_passthrough:{keep:true}};
+ const {bridge,post}=await setup(async request=>{requests.push(structuredClone(request));return{contentType:'application/json',response:Response.json(response('r'+requests.length,requests.length===1?[{type:'function_call',call_id:'spawn',name:'spawn_agent',arguments:'{}'}]:[]))}});
+ try {
+  assert.equal((await post({input:'fixture',tools:[{type:'function',name:'spawn_agent'}]})).status,200);
+  assert.equal((await post({input:[{type:'function_call_output',call_id:'spawn',output:'child started'},message]})).status,200);
+  const envelope=requests[1].input.find(item=>item.role==='user'&&Array.isArray(item.content));
+  assert.ok(envelope);assert.deepEqual(JSON.parse(envelope.content[0].text.split('\n').slice(1).join('\n')),message);
+ }finally{await bridge.stop()}
+});
+
+test('full history repairs the original bare-name failed call and repeated user instructions resume',async()=>{
+ const requests=[],tools=[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]}];
+ const rawCall={type:'function_call',id:'call-item',call_id:'history-call',name:'exec',arguments:'{"input":"text(1)"}'};
+ const {bridge,post}=await setup(async request=>{requests.push(structuredClone(request));return{contentType:'application/json',response:Response.json(response('history'+requests.length,requests.length<3?[{...rawCall,call_id:requests.length===1?'history-call':'next-call'}]:[]))}});
+ try {
+  await (await post({input:[{role:'user',content:'fixture'}],tools},{session_id:'history'})).json();
+  const history=[{role:'user',content:'fixture'},rawCall,{role:'user',content:'continue'}];
+  assert.equal((await post({input:history,tools},{session_id:'history'})).status,200);
+  assert.equal(requests[1].input.find(item=>item.call_id==='history-call'&&item.type==='function_call').name,'functions__exec');
+  const cumulative=[...requests[1].input,{...rawCall,call_id:'next-call'},{role:'user',content:'continue'}];
+  assert.equal((await post({input:cumulative,tools},{session_id:'history'})).status,200);assert.equal(requests.length,3);
+  assert.ok(requests[2].input.some(item=>item.call_id==='next-call'&&item.type==='function_call_output'));
+ }finally{await bridge.stop()}
+});
+
+test('truncated stream with a completed tool item can resume instead of remaining pending',async()=>{
+ const requests=[],call={type:'function_call',id:'tool',call_id:'truncated',name:'functions__exec',arguments:'{"input":"text(1)"}'};
+ const {bridge,post}=await setup(async request=>{requests.push(structuredClone(request));return requests.length===1?{contentType:'text/event-stream',response:splitStream([{type:'response.output_item.done',output_index:0,item:call}])}:{contentType:'application/json',response:Response.json(response('resumed'))}});
+ try {
+  const initial=await post({input:'fixture',stream:true,tools:[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]}]},{session_id:'cancelled'});await initial.text();
+  assert.equal((await post({input:'continue'},{session_id:'cancelled'})).status,200);assert.equal(requests.length,2);
+  assert.match(requests[1].input.find(item=>item.call_id==='truncated'&&item.type==='function_call_output').output,/interrupted/);
+ }finally{await bridge.stop()}
+});
+
+test('sub-agent notification cannot cancel another running tool in the same conversation',async()=>{
+ const requests=[];
+ const {bridge,post}=await setup(async request=>{requests.push(structuredClone(request));return{contentType:'application/json',response:Response.json(response('notify'+requests.length,requests.length===1?['a','b'].map(call_id=>({type:'function_call',call_id,name:'probe',arguments:'{}'})):[]))}});
+ try {
+  await (await post({input:'fixture',tools:[{type:'function',name:'probe'}]})).json();
+  const partial=await post({input:[{type:'function_call_output',call_id:'a',output:'done'},{type:'agent_message',author:'child',recipient:'parent',content:'notification'}]});
+  assert.equal(partial.status,409);assert.equal(requests.length,1);
+  assert.equal((await post({input:[{type:'function_call_output',call_id:'b',output:'done'}]})).status,200);
+  assert.equal(requests[1].input.filter(item=>item.type==='function_call_output').length,2);
+  assert.ok(requests[1].input.some(item=>item.role==='user'&&Array.isArray(item.content)&&item.content[0].text.includes('notification')));
+ }finally{await bridge.stop()}
+});
 test('unknown items preserve shape while malformed known calls cannot bypass validation',()=>{assert.equal(InputItemSchema.safeParse({type:'future_type',data:1}).success,true);assert.equal(InputItemSchema.safeParse({type:'function_call',arguments:'{}'}).success,false);assert.equal(InputItemSchema.safeParse({type:'function_call_output',call_id:'x'}).success,false);assert.equal(OutputItemSchema.safeParse({type:'function_call',arguments:'{}'}).success,false)});
 
 const sseEvents=text=>text.split(/\n\n/).flatMap(block=>{const data=block.split('\n').find(line=>line.startsWith('data: '));return data?[JSON.parse(data.slice(6))]:[]});

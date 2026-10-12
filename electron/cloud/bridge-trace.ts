@@ -26,6 +26,7 @@ export class BridgeTrace {
 
 /** Capture records structure, never prompts, document contents or tool arguments/results. */
 export function redactTrace(value: unknown, key = ""): unknown {
+  if(key==="reason"&&["new_user_instruction","missing_tool_outputs","unknown_or_ambiguous"].includes(String(value)))return value;
   if(key==="modifiedFields")return safeModifiedFields(value);
   const protocolEnum=safeProtocolEnum(value,key);if(protocolEnum!==undefined)return protocolEnum;
   if (key === "path" && typeof value === "string" && ["/v1/responses", "/v1/models", "/bridge/models", "/health"].includes(value)) return value;

@@ -1,0 +1,10 @@
+{
+  "version": "0.3.11",
+  "appTests": { "passed": 201, "failed": 0, "skipped": 0 },
+  "cloudApiTests": { "passed": 120, "failed": 0, "databaseTestsSkipped": 28 },
+  "coverage": ["JSON and SSE unique tool alias restoration", "ambiguous and unknown tool rejection", "partial multi-tool results wait explicitly", "new user instruction recovers missing result", "repeated continuation and complete-history recovery", "independent conversation and cross-conversation rejection", "truncated stream recovery", "sub-agent envelope preservation and incremental continuation", "sub-agent notification does not interrupt other tools"],
+  "officialRuntime": { "actualBundledRuntime": true, "controlledLocalUpstream": true, "toolOutputSeen": true, "requestCount": 2, "completed": true },
+  "ui": { "realComponent": true, "lightDark": true, "widths": [480, 1000], "horizontalOverflow": false, "pageErrors": 0 },
+  "production": { "apiDeployed": true, "sourceHashVerified": true, "collaborationEnvelopeVerifiedInContainer": true, "noPaidGeneration": true },
+  "limitations": ["OpenAI live acceptance excluded by user", "original Desktop GUI parabola task not rerun", "current host not installed or restarted", "unit fixture and controlled runtime upstream do not prove live provider completion"]
+}

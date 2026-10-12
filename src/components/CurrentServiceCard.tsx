@@ -128,7 +128,7 @@ export function CurrentServiceCard({
         {serviceReady && selectedModel
           ? (
             <div className="service-controls">
-              <SelectRow label="模型">
+              <SelectRow label="Cloud 实际模型">
                 <Select
                   label="模型"
                   onChange={(backendModel) => {
@@ -167,6 +167,7 @@ export function CurrentServiceCard({
               </Button>
             </div>
           )}
+        {serviceReady && selectedModel && <p className="local-inline-note">Cloud 请求使用 {displayModel(selectedModel)}。切换模型后请新建会话。</p>}
 
         <div className="service-actions">
           <Button

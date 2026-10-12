@@ -548,7 +548,7 @@ export function App() {
                 ? "Copilot 环境"
                 : "原账号环境"}
             </strong>
-            <span>模型</span>
+            <span>Cloud 实际模型</span>
             <strong>{currentModel || "自动选择"}</strong>
             <span>App</span>
             <strong>{`v${diagnostics.appVersion}`}</strong>
