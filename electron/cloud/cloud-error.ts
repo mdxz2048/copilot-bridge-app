@@ -31,6 +31,8 @@ export class CloudError extends Error {
   readonly cause?: unknown;
   readonly httpStatus?: number;
   readonly requestId?: string;
+  /** Already sanitized and bounded; never raw transport credentials. */
+  readonly responseBody?: unknown;
 
   constructor(
     code: string,
@@ -39,6 +41,7 @@ export class CloudError extends Error {
       cause?: unknown;
       httpStatus?: number;
       requestId?: string;
+      responseBody?: unknown;
     },
   ) {
     super(message);
@@ -47,6 +50,7 @@ export class CloudError extends Error {
     this.cause = options?.cause;
     this.httpStatus = options?.httpStatus;
     this.requestId = options?.requestId;
+    this.responseBody = options?.responseBody;
   }
 }
 

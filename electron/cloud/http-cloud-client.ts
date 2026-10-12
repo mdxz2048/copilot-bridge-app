@@ -68,6 +68,7 @@ import { CloudError } from "./cloud-error.js";
 import type { DeviceIdentityStore } from "./device-identity.js";
 import type { DeviceKeyStore } from "./device-proof.js";
 import { withSingleTokenRefreshRetry } from "./retry.js";
+import { FailureFeedbackSchema, FailureFeedbackResultSchema, sanitizeFailure, type FailureFeedback } from "./failure-feedback.js";
 import type { CloudTokenSession } from "./token-store.js";
 
 export interface HttpCloudClientOptions {
@@ -91,6 +92,14 @@ export class HttpCloudClient implements CloudClient {
   private readonly defaultHeaders: Headers;
   private readonly fetch: typeof fetch;
   private refreshInFlight: Promise<void> | null = null;
+  private cachedUserId:string|null=null;
+  private identityEpoch=0;
+  getCachedUserId():string|null {return this.tokens.getAccessToken()?this.cachedUserId:null;}
+  submitFailureFeedback(report:FailureFeedback) {
+    const body=FailureFeedbackSchema.parse(report);
+    if(this.getCachedUserId()!==body.ownerUserId)throw new CloudError("FEEDBACK_OWNER_MISMATCH","Failure report belongs to another account.",{httpStatus:409});
+    return this.authenticatedJson("/api/v1/diagnostics/failures",FailureFeedbackResultSchema,{method:"POST",body:JSON.stringify(body)},true);
+  }
 
   constructor(options: HttpCloudClientOptions) {
     this.baseUrl = new URL(options.baseUrl).toString().replace(/\/$/, "");
@@ -116,6 +125,8 @@ export class HttpCloudClient implements CloudClient {
   }
 
   async login(request: LoginRequest): Promise<LoginResponse> {
+    const epoch=++this.identityEpoch;
+    this.cachedUserId=null;
     const key = await this.deviceKeys.get();
     const body = LoginRequestSchema.parse({
       ...request,
@@ -131,6 +142,7 @@ export class HttpCloudClient implements CloudClient {
       },
     );
     await this.tokens.rotate(response);
+    if(epoch===this.identityEpoch)this.cachedUserId=response.user.id;
     return response;
   }
 
@@ -176,6 +188,8 @@ export class HttpCloudClient implements CloudClient {
   }
 
   async logout(): Promise<void> {
+    this.identityEpoch++;
+    this.cachedUserId=null;
     if (!(await this.tokens.readRefreshToken())) {
       await this.tokens.clear();
       return;
@@ -204,10 +218,12 @@ export class HttpCloudClient implements CloudClient {
   }
 
   async getMe(): Promise<User> {
+    const epoch=this.identityEpoch;
     const response = await this.authenticatedJson(
       "/api/v1/auth/me",
       MeResponseSchema,
     );
+    if(epoch===this.identityEpoch&&this.tokens.getAccessToken())this.cachedUserId=response.user.id;
     return response.user;
   }
 
@@ -577,12 +593,15 @@ async function parseResponse<T>(
 async function responseError(response: Response): Promise<CloudError> {
   let payload: unknown;
   try {
-    payload = await response.json();
+    // Error excerpts are bounded before parsing; a large/binary reply cannot fill diagnostics.
+    const reader=response.body?.getReader();if(!reader)throw new Error("No error body");let size=0;const chunks:Uint8Array[]=[];
+    try{for(;;){const part=await reader.read();if(part.done)break;const take=part.value.subarray(0,Math.max(0,32*1024-size));chunks.push(take);size+=take.byteLength;if(size>=32*1024){await reader.cancel().catch(()=>{});break;}}}finally{reader.releaseLock();}
+    const text=Buffer.concat(chunks).toString("utf8");try{payload=JSON.parse(text);}catch{payload={excerpt:sanitizeFailure(text,12*1024).value};}
   } catch (error) {
     return new CloudError(
       "INVALID_SERVER_RESPONSE",
       `Cloud error response was not JSON (HTTP ${String(response.status)}).`,
-      { cause: error },
+      { cause: error,httpStatus:response.status,requestId:response.headers.get("X-Bridge-AI-Request-Id")??response.headers.get("X-Request-Id")??undefined },
     );
   }
   const parsed = ErrorResponseSchema.safeParse(payload);
@@ -590,16 +609,17 @@ async function responseError(response: Response): Promise<CloudError> {
     return new CloudError(
       "INVALID_SERVER_RESPONSE",
       `Cloud error response did not match the frozen contract (HTTP ${String(response.status)}).`,
-      { cause: parsed.error },
+      { cause: parsed.error,httpStatus:response.status,requestId:response.headers.get("X-Bridge-AI-Request-Id")??response.headers.get("X-Request-Id")??undefined,responseBody:sanitizeFailure(payload,12*1024).value },
     );
   }
   return new CloudError(
     parsed.data.error.code,
-    parsed.data.error.message,
+    String(sanitizeFailure(parsed.data.error.message,4096).value),
     {
       httpStatus: response.status,
       requestId:
         parsed.data.error.request_id ?? parsed.data.error.requestId,
+      responseBody:sanitizeFailure(payload,12*1024).value,
     },
   );
 }

@@ -37,6 +37,7 @@ import {
   WindowsPasswordVaultCredentialManager,
 } from "./cloud/windows-credential-manager.js";
 import { RemoteBridgeServer } from "./cloud/remote-bridge-server.js";
+import { FailureFeedbackOutbox } from "./cloud/failure-feedback.js";
 import { performServiceSwitch } from "./service-switcher.js";
 import { prepareOfficialClientConnection, restartOfficialClientForProfile } from "./official-client-flow.js";
 
@@ -97,6 +98,10 @@ const cloudClient = new HttpCloudClient({
     cloudDeviceKeyTarget(cloudBaseUrl, app.getPath("userData")),
   ),
 });
+const failureFeedback=new FailureFeedbackOutbox({
+  path:join(app.getPath("userData"),"diagnostics","failure-outbox.enc"),encryption:safeStorage,
+  owner:()=>cloudClient.getCachedUserId(),upload:report=>cloudClient.submitFailureFeedback(report),
+});
 const updater = new UpdateManager({
   currentVersion: app.getVersion(), baseUrl: cloudBaseUrl,
   directory: join(app.getPath('userData'), 'updates'),
@@ -152,6 +157,7 @@ const remoteBridge = new RemoteBridgeServer(
     getApiKey: async () => localGatewayKey,
     getModel: async () => (await settingsStore.read()).backendModel,
     getReasoning: async () => (await settingsStore.read()).reasoningMode ?? "auto",
+    failureFeedback:{appVersion:app.getVersion(),ownerUserId:()=>cloudClient.getCachedUserId(),submit:report=>failureFeedback.enqueue(report)},
   },
 );
 const bridgeManager = new BridgeManager(
@@ -704,6 +710,12 @@ app.whenReady().then(async () => {
   policyTimer.unref();
   app.once("before-quit",()=>clearInterval(policyTimer));
   ensureTray();
+  failureFeedback.start();
+  app.once("before-quit",event=>{
+    event.preventDefault();
+    // Only await bounded local file work, never a pending network upload.
+    void failureFeedback.close().finally(()=>app.quit());
+  });
   if (process.argv.includes('--autostart')) checkUpdatesOnOpen();
   if (!process.argv.includes("--autostart")) {
     createWindow();

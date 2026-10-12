@@ -19,6 +19,9 @@ import type { CloudClient } from "./cloud-client.js";
 import { CloudError } from "./cloud-error.js";
 import { requestShape, modifiedRequestFields } from "./request-diagnostics.js";
 import { normalizeDesktopRequest, createDesktopEventTranslator, desktopOutputItem, type DesktopToolBinding, type ResponsesProfile } from "./desktop-protocol.js";
+import { FailureCapture, type FailureFeedback } from "./failure-feedback.js";
+
+interface FailureContext {capture:FailureCapture;stage:FailureFeedback["stage"];userAborted:boolean}
 
 export interface RemoteConversation {
   traceId?: string;
@@ -51,6 +54,7 @@ interface StreamLifecycle {
   eventCount: number;
   firstEvent: boolean;
   firstText: boolean;
+  feedback?:FailureContext;
 }
 interface GatewayOptions {
   cache?: {load(accountId:string):RemoteConversation[];save(items:RemoteConversation[],accountId:string):void};
@@ -58,6 +62,7 @@ interface GatewayOptions {
   getApiKey: () => Promise<string | null>;
   getModel?: () => Promise<string | null>;
   getReasoning?: () => Promise<string | null>;
+  failureFeedback?: {appVersion:string;ownerUserId?:()=>string|null;submit:(report:FailureFeedback)=>void};
 }
 
 export interface RemoteBridgeStatus {
@@ -201,6 +206,7 @@ export class RemoteBridgeServer {
   ): Promise<void> {
     const traceId = randomUUID();
     const started=performance.now();
+    let feedback:FailureContext|undefined;
     response.setHeader("X-Bridge-Trace-Id", traceId);
     response.once("finish", () => this.gatewayOptions?.trace?.write("desktop_finished",traceId,{status:response.statusCode,totalMs:Math.round(performance.now()-started)}));
     try {
@@ -246,7 +252,10 @@ export class RemoteBridgeServer {
         return;
       }
       if (request.method === "POST" && url.pathname === "/v1/responses") {
-        await this.handleResponse(request, response, traceId);
+        const reporting=this.gatewayOptions?.failureFeedback;
+        const owner=reporting?.ownerUserId?reporting.ownerUserId():this.cacheAccountId;
+        if(reporting&&owner)feedback={capture:new FailureCapture(owner,reporting.appVersion,traceId),stage:"local_validation",userAborted:false};
+        await this.handleResponse(request, response, traceId,feedback);
         return;
       }
       sendJson(response, 404, {
@@ -257,6 +266,8 @@ export class RemoteBridgeServer {
         },
       });
     } catch (error) {
+      if(feedback&&request.aborted)feedback.userAborted=true;
+      this.reportFailure(feedback,error instanceof CloudError&&error.httpStatus&&feedback?.stage==="cloud_transport"?"cloud_http":feedback?.stage??"local_validation",error);
       this.gatewayOptions?.trace?.write("request_failed",traceId,{code:error instanceof CloudError?error.code:"LOCAL_ERROR",message:error instanceof Error?error.message:"Unknown error"});
       this.onCloudError?.(error);
       sendCloudError(response, error);
@@ -267,14 +278,18 @@ export class RemoteBridgeServer {
     incoming: IncomingMessage,
     outgoing: ServerResponse,
     traceId: string,
+    feedback?:FailureContext,
   ): Promise<void> {
     const started=performance.now();let bodyBytes=0;
     const raw = await readJson(incoming,bytes=>{bodyBytes=bytes;});
+    feedback?.capture.request("desktop",raw);
     const parseMs=Math.round(performance.now()-started);
     this.gatewayOptions?.trace?.write("desktop_request",traceId,{sessionId:incoming.headers["session_id"],conversationId:incoming.headers["conversation_id"],model:(raw as Record<string, unknown>).model,stream:(raw as Record<string, unknown>).stream,previousResponseId:(raw as Record<string, unknown>).previous_response_id,reasoning:(raw as Record<string, unknown>).reasoning},raw);
     const selectedModel = (await this.gatewayOptions?.getModel?.()) ?? String((raw as Record<string, unknown>).model);
     const modelStarted=performance.now();
+    if(feedback&&this.gatewayOptions?.getModel)feedback.stage="cloud_http";
     const models = this.gatewayOptions?.getModel ? await this.client.listModels() : { data: [] };
+    if(feedback)feedback.stage="local_validation";
     const modelLookupMs=Math.round(performance.now()-modelStarted);
     const capabilities=models.data.find(model => model.id === selectedModel)?.capabilities;
     const profile=capabilities?.responsesProfile??"deepseek";
@@ -315,32 +330,41 @@ export class RemoteBridgeServer {
       input: profile==="deepseek"?conversation.input.map(item => item.type === "custom_tool_call_output" && conversation.input.some(call => call.type === "function_call" && call.call_id === item.call_id) ? { ...item, type: "function_call_output" as const } : item):conversation.input,
       tools: parsed.tools ?? conversation.tools,
     };
+    feedback?.capture.request("forwarded",request);
+    feedback?.capture.association({threadId:conversation.threadId});
     const pending=[...this.calls.values()].some(owner=>owner===conversation);
     this.gatewayOptions?.trace?.write("request_normalized",traceId,{responsesProfile:profile,bodyBytes,inputItemCount:Array.isArray(request.input)?request.input.length:1,toolCount:request.tools?.length??0,transformations:Object.fromEntries(normalized.transformations.map(name=>[name,true])),modifiedFields:modifiedRequestFields(raw,request),requestShapeBefore:requestShape(raw),requestShapeAfter:requestShape(request),cloudForwarded:!pending,timings:{parseMs,modelLookupMs,normalizeMs,historyMs:Math.round(performance.now()-historyStarted)},...contentShape(request.input)});
     if(pending){sendPendingToolAcknowledgment(outgoing,parsed);return;}
     const abort = new AbortController();
-    incoming.once("aborted", () => abort.abort());
+    incoming.once("aborted", () => {if(feedback)feedback.userAborted=true;abort.abort();});
     outgoing.once("close", () => {
-      if (!outgoing.writableEnded) abort.abort();
+      if (!outgoing.writableEnded) {if(feedback)feedback.userAborted=true;abort.abort();}
     });
     this.gatewayOptions?.trace?.write("cloud_request",traceId,{threadId:conversation.threadId,logicalModelId:request.model,responsesProfile:profile,bodyBytes:Buffer.byteLength(JSON.stringify(request)),reasoningMode:request.reasoning?.mode,stream:request.stream,toolCount:request.tools?.length ?? 0,pendingCalls:[...this.calls].filter(([,owner])=>owner===conversation).map(([id])=>id)},request);
     const cloudStarted=performance.now();
+    if(feedback)feedback.stage="cloud_transport";
     const transport = await this.client.createResponse(request, {
       threadId: conversation.threadId,
       traceId,
       signal: abort.signal,
       providerConnectionId: await this.getProviderConnectionId?.(),
     });
+    feedback?.capture.association({requestId:transport.response.headers.get("X-Bridge-AI-Request-Id")??transport.response.headers.get("X-Request-Id")});
+    if(!transport.response.ok){const errorBody=await transport.response.json().catch(()=>({}));feedback?.capture.http(errorBody);throw new CloudError("CLOUD_HTTP_ERROR","Cloud request failed.",{httpStatus:transport.response.status,requestId:transport.response.headers.get("X-Bridge-AI-Request-Id")??undefined});}
     this.gatewayOptions?.trace?.write("cloud_headers",traceId,{cloudHeadersMs:Math.round(performance.now()-cloudStarted),status:transport.response.status,requestId:transport.response.headers.get("X-Request-Id"),aiRequestId:transport.response.headers.get("X-Bridge-AI-Request-Id"),instanceId:transport.response.headers.get("X-Bridge-Instance-Id"),protocolMode:transport.response.headers.get("X-Bridge-Protocol-Mode"),providerKind:transport.response.headers.get("X-Bridge-Provider-Kind")});
     if (transport.contentType.includes("text/event-stream")) {
-      await this.relayStream(transport.response, outgoing, conversation);
+      if(feedback)feedback.stage="stream_disconnected";
+      await this.relayStream(transport.response, outgoing, conversation,feedback);
       return;
     }
     const payload: unknown = await transport.response.json();
+    feedback?.capture.http(payload);
     this.gatewayOptions?.trace?.write("cloud_response",traceId,{},payload);
     const validated = ResponseSchema.safeParse(payload);
     if (!validated.success) throw new CloudError("INVALID_SERVER_RESPONSE", "Cloud returned malformed response.", { httpStatus: 502 });
     const result = validated.data;
+    feedback?.capture.association({responseId:result.id,requestId:result.usage.request_id});
+    if(result.status==="failed"||result.status==="incomplete")this.reportFailure(feedback,result.status==="failed"?"stream_failed":"stream_incomplete",{code:result.status==="failed"?"RESPONSE_FAILED":"RESPONSE_INCOMPLETE",message:"Cloud response did not complete."});
     this.captureOutput(result.output, conversation);
     this.rememberResponse(result.id, conversation);
     sendJson(outgoing, 200, { ...result, output: result.output.map(item => desktopOutputItem(item, conversation.customTools ?? new Set(), conversation.toolBindings)) });
@@ -435,6 +459,7 @@ export class RemoteBridgeServer {
     cloudResponse: Response,
     desktopResponse: ServerResponse,
     conversation: RemoteConversation,
+    feedback?:FailureContext,
   ): Promise<void> {
     if (!cloudResponse.body) {
       throw new CloudError(
@@ -455,6 +480,7 @@ export class RemoteBridgeServer {
       completed: false,
       translate: createDesktopEventTranslator(conversation.customTools ?? new Set(), conversation.toolBindings),
       started:performance.now(),receivedBytes:0,eventCount:0,firstEvent:false,firstText:false,
+      feedback,
     };
     let eventBuffer = "";
     try {
@@ -475,7 +501,11 @@ export class RemoteBridgeServer {
       eventBuffer += decoder.decode();
       this.captureSseEvents(`${eventBuffer}\n\n`, conversation, lifecycle, desktopResponse);
       desktopResponse.end();
+    } catch(error) {
+      this.reportFailure(feedback,"stream_failed",error);
+      throw error;
     } finally {
+      if(!lifecycle.completed)this.reportFailure(feedback,"stream_disconnected",{code:"STREAM_DISCONNECTED",message:"Cloud stream ended before a terminal response.",requestId:lifecycle.requestId});
       await reader.cancel().catch(() => {});
       reader.releaseLock();
       this.gatewayOptions?.trace?.write("stream_finished",conversation.traceId??conversation.threadId,{streamMs:Math.round(performance.now()-lifecycle.started),receivedBytes:lifecycle.receivedBytes,eventCount:lifecycle.eventCount,terminalDetected:lifecycle.completed});
@@ -502,7 +532,9 @@ export class RemoteBridgeServer {
       const data = block.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
       if (!data) continue;
       if (data === "[DONE]") { desktopResponse?.write("data: [DONE]\n\n"); continue; }
-      const payload: unknown = JSON.parse(data);
+      let payload:unknown;
+      try{payload=JSON.parse(data);}catch(error){lifecycle.feedback?.capture.event({type:"invalid_json_frame",data});throw error;}
+      lifecycle.feedback?.capture.event(payload);
       const event = namedEvent ?? (payload && typeof payload === "object" && "type" in payload ? String(payload.type) : undefined);
       lifecycle.eventCount++;
       if(!lifecycle.firstEvent){lifecycle.firstEvent=true;this.gatewayOptions?.trace?.write("stream_first_event",conversation.traceId??conversation.threadId,{event,elapsedMs:Math.round(performance.now()-lifecycle.started)});}
@@ -516,11 +548,15 @@ export class RemoteBridgeServer {
       if (event === "response.created") {
         lifecycle.responseId = responseIdFromEvent(payload)
           ?? lifecycle.responseId;
+        lifecycle.feedback?.capture.association({responseId:lifecycle.responseId});
         continue;
       }
       if (event === "response.completed" || event === "response.incomplete" || event === "response.failed") {
+        lifecycle.feedback?.capture.association({responseId:responseIdFromEvent(payload),requestId:lifecycle.requestId});
+        if(event!=="response.completed")this.reportFailure(lifecycle.feedback,event==="response.failed"?"stream_failed":"stream_incomplete",{code:event==="response.failed"?"RESPONSE_FAILED":"RESPONSE_INCOMPLETE",message:"Cloud response did not complete."});
         const result = responseFromEvent(payload);
         if (!result) continue;
+        if(result.status==="failed"||result.status==="incomplete")this.reportFailure(lifecycle.feedback,result.status==="failed"?"stream_failed":"stream_incomplete",{code:result.status==="failed"?"RESPONSE_FAILED":"RESPONSE_INCOMPLETE",message:"Cloud response did not complete."});
         lifecycle.responseId = result.id;
         lifecycle.requestId =
           result.usage.request_id
@@ -535,6 +571,7 @@ export class RemoteBridgeServer {
         });
         continue;
       }
+      if(event==="error")this.reportFailure(lifecycle.feedback,"stream_failed",payload);
       if (event !== "response.output_item.done") continue;
       if (
         !payload
@@ -545,6 +582,11 @@ export class RemoteBridgeServer {
       this.captureOutput([item], conversation);
     }
     return remainder;
+  }
+
+  private reportFailure(context:FailureContext|undefined,stage:FailureFeedback["stage"],error:unknown):void {
+    if(!context||context.userAborted)return;
+    try{const report=context.capture.failure(stage,error);if(report)this.gatewayOptions?.failureFeedback?.submit(report);}catch{/* Reporting must never change the model response. */}
   }
 
   private notifyResponseSettlement(
