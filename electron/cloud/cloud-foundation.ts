@@ -128,6 +128,7 @@ export class CloudFoundation {
   private serviceConfigurationLoadedAt = 0;
   private lastError: CloudServiceStatus["lastError"] = null;
   private refreshInFlight: Promise<CloudServiceStatus> | null = null;
+  private policyInFlight: Promise<CloudServiceStatus | null> | null = null;
   private readonly appVersion: string;
 
   constructor(
@@ -302,11 +303,19 @@ export class CloudFoundation {
   }
 
   async syncPolicy(): Promise<CloudServiceStatus | null> {
-    if (this.auth.state !== "AUTHENTICATED" && this.auth.state !== "ACCOUNT_LOCKED") return null;
+    if (!["AUTHENTICATED", "ACCOUNT_LOCKED", "SERVER_UNREACHABLE", "SUBSCRIPTION_REQUIRED", "SUBSCRIPTION_EXPIRED"].includes(this.auth.state)) return null;
+    this.policyInFlight ??= this.performPolicySync().finally(() => {this.policyInFlight=null;});
+    return this.policyInFlight;
+  }
+  private async performPolicySync(): Promise<CloudServiceStatus | null> {
+    if(this.refreshInFlight)await this.refreshInFlight.catch(()=>undefined);
     try {
-      this.account = await this.client.getMeV2();
+      const [account,usage,devices]=await Promise.all([this.client.getMeV2(),this.client.getUsageV2(),this.client.listDevicesV2()]);
+      this.account = account;
+      this.usageV2 = usage;
+      this.devicesV2 = devices;
       this.lastError = null;
-      if (this.auth.state === "ACCOUNT_LOCKED") this.transitionFromAny("AUTHENTICATED");
+      if (this.auth.state !== "AUTHENTICATED") this.transitionFromAny("AUTHENTICATED");
     } catch (error) {
       this.applyErrorState(error);
     }

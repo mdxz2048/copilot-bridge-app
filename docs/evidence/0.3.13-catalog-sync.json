@@ -1,0 +1,13 @@
+{
+  "version": "0.3.13",
+  "appTests": { "passed": 205, "failed": 0, "skipped": 0 },
+  "cloudUnitTests": { "passed": 122, "databaseTestsSkippedHere": 29 },
+  "isolatedDatabaseTests": { "passed": 29, "failed": 0, "disposableDatabaseRemoved": true },
+  "webTests": { "passed": 15 },
+  "contractTests": { "passed": 10 },
+  "checks": ["typecheck", "API/Web/App build", "configuration without key or network calls", "encrypted key retained on empty field", "admin-only configuration", "catalog ACL grants and DENY", "pending GPT does not generate", "later activation permits new request", "wallet/device/usage refresh and slow request deduplication", "lock/unlock recovery", "real UI model addition/activation/revocation", "real UI no-key setup without generation"],
+  "ui": { "realComponents": true, "appThemes": 2, "widths": [480, 1000] },
+  "production": { "apiAndWebDeployed": true, "configuredOpenAIModels": ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"], "hasOpenAIKey": false, "availability": "SETUP_REQUIRED", "currentPlanGrants": 2, "existingDeepSeekReady": true, "existingDenyOverridesPreserved": true, "noPaidGeneration": true },
+  "installer": { "verifiedDistFiles": 43, "bytes": 342849560, "sha256": "bf21a9f9ed79568a380e5657592a82bf9fe29b8bb2449f7cad27d41f78a81fa2" },
+  "limitations": ["no actual OpenAI inference acceptance", "current official client not restarted or upgraded", "wallet transaction history uses full account refresh", "UI synchronization tested through real components with fixtures"]
+}

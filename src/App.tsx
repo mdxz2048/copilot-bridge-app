@@ -117,7 +117,7 @@ export function App() {
           setModels([]);
           showError(error, "暂时无法读取 Cloud 模型，请检查账户或更新后重试。");
         });
-      }
+      } else setModels([]);
     });
     const removeProfile = window.copilotBridge.onProfileStatus((next) => {
       ++appStateRevision.current;
@@ -130,11 +130,13 @@ export function App() {
       if (newlyInstalled) void refreshApp();
     });
     const removeCloud = window.copilotBridge.onCloudStatus(setCloud);
+    const removeModels = window.copilotBridge.onModels?.(setModels);
     return () => {
       removeBridge();
       removeProfile();
       removeChatGpt();
       removeCloud();
+      removeModels?.();
     };
   }, []);
 

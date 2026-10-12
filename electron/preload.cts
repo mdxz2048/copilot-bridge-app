@@ -108,6 +108,11 @@ contextBridge.exposeInMainWorld("copilotBridge", {
     ipcRenderer.on("bridge:status", listener);
     return () => ipcRenderer.removeListener("bridge:status", listener);
   },
+  onModels: (handler: (models: BridgeModel[]) => void): (() => void) => {
+    const listener=(_event:Electron.IpcRendererEvent,models:BridgeModel[])=>handler(models);
+    ipcRenderer.on("bridge:models",listener);
+    return ()=>ipcRenderer.removeListener("bridge:models",listener);
+  },
   onProfileStatus: (handler: (status: ProfileStatus) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: ProfileStatus) => handler(status);
     ipcRenderer.on("profile:status", listener);

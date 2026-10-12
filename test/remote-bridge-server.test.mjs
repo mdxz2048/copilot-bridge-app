@@ -21,6 +21,19 @@ const responsePayload = {
   },
 };
 
+test("pending GPT selection never generates and later catalog activation permits a new request",async()=>{
+  let available=false,calls=0;
+  const client={getMe:async()=>({id:'fixture-user'}),listModels:async()=>({data:[{id:'openai/gpt-fixture',availability:available?'READY':'SETUP_REQUIRED',statusMessage:'待管理员充值与启用',capabilities:{tools:true,vision:false,streaming:true,reasoning:false,nativeResponses:true,responsesProfile:'openai',reasoningModes:['normal'],defaultReasoningMode:'normal'}}]}),createResponse:async()=>{calls++;return {contentType:'application/json',response:Response.json({...responsePayload,model:'openai/gpt-fixture'})};}};
+  const bridge=new RemoteBridgeServer(client,0,undefined,undefined,undefined,{getApiKey:async()=>'synthetic-local',getModel:async()=>'openai/gpt-fixture'});
+  try{
+    const status=await bridge.start();
+    assert.equal((await bridge.models())[0].availability,'SETUP_REQUIRED');
+    const send=()=>fetch(status.endpoint+'/v1/responses',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer synthetic-local'},body:JSON.stringify({model:'client-alias',input:'fixture',stream:false})});
+    const pending=await send();assert.equal(pending.status,503);assert.equal((await pending.json()).error.code,'MODEL_UNAVAILABLE');assert.equal(calls,0);
+    available=true;const ready=await send();assert.equal(ready.status,200);await ready.json();assert.equal(calls,1);
+  }finally{await bridge.stop();}
+});
+
 test("notifies settlement after a JSON response completes", async () => {
   const notifications = [];
   const client = new MockCloudClient()

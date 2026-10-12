@@ -187,6 +187,8 @@ export class RemoteBridgeServer {
 
   async models(): Promise<Array<{
     id: string;
+    availability?: "READY" | "SETUP_REQUIRED" | "UNAVAILABLE";
+    statusMessage?: string;
     supportsReasoningEffort: boolean;
     reasoningModes: Array<"normal" | "thinking" | "auto">;
     defaultReasoningMode: "normal" | "thinking" | "auto";
@@ -194,6 +196,8 @@ export class RemoteBridgeServer {
     const models = await this.client.listModels();
     return models.data.map((model) => ({
       id: model.id,
+      availability: model.availability,
+      statusMessage: model.statusMessage,
       supportsReasoningEffort: model.capabilities.reasoning,
       reasoningModes: model.capabilities.reasoningModes,
       defaultReasoningMode: model.capabilities.defaultReasoningMode,
@@ -294,7 +298,10 @@ export class RemoteBridgeServer {
     const models = this.gatewayOptions?.getModel ? await this.client.listModels() : { data: [] };
     if(feedback)feedback.stage="local_validation";
     const modelLookupMs=Math.round(performance.now()-modelStarted);
-    const capabilities=models.data.find(model => model.id === selectedModel)?.capabilities;
+    const catalogModel=models.data.find(model => model.id === selectedModel);
+    if(this.gatewayOptions?.getModel&&!catalogModel)throw new CloudError("MODEL_NOT_ALLOWED","当前模型已停用或权限已调整，请选择其他模型并新建会话。",{httpStatus:403});
+    if(catalogModel?.availability&&catalogModel.availability!=="READY")throw new CloudError("MODEL_UNAVAILABLE",catalogModel.statusMessage??"所选模型暂不可用，请联系管理员。",{httpStatus:503});
+    const capabilities=catalogModel?.capabilities;
     const profile=capabilities?.responsesProfile??"deepseek";
     const rawRequest=raw as Record<string,unknown>;
     const sessionKey = [incoming.headers["conversation_id"], incoming.headers["session_id"]].find(value => typeof value === "string" && value.length <= 200) as string | undefined;

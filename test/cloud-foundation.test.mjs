@@ -1119,3 +1119,20 @@ test("policy polling broadcasts a lock and automatically recovers after administ
     const restored=await foundation.syncPolicy();assert.equal(restored.authState,"AUTHENTICATED");assert.equal(restored.lastError,null);
   } finally {await rm(directory,{recursive:true,force:true});}
 });
+
+test("policy polling refreshes wallet, usage and devices and deduplicates slow requests",async()=>{
+  const directory=await mkdtemp(join(tmpdir(),"bridge-live-policy-"));
+  try{
+    const client=configuredAccountClient(productMe());
+    const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,"device.json"),"0.1.0"));
+    await foundation.refresh();
+    let release,calls=0;
+    client.getMeV2=async()=>{calls++;await new Promise(resolve=>{release=resolve;});return {...productMe(),wallet:{...productMe().wallet,balance:900}};};
+    client.getUsageV2=async()=>({requests:8,pointsRated:12,pointsCharged:12,periodStart:null,periodEnd:null,billingMode:'SHADOW'});
+    client.listDevicesV2=async()=>[];
+    const first=foundation.syncPolicy(),second=foundation.syncPolicy();
+    await new Promise(resolve=>setTimeout(resolve,0));release();
+    const status=await first;await second;
+    assert.equal(calls,1);assert.equal(status.remainingPoints,900);assert.equal(status.usageRequests,8);assert.deepEqual(status.devices,[]);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});

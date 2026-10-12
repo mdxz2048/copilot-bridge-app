@@ -641,6 +641,17 @@ app.whenReady().then(async () => {
 
 
   const policyTimer = setInterval(() => {void cloudFoundation.syncPolicy().then(status=>{if(status)broadcast("cloud:status",status);}).catch(()=>undefined);},5000);
+  let modelSyncInFlight=false;
+  const modelTimer=setInterval(()=>{
+    if(modelSyncInFlight||bridgeManager.getStatus().state!=="ready")return;
+    modelSyncInFlight=true;
+    void bridgeManager.models().then(models=>{if(bridgeManager.getStatus().state==="ready")broadcast("bridge:models",models);}).catch(error=>{
+      const code=error&&typeof error==="object"&&"code" in error?String(error.code):"";
+      if(["MODEL_NOT_ALLOWED","SUBSCRIPTION_REQUIRED","SUBSCRIPTION_EXPIRED","ACCOUNT_DISABLED","DEVICE_REVOKED"].includes(code))broadcast("bridge:models",[]);
+    }).finally(()=>{modelSyncInFlight=false;});
+  },5000);
+  modelTimer.unref();
+  app.once("before-quit",()=>clearInterval(modelTimer));
   policyTimer.unref();
   app.once("before-quit",()=>clearInterval(policyTimer));
   ensureTray();

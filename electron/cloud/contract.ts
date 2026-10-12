@@ -208,6 +208,8 @@ export const AccountSchema = z.object({
 export const ReasoningModeSchema = z.enum(["normal", "thinking", "auto"]);
 export const ModelSchema = z.object({
   id: z.string(),
+  availability: z.enum(["READY", "SETUP_REQUIRED", "UNAVAILABLE"]).optional(),
+  statusMessage: z.string().optional(),
   object: z.literal("model"),
   owned_by: z.string(),
   capabilities: z.object({

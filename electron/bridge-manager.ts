@@ -12,6 +12,8 @@ export interface BridgeStatus {
 
 export interface BridgeModel {
   id: string;
+  availability?: "READY" | "SETUP_REQUIRED" | "UNAVAILABLE";
+  statusMessage?: string;
   supportsReasoningEffort: boolean;
 }
 

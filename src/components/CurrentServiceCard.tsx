@@ -66,7 +66,7 @@ export function CurrentServiceCard({
       ? selected?.defaultReasoningMode ?? "normal" : reasoningModes[0];
   const modelOptions = models.map((model) => ({
     value: model.id,
-    label: displayModel(model.id),
+    label: displayModel(model.id)+(model.availability==="SETUP_REQUIRED"?" · 待开通":model.availability==="UNAVAILABLE"?" · 暂不可用":""),
   }));
 
   if (!bridgeEnabled) {
@@ -125,6 +125,8 @@ export function CurrentServiceCard({
           </p>
         )}
 
+        {serviceReady && selected?.availability && selected.availability !== "READY" && <p className="local-inline-note" role="status">{selected.statusMessage ?? "模型暂不可用，请联系管理员。"} 选择其他可用模型可继续使用。</p>}
+        {serviceReady && !selected && settings.backendModel && <p className="local-inline-note" role="status">当前模型已停用或权限已调整，请选择其他模型并新建会话。</p>}
         {serviceReady && selectedModel
           ? (
             <div className="service-controls">
