@@ -1,0 +1,17 @@
+{
+  "version": "0.3.12",
+  "appTests": { "passed": 203, "failed": 0, "skipped": 0 },
+  "profileRegression": ["already inactive legacy configuration repair", "idempotent repeated repair", "eight ON/OFF cycles", "original comments and line endings retained", "external changes retained", "configuration write rollback", "custom providers retained"],
+  "officialRuntime": {
+    "isolated": true,
+    "syntheticCredentialsOnly": true,
+    "missingProviderReproduced": true,
+    "sameSavedThreadResumed": true,
+    "newThreadProvider": "openai",
+    "nativeApiEndpointObservedThroughRejectingProxy": true,
+    "cloudRequestsAfterOriginalResume": 0,
+    "noPaidGeneration": true
+  },
+  "currentMachine": { "configurationBackedUp": true, "originalDefaultPreserved": true, "compatibilityAliasAdded": true, "sessionAndAuthenticationFilesModified": false },
+  "limitations": ["real GUI reopen not automated", "no actual OpenAI inference acceptance", "current official client not restarted"]
+}

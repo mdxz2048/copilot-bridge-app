@@ -7,6 +7,22 @@ import type { ProfileId, ProfileStatus } from "./profile-store.js";
 
 type Snapshot = { original: string; existed: boolean; appliedHash: string; active: boolean; pending: ProfileId | null; providerId?: string };
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+const BRIDGE_PROVIDER_ID = "copilot_bridge_desktop";
+
+/** Saved threads keep their provider ID. In Original mode resolve that ID with
+ * OpenAI's own auth and automatic API/ChatGPT endpoint selection, never loopback. */
+export function originalProviderCompatibility(text: string, providerId?: string): string {
+  if(providerId!==BRIDGE_PROVIDER_ID)return text;
+  const config=parse(text);
+  if(isRecord(config.model_providers)&&Object.hasOwn(config.model_providers,providerId))return text;
+  if(typeof config.model_provider==="string"&&config.model_provider!=="openai")return text;
+  const newline=text.includes("\r\n")?"\r\n":"\n";
+  return text+(text.endsWith("\n")?"":newline)+[
+    "", "# Keep previously saved Bridge threads resumable using the original OpenAI account.",
+    `[model_providers.${providerId}]`, 'name = "OpenAI"', 'wire_api = "responses"',
+    'requires_openai_auth = true', 'supports_websockets = true', "",
+  ].join(newline);
+}
 
 function bridgeConfiguration(
   original: string,
@@ -113,8 +129,12 @@ export class GatewayProfileStore {
     const previous = await this.snapshot();
     const current = await this.configuration();
     if (target === "original") {
-      if (!previous?.active) return this.getStatus();
-      const restored = this.restoreConfiguration(previous, current.text);
+      if (!previous?.active) {
+        const repaired=originalProviderCompatibility(current.text,previous?.providerId);
+        if(repaired!==current.text)await this.writeConfiguration(repaired);
+        return this.getStatus();
+      }
+      const restored = originalProviderCompatibility(this.restoreConfiguration(previous, current.text),previous.providerId);
       await this.save({ ...previous, active: false, pending: "original" });
       try { await this.writeConfiguration(restored); }
       catch (error) { await this.save(previous); throw error; }

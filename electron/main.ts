@@ -655,7 +655,7 @@ app.whenReady().then(async () => {
     createWindow();
   }
   void profileStore.getStatus().then(async (status) => {
-    const updated = !legacyRestoreFailed&&status.activeProfile === "bridge" ? await profileStore.activate("bridge") : status;
+    const updated = !legacyRestoreFailed ? await profileStore.activate(status.activeProfile) : status;
     broadcast("profile:status", updated);
   }).catch(error => logDiagnostic(`Bridge profile refresh failed: ${error instanceof Error ? error.message : String(error)}`));
   if (settings.autoBridgeStart&&!legacyRestoreFailed) {

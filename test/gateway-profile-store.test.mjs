@@ -5,7 +5,31 @@ import { join } from "node:path";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { parse, stringify } from "smol-toml";
-import { GatewayProfileStore } from "../dist-electron/gateway-profile-store.js";
+import { GatewayProfileStore, originalProviderCompatibility } from "../dist-electron/gateway-profile-store.js";
+
+test('repairs an already restored legacy Original configuration without login or a restart requirement',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'bridge-original-provider-repair-'));
+ try {
+  const original='# user settings\r\nmodel="gpt-6.1-sol"\r\n[features]\r\nfoo=true\r\n';
+  const file=join(directory,'config.toml'),state=join(directory,'switch.json');await writeFile(file,original);
+  await writeFile(state,JSON.stringify({original,existed:true,appliedHash:'legacy',active:false,pending:null,providerId:'copilot_bridge_desktop'}));
+  const store=new GatewayProfileStore(directory,state,'missing-node',['missing-helper']);
+  const status=await store.activate('original');assert.equal(status.activeProfile,'original');assert.equal(status.restartRequired,false);
+  const repaired=await readFile(file,'utf8');assert.ok(repaired.startsWith(original));const provider=parse(repaired).model_providers.copilot_bridge_desktop;
+  assert.deepEqual({...provider},{name:'OpenAI',wire_api:'responses',requires_openai_auth:true,supports_websockets:true});
+  await store.activate('original');assert.equal(await readFile(file,'utf8'),repaired);
+  await store.activate('bridge');assert.equal(parse(await readFile(file,'utf8')).model_providers.copilot_bridge_desktop.requires_openai_auth,false);
+  await store.activate('original');assert.equal(await readFile(file,'utf8'),repaired);
+ }finally{await rm(directory,{recursive:true,force:true})}
+});
+
+test('Original compatibility never overwrites a user provider or a different original service',()=>{
+ const custom='model_provider="company"\n[model_providers.company]\nname="Company"\nbase_url="https://fixture.test"\n';
+ assert.equal(originalProviderCompatibility(custom,'company'),custom);
+ assert.equal(originalProviderCompatibility(custom,'copilot_bridge_desktop'),custom);
+ const existing='model_provider="openai"\n[model_providers.copilot_bridge_desktop]\nname="User defined"\nbase_url="https://fixture.test"\n';
+ assert.equal(originalProviderCompatibility(existing,'copilot_bridge_desktop'),existing);
+});
 
 test('repeated ON/OFF survives store recreation and retains original config and session files',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'bridge-two-mode-cycles-'));
@@ -19,7 +43,7 @@ test('repeated ON/OFF survives store recreation and retains original config and 
       assert.equal((await store.acknowledgeRestart()).restartRequired,false);
       const reopened=new GatewayProfileStore(directory,state,'node',['helper']);
       assert.equal((await reopened.activate('original')).pendingProfile,'original');
-      assert.equal(await readFile(file,'utf8'),original);
+      assert.equal(await readFile(file,'utf8'),originalProviderCompatibility(original,'copilot_bridge_desktop'));
       assert.equal(await readFile(join(directory,'session.jsonl'),'utf8'),'session unchanged');
       await reopened.acknowledgeRestart();
     }
@@ -40,7 +64,7 @@ test('filesystem access failure preserves active snapshot and permits retry afte
     await rm(home);await rename(join(directory,'saved-home'),home);
     assert.equal(await readFile(file,'utf8'),applied);
     assert.equal((await store.activate('original')).activeProfile,'original');
-    assert.equal(await readFile(file,'utf8'),original);
+    assert.equal(await readFile(file,'utf8'),originalProviderCompatibility(original,'copilot_bridge_desktop'));
   }finally{await rm(directory,{recursive:true,force:true});}
 });
 
@@ -61,7 +85,7 @@ test("upgrades old active Bridge retry policy and preserves original and externa
   } finally {await rm(directory,{recursive:true,force:true});}
 });
 
-test("switches gateway with an app restart and restores original config byte for byte", async () => {
+test("switches gateway and preserves original config bytes with a native compatibility alias", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bridge-gateway-"));
   try {
     const original = '# keep my comments\r\nmodel = "my-model"\r\nsandbox_mode = "workspace-write"\r\n[features]\r\nfoo = true\r\n';
@@ -83,7 +107,9 @@ test("switches gateway with an app restart and restores original config byte for
     assert.equal((await store.getStatus()).restartRequired, false);
     await writeFile(join(directory, "config.toml"), `${stringify(parse(applied))}\n`);
     await store.activate("original");
-    assert.equal(await readFile(join(directory, "config.toml"), "utf8"), original);
+    const restored=await readFile(join(directory, "config.toml"), "utf8");
+    assert.ok(restored.startsWith(original));
+    assert.equal(restored, originalProviderCompatibility(original,'copilot_bridge_desktop'));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -105,7 +131,9 @@ test("restores Original while preserving ChatGPT changes outside Bridge settings
     assert.equal(restored.model_provider, "openai");
     assert.equal(restored.sandbox_mode, "workspace-write");
     assert.equal(restored.features.foo, false);
-    assert.equal(restored.model_providers?.copilot_bridge_desktop, undefined);
+    assert.equal(restored.model_providers.copilot_bridge_desktop.requires_openai_auth, true);
+    assert.equal(restored.model_providers.copilot_bridge_desktop.base_url, undefined);
+    assert.equal(restored.model_providers.copilot_bridge_desktop.auth, undefined);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -143,7 +171,8 @@ test("re-enabling Bridge tolerates ordinary settings but rejects a changed gatew
     const restored = parse(await readFile(file, "utf8"));
     assert.equal(restored.model_reasoning_effort, "high");
     assert.equal(restored.projects['C:\\work'].trust_level, "trusted");
-    assert.equal(restored.model_providers?.copilot_bridge_desktop, undefined);
+    assert.equal(restored.model_providers.copilot_bridge_desktop.requires_openai_auth, true);
+    assert.equal(restored.model_providers.copilot_bridge_desktop.base_url, undefined);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
