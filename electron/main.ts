@@ -12,11 +12,7 @@ import { ChatGptManager, type ChatGptStatus } from "./chatgpt-manager.js";
 import { type ProfileId } from "./profile-store.js";
 import { GatewayProfileStore } from "./gateway-profile-store.js";
 import { SettingsStore, type AppSettings } from "./settings-store.js";
-import {
-  CopilotAuthController,
-  resolvePackagedRuntime,
-  type AuthStatus,
-} from "./copilot-auth.js";
+import { requireCloudMode, requireCloudTarget, migrateCloudMode } from "./cloud-mode-policy.js";
 import {
   cloudRegistrationUrl,
   resolveCloudRuntimeConfiguration,
@@ -170,7 +166,6 @@ const bridgeManager = new BridgeManager(
   remoteBridge,
   async () => localGatewayKey,
 );
-let authController: CopilotAuthController | null = null;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
@@ -195,12 +190,6 @@ function runtimePathForCurrentBuild(): string {
   return app.isPackaged
     ? join(process.resourcesPath, "copilot-runtime", "copilot.exe")
     : join(app.getAppPath(), "node_modules", "@github", "copilot-win32-x64", "copilot.exe");
-}
-
-function sendAuthStatus(status: AuthStatus): void {
-  for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send("oauth:status", status);
-  }
 }
 
 function sendChatGptStatus(status: ChatGptStatus): void {
@@ -236,6 +225,7 @@ wire_api = "responses"
 
 async function startBridge(): Promise<void> {
   const settings = await settingsStore.read();
+  requireCloudMode(settings);
   const status = await bridgeManager.start(settings);
   broadcast("bridge:status", status);
   refreshTray();
@@ -276,6 +266,7 @@ async function switchAiService(
   bridge: ReturnType<BridgeManager["getStatus"]>;
   models: Awaited<ReturnType<BridgeManager["models"]>>;
 }> {
+  requireCloudTarget(target);
   try {
     await requireInstalledChatGpt();
     const result = await performServiceSwitch(target, {
@@ -291,38 +282,6 @@ async function switchAiService(
     return result;
   } catch (error) {
     broadcast("bridge:status", bridgeManager.getStatus());
-    refreshTray();
-    throw error;
-  }
-}
-
-async function activateProviderConnection(connectionId: string): Promise<{
-  settings: AppSettings;
-  bridge: ReturnType<BridgeManager["getStatus"]>;
-  models: Awaited<ReturnType<BridgeManager["models"]>>;
-}> {
-  await requireInstalledChatGpt();
-  const previous = await settingsStore.read();
-  const next: AppSettings = {
-    ...previous,
-    backendMode: "REMOTE",
-    backendModel: null,
-    providerConnectionId: connectionId,
-  };
-  try {
-    const bridge = await bridgeManager.restart(next);
-    if (bridge.state !== "ready") throw new Error(bridge.message);
-    const models = await bridgeManager.models();
-    if (models.length === 0) throw new Error("当前 API 没有可用模型。");
-    next.backendModel = models[0]!.id;
-    await settingsStore.write(next);
-    currentSettings = next;
-    broadcast("bridge:status", bridge);
-    refreshTray();
-    return { settings: next, bridge, models };
-  } catch (error) {
-    const rollback = await bridgeManager.restart(previous);
-    broadcast("bridge:status", rollback);
     refreshTray();
     throw error;
   }
@@ -364,7 +323,7 @@ function refreshTray(): void {
     {
       label: "重新启动 Bridge",
       click: () => {
-        void settingsStore.read().then((settings) => bridgeManager.restart(settings)).then((status) => {
+        void settingsStore.read().then((settings) => { requireCloudMode(settings); return bridgeManager.restart(settings); }).then((status) => {
           broadcast("bridge:status", status);
           refreshTray();
         });
@@ -473,7 +432,15 @@ app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   Menu.setApplicationMenu(null);
   nativeTheme.on("updated", updateTitleBarOverlay);
-  const settings = await settingsStore.read();
+  let settings = await settingsStore.read();
+  let legacyRestoreFailed=false;
+  try{
+    settings=await migrateCloudMode(settings,{
+      isBridgeActive:async()=> (await profileStore.getStatus()).activeProfile==="bridge",
+      restoreOriginal:()=>profileStore.activate("original"),
+      writeSettings:next=>settingsStore.write(next),
+    });
+  }catch(error){legacyRestoreFailed=true;logDiagnostic(`Legacy connection restore failed: ${error instanceof Error?error.message:String(error)}`);}
   currentSettings = settings;
   await prepareBridgeEnvironment();
   applyTheme(settings.theme);
@@ -489,8 +456,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('update:check', () => checkForUpdates(true));
   ipcMain.handle('update:install', () => installUpdate());
   ipcMain.handle("profile:activate", async (_event, target: ProfileId) => {
-    if (target === 'bridge') await requireInstalledChatGpt();
-    await prepareBridgeEnvironment();
+    if (target === 'bridge') {
+      await requireInstalledChatGpt();
+      requireCloudMode(await settingsStore.read());
+      await prepareBridgeEnvironment();
+    }
     const status = await profileStore.activate(target);
     broadcast("profile:status", status);
     return status;
@@ -518,7 +488,8 @@ app.whenReady().then(async () => {
     getProfile:()=>profileStore.getStatus(),
     startBridge:async()=>{
       await prepareBridgeEnvironment();
-      const status=await bridgeManager.start(await settingsStore.read());
+      const settings=await settingsStore.read();requireCloudMode(settings);
+      const status=await bridgeManager.start(settings);
       broadcast("bridge:status",status);refreshTray();return status;
     },
   });
@@ -540,7 +511,8 @@ app.whenReady().then(async () => {
     return bridgeManager.getStatus();
   });
   ipcMain.handle("bridge:restart", async () => {
-    const status = await bridgeManager.restart(await settingsStore.read());
+    const settings=await settingsStore.read();requireCloudMode(settings);
+    const status = await bridgeManager.restart(settings);
     broadcast("bridge:status", status);
     return status;
   });
@@ -558,6 +530,7 @@ app.whenReady().then(async () => {
     broadcast("cloud:status", status);
     const settings = await settingsStore.read();
     if (settings.backendMode === "REMOTE") {
+      requireCloudMode(settings);
       const bridge = await bridgeManager.restart(settings);
       broadcast("bridge:status", bridge);
       refreshTray();
@@ -619,23 +592,9 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("cloud:usage-settlement", (_event, responseId: string) =>
     cloudFoundation.getUsageSettlement(responseId));
-  ipcMain.handle("cloud:provider-connect", async (
-    _event,
-    request: { providerId: string; label: string; apiKey: string },
-  ) => {
-    const { connection, status } =
-      await cloudFoundation.createProviderConnection(request);
-    try {
-      const activated = await activateProviderConnection(connection.id);
-      broadcast("cloud:status", status);
-      return { status, ...activated };
-    } catch (error) {
-      await cloudFoundation.deleteProviderConnection(connection.id);
-      throw error;
-    }
-  });
-  ipcMain.handle("cloud:provider-activate", (_event, id: string) =>
-    activateProviderConnection(id));
+  const unsupportedProvider = () => { throw new Error("Bridge 仅支持 Cloud，不再提供独立 API 连接选择。"); };
+  ipcMain.handle("cloud:provider-connect", unsupportedProvider);
+  ipcMain.handle("cloud:provider-activate", unsupportedProvider);
   ipcMain.handle("cloud:provider-disconnect", async (_event, id: string) => {
     const status = await cloudFoundation.deleteProviderConnection(id);
     const current = await settingsStore.read();
@@ -651,6 +610,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("settings:get", () => settingsStore.read());
   ipcMain.handle("settings:update", async (_event, next: AppSettings) => {
+    requireCloudMode(next);
     const previous = await settingsStore.read();
     if (previous.backendMode !== next.backendMode) {
       throw new Error("请通过“切换 AI 服务”更改当前服务。");
@@ -675,36 +635,10 @@ app.whenReady().then(async () => {
     broadcast("bridge:status", status);
     return next;
   });
-  ipcMain.handle("oauth:start", () => {
-    const runtimePath = resolvePackagedRuntime(
-      process.resourcesPath,
-      process.env.COPILOT_BRIDGE_RUNTIME_PATH ?? runtimePathForCurrentBuild(),
-    );
-    authController = new CopilotAuthController(
-      runtimePath,
-      (status) => {
-        sendAuthStatus(status);
-        if (status.state === "success") {
-          void startBridge();
-        }
-      },
-      (verificationUrl) => shell.openExternal(verificationUrl),
-    );
-    authController.start();
-  });
-  ipcMain.handle("oauth:cancel", () => {
-    authController?.cancel();
-  });
-  ipcMain.handle("oauth:open-verification", async (_event, value: string) => {
-    const url = new URL(value);
-    if (
-      url.protocol !== "https:"
-      || (url.hostname !== "github.com" && !url.hostname.endsWith(".github.com"))
-    ) {
-      throw new Error("无效的 GitHub 授权地址。");
-    }
-    await shell.openExternal(url.toString());
-  });
+  ipcMain.handle("oauth:start", () => { throw new Error("不再支持 GitHub Copilot 登录；开启开关可使用 Cloud。"); });
+  ipcMain.handle("oauth:cancel", () => {});
+  ipcMain.handle("oauth:open-verification", () => { throw new Error("不再提供 GitHub Copilot 登录入口。"); });
+
 
   const policyTimer = setInterval(() => {void cloudFoundation.syncPolicy().then(status=>{if(status)broadcast("cloud:status",status);}).catch(()=>undefined);},5000);
   policyTimer.unref();
@@ -721,10 +655,10 @@ app.whenReady().then(async () => {
     createWindow();
   }
   void profileStore.getStatus().then(async (status) => {
-    const updated = status.activeProfile === "bridge" ? await profileStore.activate("bridge") : status;
+    const updated = !legacyRestoreFailed&&status.activeProfile === "bridge" ? await profileStore.activate("bridge") : status;
     broadcast("profile:status", updated);
   }).catch(error => logDiagnostic(`Bridge profile refresh failed: ${error instanceof Error ? error.message : String(error)}`));
-  if (settings.autoBridgeStart) {
+  if (settings.autoBridgeStart&&!legacyRestoreFailed) {
     void startBridge();
   }
   app.on("activate", () => {

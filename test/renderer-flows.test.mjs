@@ -27,7 +27,7 @@ const settingsTemplate = {
   autoLaunch: true,
   minimizeToTray: true,
   autoBridgeStart: true,
-  backendMode: "LOCAL",
+  backendMode: "REMOTE",
   providerConnectionId: null,
   theme: "system",
   onboardingCompleted: false,
@@ -39,6 +39,7 @@ async function mountApp({
   cloudServiceStatus = "AVAILABLE",
   initialBridgeState = "stopped",
   cloudLoginError = null,
+  delayCloudLogin = false,
   cloudRegistrationOpenError = null,
   accountManagementAvailable = false,
   referral = null,
@@ -46,6 +47,7 @@ async function mountApp({
   profileRestartRequired = false,
   pendingProfile = null,
   failActivateProfile = false,
+  failPrepare = false,
   failRestartChatGpt = false,
   failSave = false,
   failSwitch = false,
@@ -100,6 +102,7 @@ async function mountApp({
   };
   const events = [];
   let nextCloudLoginError = cloudLoginError;
+  let resolveCloudLogin;
   let nextRegistrationOpenError = cloudRegistrationOpenError;
   const copiedCodes = [];
   let copyFails = false;
@@ -156,6 +159,7 @@ async function mountApp({
     loginCloud: async () => {
       events.push("loginCloud");
       if (nextCloudLoginError) throw new Error(nextCloudLoginError);
+      if(delayCloudLogin)await new Promise(resolve=>{resolveCloudLogin=resolve;});
       return { ...cloud, authState: "AUTHENTICATED" };
     },
     openCloudRegistration: async () => {
@@ -165,11 +169,12 @@ async function mountApp({
     manageCloudAccount: async () => {
       events.push("manageCloudAccount");
     },
-    activateProfile: async () => {
-      events.push("activateProfile");
+    activateProfile: async (target) => {
+      events.push(`activate:${target}`);
       if (failActivateProfile) throw new Error("profile activation failed");
-      return { activeProfile: "original", restartRequired: true, pendingProfile: "original" };
+      return { activeProfile: target, restartRequired: true, pendingProfile: target };
     },
+    prepareBridgeEnvironment: async () => { events.push("prepareBridge"); if(failPrepare)throw Error('prepare failed'); },
     updateSettings: async (next) => {
       events.push("save");
       if (failNextSave) {
@@ -249,6 +254,7 @@ async function mountApp({
     get document() { return dom.window.document; },
     get theme() { return dom.window.document.documentElement.dataset.theme ?? null; },
     setCloudLoginError(value) { nextCloudLoginError = value; },
+    async finishCloudLogin() {await act(async()=>{resolveCloudLogin();});},
     setCloudRegistrationOpenError(value) { nextRegistrationOpenError = value; },
     setCopyFailure(value) { copyFails = value; },
     get settings() { return settings; },
@@ -272,129 +278,36 @@ async function mountApp({
   };
 }
 
-test("first-run Local completes only after login and service readiness", async () => {
-  const app = await mountApp();
-  try {
-    await app.click("连接 GitHub Copilot");
-    assert.equal(app.settings.onboardingCompleted, false);
-    assert.deepEqual(app.events, []);
-    await app.loginSuccess();
-    assert.deepEqual(app.events, ["switch:LOCAL", "save"]);
-    assert.equal(app.settings.onboardingCompleted, true);
-  } finally {
-    await app.dispose();
-  }
+test("first run installed defaults to Original without a service selector or configuration mutation", async () => {
+  const app=await mountApp();try{assert.equal(app.document.querySelector('[role="dialog"]'),null);assert.doesNotMatch(app.text,/GitHub Copilot|切换 AI 服务|我的 API|本地模型/);assert.deepEqual(app.events,[]);assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'false');}finally{await app.dispose();}
 });
 
-test("first-run Cloud uses the freshly authenticated status before switching", async () => {
-  const app = await mountApp();
-  try {
-    await app.click("登录并使用");
-    assert.equal(app.settings.onboardingCompleted, false);
-    await app.input("email", "test@example.com");
-    await app.input("password", "example-password");
-    await app.click("登录", true);
-    assert.deepEqual(app.events, ["loginCloud", "switch:REMOTE", "save"]);
-    assert.equal(app.settings.onboardingCompleted, true);
-  } finally {
-    await app.dispose();
-  }
+test("canceling either mode confirmation leaves configuration untouched", async () => {
+  for(const activeProfile of ['original','bridge']){const app=await mountApp({activeProfile,initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button[role="switch"]');assert.match(app.text,activeProfile==='original'?/切换到 Cloud？/:/切换到 ChatGPT 原账号？/);await app.click('取消');assert.deepEqual(app.events,[]);}finally{await app.dispose();}}
 });
 
-test("first-run Cloud already selected still waits for account authentication", async () => {
-  const app = await mountApp({
-    initialSettings: { backendMode: "REMOTE" },
-    initialBridgeState: "ready",
-  });
-  try {
-    await app.click("登录并使用");
-    assert.equal(app.settings.onboardingCompleted, false);
-    await app.input("email", "test@example.com");
-    await app.input("password", "example-password");
-    await app.click("登录", true);
-    assert.deepEqual(app.events, ["loginCloud", "save"]);
-    assert.equal(app.settings.onboardingCompleted, true);
-  } finally {
-    await app.dispose();
-  }
+test("confirmed ON waits for Cloud login then completes only the confirmed Cloud target", async () => {
+  const app=await mountApp();try{await app.clickSelector('button[role="switch"]');assert.deepEqual(app.events,[]);await app.click('确认切换');assert.deepEqual(app.events,[]);await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud','switch:REMOTE','prepareBridge','activate:bridge','save']);assert.equal(app.settings.onboardingCompleted,true);assert.match(app.text,/现在重启 ChatGPT/);}finally{await app.dispose();}
 });
 
-test("a failed onboarding save leaves the choice retryable", async () => {
-  const app = await mountApp({ failSave: true });
-  try {
-    await app.click("连接 GitHub Copilot");
-    await app.loginSuccess();
-    assert.equal(app.settings.onboardingCompleted, false);
-    await app.click("连接 GitHub Copilot");
-    assert.equal(app.settings.onboardingCompleted, true);
-    assert.deepEqual(app.events, ["switch:LOCAL", "save", "save"]);
-  } finally {
-    await app.dispose();
-  }
+test("authenticated ON still confirms first; failed Cloud activation never prepares or changes profile", async () => {
+  const app=await mountApp({initialCloudState:'AUTHENTICATED',failSwitch:true});try{await app.clickSelector('button[role="switch"]');assert.deepEqual(app.events,[]);await app.click('确认切换');assert.deepEqual(app.events,['switch:REMOTE']);assert.equal(app.settings.onboardingCompleted,false);assert.match(app.text,/Cloud 连接切换失败/);}finally{await app.dispose();}
 });
 
-test("failed service activation does not complete onboarding", async () => {
-  const app = await mountApp({ failSwitch: true });
-  try {
-    await app.click("连接 GitHub Copilot");
-    await app.loginSuccess();
-    assert.equal(app.settings.onboardingCompleted, false);
-    assert.deepEqual(app.events, ["switch:LOCAL"]);
-    await app.click("连接 GitHub Copilot");
-    await app.loginSuccess();
-    assert.deepEqual(app.events, ["switch:LOCAL", "switch:LOCAL", "save"]);
-    assert.equal(app.settings.onboardingCompleted, true);
-  } finally {
-    await app.dispose();
-  }
+test("confirmed OFF restores Original when Cloud is offline without switching transport or requesting login", async () => {
+  const app=await mountApp({activeProfile:'bridge',initialCloudState:'SIGNED_OUT',cloudServiceStatus:'UNAVAILABLE',initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');assert.deepEqual(app.events,['activate:original']);assert.match(app.text,/现在重启 ChatGPT/);assert.match(app.text,/原账号配置已恢复/);}finally{await app.dispose();}
 });
 
-test("an existing Cloud selection is not considered ready during maintenance", async () => {
-  const app = await mountApp({
-    initialSettings: { backendMode: "REMOTE" },
-    initialCloudState: "AUTHENTICATED",
-    cloudServiceStatus: "MAINTENANCE",
-    initialBridgeState: "ready",
-    failSwitch: true,
-  });
-  try {
-    await app.click("登录并使用");
-    assert.deepEqual(app.events, ["switch:REMOTE"]);
-    assert.equal(app.settings.onboardingCompleted, false);
-  } finally {
-    await app.dispose();
-  }
+test("ordinary account login does not switch ChatGPT to Cloud", async () => {
+  const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('.account-status-bar');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
 });
 
-test("cancelled first-run login returns to the service choice", async () => {
-  const app = await mountApp();
-  try {
-    await app.click("连接 GitHub Copilot");
-    await app.click("取消");
-    assert.ok(app.button("连接 GitHub Copilot"));
-    assert.equal(app.settings.onboardingCompleted, false);
-    assert.deepEqual(app.events, []);
-  } finally {
-    await app.dispose();
-  }
+test("closing confirmed Cloud login clears intent so later account login cannot enable Cloud", async () => {
+  const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');await app.click('关闭');await app.clickSelector('.account-status-bar');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
 });
 
-test("preflight Local login switches the selected service after success", async () => {
-  const app = await mountApp({
-    initialSettings: { onboardingCompleted: true, backendMode: "REMOTE" },
-    initialCloudState: "AUTHENTICATED",
-    activeProfile: "bridge",
-  });
-  try {
-    await app.click("切换 AI 服务");
-    await app.click("选择");
-    await app.click("我已订阅");
-    await app.loginSuccess();
-    assert.deepEqual(app.events, ["switch:LOCAL"]);
-    assert.equal(app.settings.backendMode, "LOCAL");
-  } finally {
-    await app.dispose();
-  }
+test("closing the account sheet during an in-flight login cancels only the pending mode intent", async()=>{
+  const app=await mountApp({delayCloudLogin:true,initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);await app.click('关闭');await app.finishCloudLogin();assert.deepEqual(app.events,['loginCloud']);assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'false');}finally{await app.dispose();}
 });
 
 test("pending gateway configuration asks to reopen ChatGPT without invoking Windows restart", async () => {
@@ -405,11 +318,11 @@ test("pending gateway configuration asks to reopen ChatGPT without invoking Wind
     activeProfile: "bridge",
   });
   try {
-    assert.match(app.text, /模型连接已配置/);
+    assert.match(app.text, /已切换到 Copilot Bridge Cloud/);
     assert.match(app.text, /保存工作后即可重启 ChatGPT/);
     await app.click("稍后重启 ChatGPT");
-    assert.match(app.text, /Bridge 连接待生效/);
-    assert.match(app.text, /重新打开 ChatGPT/);
+    assert.match(app.text, /Cloud 模式待生效/);
+    assert.match(app.text, /重启 ChatGPT/);
     assert.throws(() => app.button("待重新打开 ChatGPT"), /Expected enabled button/);
     assert.doesNotMatch(app.text, /用户头像选择“注销”/);
     assert.deepEqual(app.events, []);
@@ -426,8 +339,8 @@ test("returning to the original provider remains pending until ChatGPT restart",
   });
   try {
     await app.click("稍后重启 ChatGPT");
-    assert.match(app.text, /原账号连接待生效/);
-    assert.match(app.text, /重新打开 ChatGPT/);
+    assert.match(app.text, /自己的 ChatGPT 待生效/);
+    assert.match(app.text, /重启 ChatGPT/);
     assert.throws(() => app.button("待重新打开 ChatGPT"), /Expected enabled button/);
     await app.click('重启 ChatGPT');
     assert.ok(app.document.querySelector('[role="dialog"]'));
@@ -473,7 +386,7 @@ test('first run requires ChatGPT installation before offering AI services', asyn
   try {
     assert.match(app.document.querySelector('[role="dialog"]').textContent, /先安装 ChatGPT/);
     assert.doesNotMatch(app.document.querySelector('[role="dialog"]').textContent, /使用云服务/);
-    await app.chatGptInstalled(); assert.doesNotMatch(app.document.querySelector('[role="dialog"]').textContent, /先安装 ChatGPT/);
+    await app.chatGptInstalled(); assert.equal(app.document.querySelector('[role="dialog"]'), null);
     assert.equal(app.document.querySelector('button[role="switch"]').disabled, false);
   } finally { await app.dispose(); }
 });
@@ -486,8 +399,9 @@ test("failed environment switch reports the failure", async () => {
   });
   try {
     await app.clickSelector('button[role="switch"]');
-    assert.match(app.text, /ChatGPT 环境切换失败/);
-    assert.deepEqual(app.events, ["activateProfile"]);
+    await app.click("确认切换");
+    assert.match(app.text, /原账号连接恢复失败/);
+    assert.deepEqual(app.events, ["activate:original"]);
   } finally {
     await app.dispose();
   }
@@ -522,7 +436,7 @@ test("website registration followed by subscription-required login keeps guidanc
     assert.equal(app.settings.backendMode, "REMOTE");
     assert.deepEqual(app.events, [
       "openCloudRegistration", "loginCloud", "manageCloudAccount",
-      "loginCloud", "switch:REMOTE",
+      "loginCloud",
     ]);
   } finally {
     await app.dispose();
@@ -656,29 +570,6 @@ test("Sheet traps Tab, closes on Escape and restores the account trigger focus",
   }
 });
 
-test("Modal traps focus even when Escape is intentionally disabled for first-run choice", async () => {
-  const app = await mountApp();
-  try {
-    const modal = app.document.querySelector(".modal");
-    assert.equal(modal.getAttribute("role"), "dialog");
-    assert.equal(modal.getAttribute("aria-modal"), "true");
-    const options = modal.querySelectorAll(".onboarding-options button");
-    assert.ok(app.document.activeElement === options[0]);
-    await app.key("Tab", { shiftKey: true });
-    assert.ok(app.document.activeElement === options[1]);
-    await app.key("Tab");
-    assert.ok(app.document.activeElement === options[0]);
-    await app.key("Escape");
-    assert.equal(app.document.querySelector(".modal"), modal);
-    await app.click("连接 GitHub Copilot");
-    assert.equal(app.document.querySelector(".modal")?.getAttribute("aria-label"), "连接 GitHub Copilot");
-    await app.key("Escape");
-    assert.equal(app.document.querySelector(".modal")?.getAttribute("aria-label"), "欢迎使用 Copilot Bridge");
-  } finally {
-    await app.dispose();
-  }
-});
-
 test("an escapable Modal restores focus to its still-mounted trigger", async () => {
   const app = await mountApp({
     initialSettings: { onboardingCompleted: true },
@@ -688,7 +579,7 @@ test("an escapable Modal restores focus to its still-mounted trigger", async () 
     const trigger = app.document.querySelector('button[role="switch"]');
     await app.clickSelector('button[role="switch"]');
     const modal = app.document.querySelector(".modal");
-    assert.equal(modal.getAttribute("aria-label"), "准备 Bridge 连接");
+    assert.equal(modal.getAttribute("aria-label"), "切换到 Cloud？");
     assert.ok(modal.contains(app.document.activeElement));
     await app.key("Escape");
     assert.equal(app.document.querySelector(".modal"), null);
@@ -776,7 +667,6 @@ test('Cloud reasoning uses only advertised modes and persists mode without effor
     await app.act(async()=>modes[1].click());
     assert.equal(app.settings.reasoningMode,'thinking');
     assert.equal(app.settings.reasoningEffort,null);
-    await app.click('切换 AI 服务');
     assert.ok(!app.text.includes('我的 API'));
     assert.ok(!app.text.includes('本地模型'));
   } finally { await app.dispose(); }
@@ -806,4 +696,21 @@ test('offline official installer starts only on click, shows progress and blocks
     await app.act(async()=>download.click());assert.deepEqual(app.events,['installChatGpt','openChatGptDownload']);
     assert.equal(app.document.querySelector('button[role="switch"]').disabled,true);
   } finally {await app.dispose();}
+});
+
+test('failed Cloud preparation or profile write never shows enabled or success; retry remains available',async()=>{
+  for(const failure of [{failPrepare:true},{failActivateProfile:true}]){
+    const app=await mountApp({initialCloudState:'AUTHENTICATED',initialSettings:{onboardingCompleted:true},...failure});
+    try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');assert.match(app.text,/Cloud 连接切换失败/);assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'false');assert.doesNotMatch(app.text,/现在重启 ChatGPT/);await app.clickSelector('button[role="switch"]');assert.match(app.text,/切换到 Cloud/);}finally{await app.dispose();}
+  }
+});
+
+test('failed Original restoration keeps ON and permits another explicit attempt',async()=>{
+ const app=await mountApp({activeProfile:'bridge',failActivateProfile:true,initialSettings:{onboardingCompleted:true}});
+ try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'true');assert.doesNotMatch(app.text,/现在重启 ChatGPT/);await app.clickSelector('button[role="switch"]');assert.match(app.text,/切换到 ChatGPT 原账号/);}finally{await app.dispose();}
+});
+
+test('successful switch stays successful when only onboarding marker fails to save',async()=>{
+ const app=await mountApp({initialCloudState:'AUTHENTICATED',failSave:true});
+ try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'true');assert.match(app.text,/现在重启 ChatGPT/);assert.match(app.text,/首次使用记录保存失败/);assert.doesNotMatch(app.text,/连接切换失败/);}finally{await app.dispose();}
 });

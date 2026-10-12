@@ -5,7 +5,6 @@ import type {
 
 export function AccountSummaryCard({
   cloud,
-  service,
   onLogin,
   onOpenDetails,
 }: {
@@ -44,7 +43,6 @@ export function AccountSummaryCard({
           {cloud.billing ? <><span>本周期已用 ¥{cloud.billing.usedRmb.toFixed(4)}</span><span>可用 ¥{cloud.billing.remainingRmb.toFixed(4)}</span></> : cloud.usagePointsUsed == null
             ? null : <span>本月已用 {formatPoints(cloud.usagePointsUsed)} 点</span>}
           {cloud.validUntil && <span>{formatShortDate(cloud.validUntil)}到期</span>}
-          {service === "LOCAL" && <span>当前使用我的 GitHub Copilot</span>}
         </span>
       </span>
       <strong>账户 ›</strong>

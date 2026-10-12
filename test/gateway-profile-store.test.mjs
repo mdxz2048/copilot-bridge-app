@@ -1,11 +1,48 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { parse, stringify } from "smol-toml";
 import { GatewayProfileStore } from "../dist-electron/gateway-profile-store.js";
+
+test('repeated ON/OFF survives store recreation and retains original config and session files',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'bridge-two-mode-cycles-'));
+  try{
+    const file=join(directory,'config.toml'),state=join(directory,'switch.json');
+    const original='# keep comments\r\nmodel="my-model"\r\n[features]\r\nfoo=true\r\n';
+    await writeFile(file,original);await writeFile(join(directory,'session.jsonl'),'session unchanged');
+    for(let i=0;i<8;i++){
+      const store=new GatewayProfileStore(directory,state,'node',['helper']);
+      assert.equal((await store.activate('bridge')).activeProfile,'bridge');
+      assert.equal((await store.acknowledgeRestart()).restartRequired,false);
+      const reopened=new GatewayProfileStore(directory,state,'node',['helper']);
+      assert.equal((await reopened.activate('original')).pendingProfile,'original');
+      assert.equal(await readFile(file,'utf8'),original);
+      assert.equal(await readFile(join(directory,'session.jsonl'),'utf8'),'session unchanged');
+      await reopened.acknowledgeRestart();
+    }
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test('filesystem access failure preserves active snapshot and permits retry after repair',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'bridge-mode-write-failure-'));
+  try{
+    const home=join(directory,'home'),file=join(home,'config.toml'),state=join(directory,'switch.json');
+    await mkdir(home);const original='model="my-model"\n';await writeFile(file,original);
+    const store=new GatewayProfileStore(home,state,'node',['helper']);
+    await store.activate('bridge');const applied=await readFile(file,'utf8');
+    // A non-directory blocks config access; the active snapshot must remain intact.
+    await rename(home,join(directory,'saved-home'));await writeFile(home,'blocks directory creation');
+    await assert.rejects(store.activate('original'));
+    assert.equal(JSON.parse(await readFile(state,'utf8')).active,true);
+    await rm(home);await rename(join(directory,'saved-home'),home);
+    assert.equal(await readFile(file,'utf8'),applied);
+    assert.equal((await store.activate('original')).activeProfile,'original');
+    assert.equal(await readFile(file,'utf8'),original);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
 
 test("upgrades old active Bridge retry policy and preserves original and external settings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bridge-retry-upgrade-"));

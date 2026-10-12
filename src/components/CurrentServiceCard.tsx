@@ -5,9 +5,7 @@ import type {
   ChatGptStatus,
   CloudServiceStatus,
   ProfileStatus,
-  ReasoningEffort,
 } from "../bridge-api";
-import type { AIProvider } from "../domain/product-models";
 import { zhCN } from "../locales/zh-CN";
 import { displayModel } from "../model-display";
 import { Button } from "./Button";
@@ -22,9 +20,7 @@ interface CurrentServiceCardProps {
   models: BridgeModel[];
   profile: ProfileStatus | null;
   bridgeEnabled: boolean;
-  provider: AIProvider;
   settings: AppSettings;
-  onConnectLocal: () => void;
   onEnableChatGpt: () => void;
   onInstallChatGpt: () => void;
   onOpenAccount: () => void;
@@ -32,7 +28,6 @@ interface CurrentServiceCardProps {
   onRestartChatGpt: () => void;
   onOpenRelease: () => void;
   onRetryCloud: () => void;
-  onSwitchService: () => void;
   onUpdateSettings: (settings: AppSettings) => void;
 }
 
@@ -44,9 +39,7 @@ export function CurrentServiceCard({
   models,
   profile,
   bridgeEnabled,
-  provider,
   settings,
-  onConnectLocal,
   onEnableChatGpt,
   onInstallChatGpt,
   onOpenAccount,
@@ -54,19 +47,17 @@ export function CurrentServiceCard({
   onRestartChatGpt,
   onOpenRelease,
   onRetryCloud,
-  onSwitchService,
   onUpdateSettings,
 }: CurrentServiceCardProps) {
   const copy = zhCN.product;
-  const isCloud = provider.id !== "github-copilot";
   const cloudReady =
     cloud?.authState === "AUTHENTICATED"
     && cloud.serviceStatus === "AVAILABLE"
     && !cloud.lastError;
   const bridgeReady = bridge?.state === "ready";
   const profilePending = profile?.restartRequired === true;
-  const serviceReady = isCloud ? cloudReady && bridgeReady : bridgeReady;
-  const state = isCloud ? cloudStatePresentation(cloud) : localStatePresentation(bridge);
+  const serviceReady = cloudReady && bridgeReady;
+  const state = cloudStatePresentation(cloud);
   const selectedModel = settings.backendModel ?? models[0]?.id ?? "";
   const selected = models.find((model) => model.id === selectedModel);
   const reasoningModes = selected?.reasoningModes?.length ? selected.reasoningModes : ["normal"];
@@ -92,7 +83,7 @@ export function CurrentServiceCard({
           </div>
           <p className="bridge-disabled-message">
             {profilePending
-              ? "原账号配置已恢复，重新打开 ChatGPT 后生效，无需重启或注销 Windows。"
+              ? "你自己的 ChatGPT 配置已恢复，重启 ChatGPT 后生效，无需重启或注销 Windows。"
               : "Copilot Bridge 未启用，ChatGPT 保持原来的账号、会话和配置。"}
           </p>
           <div className="service-actions">
@@ -119,18 +110,18 @@ export function CurrentServiceCard({
       <div className="card current-service-card" aria-live="polite">
         <div className="service-card-header">
           <div className="service-identity"><ServiceMark/><p className="service-name">
-            {provider.name}
+            {copy.cloudService}
           </p></div>
           <div className="service-header-state">
             <span className={`service-state state-${profilePending ? "neutral" : state.tone}`}>
               <span aria-hidden="true">{state.symbol}</span>
-              {profilePending ? "待环境生效" : state.title}
+              {profilePending ? "待生效" : state.title}
             </span>
           </div>
         </div>
         {profilePending && (
           <p className="local-inline-note" role="status">
-            模型配置已保存，重新打开 ChatGPT 后生效，无需重启或注销 Windows。
+            Cloud 配置已保存，重启 ChatGPT 后生效，无需重启或注销 Windows。
           </p>
         )}
 
@@ -145,37 +136,17 @@ export function CurrentServiceCard({
                     const modes = nextModel?.reasoningModes?.length ? nextModel.reasoningModes : ["normal"];
                     const mode = modes.includes(settings.reasoningMode ?? "auto") ? settings.reasoningMode ?? "auto"
                       : modes.includes(nextModel?.defaultReasoningMode ?? "normal") ? nextModel?.defaultReasoningMode ?? "normal" : modes[0];
-                    onUpdateSettings({ ...settings, backendModel, ...(isCloud ? { reasoningMode: mode as AppSettings["reasoningMode"], reasoningEffort: null } : {}) });
+                    onUpdateSettings({ ...settings, backendModel, reasoningMode: mode as AppSettings["reasoningMode"], reasoningEffort: null });
                   }}
                   options={modelOptions}
                   value={selectedModel}
                 />
               </SelectRow>
-              {isCloud && (
-                <SelectRow label="思考模式">
+              <SelectRow label="思考模式">
                   <Select label="思考模式" value={reasoningMode}
                     options={reasoningModes.map(value => ({ value, label: value === "thinking" ? "思考" : value === "auto" ? "自动" : "普通" }))}
                     onChange={value => onUpdateSettings({ ...settings, reasoningMode: value as AppSettings["reasoningMode"], reasoningEffort: null })}/>
-                </SelectRow>
-              )}
-              {!isCloud && selected?.supportsReasoningEffort && (
-                <SelectRow label="推理强度">
-                  <Select
-                    label="推理强度"
-                    onChange={(value) =>
-                      onUpdateSettings({
-                        ...settings,
-                        reasoningEffort:
-                          value === "auto" ? null : value as ReasoningEffort,
-                      })}
-                    options={[
-                      { value: "auto", label: "自动" },
-                      { value: "high", label: "高" },
-                    ]}
-                    value={settings.reasoningEffort ?? "auto"}
-                  />
-                </SelectRow>
-              )}
+              </SelectRow>
             </div>
           )
           : (
@@ -185,42 +156,19 @@ export function CurrentServiceCard({
               <Button
                 className="secondary compact"
                 disabled={busy}
-                onClick={
-                  isCloud
-                    ? cloudAction(cloud, {
-                        openAccount: onOpenAccount,
-                        openRelease: onOpenRelease,
-                        retry: onRetryCloud,
-                        switchService: onSwitchService,
-                      })
-                    : onConnectLocal
-                }
+                onClick={cloudAction(cloud, {
+                  openAccount: onOpenAccount,
+                  openRelease: onOpenRelease,
+                  retry: onRetryCloud,
+                })}
                 type="button"
               >
-                {isCloud
-                  ? cloud?.authState === "SERVER_UNREACHABLE"
-                    ? zhCN.account.retry
-                    : cloudActionLabel(cloud)
-                  : "连接 GitHub Copilot"}
+                {cloudActionLabel(cloud)}
               </Button>
             </div>
           )}
 
-        {!isCloud && serviceReady && (
-          <p className="local-inline-note">
-            使用你自己的 GitHub Copilot，不消耗云服务 AI 用量。
-          </p>
-        )}
-
         <div className="service-actions">
-          <Button
-            className="secondary"
-            disabled={busy}
-            onClick={onSwitchService}
-            type="button"
-          >
-            {copy.switchService}
-          </Button>
           <Button
             disabled={busy || chatGpt.state === "INSTALLING"
               || (!serviceReady && !profilePending && chatGpt.state === "INSTALLED")}
@@ -246,34 +194,6 @@ export function CurrentServiceCard({
       </div>
     </section>
   );
-}
-
-function localStatePresentation(bridge: BridgeStatus | null) {
-  if (bridge?.state === "ready") {
-    return { symbol: "●", title: "已连接", message: "", tone: "success" };
-  }
-  if (bridge?.state === "starting") {
-    return {
-      symbol: "◌",
-      title: "正在连接",
-      message: "正在连接你的 GitHub Copilot。",
-      tone: "neutral",
-    };
-  }
-  if (bridge?.state === "failed") {
-    return {
-      symbol: "●",
-      title: "需要处理",
-      message: "GitHub Copilot 连接需要重新处理。",
-      tone: "danger",
-    };
-  }
-  return {
-    symbol: "○",
-    title: "尚未连接",
-    message: "连接你的 GitHub Copilot 账号后即可使用。",
-    tone: "neutral",
-  };
 }
 
 function cloudStatePresentation(cloud: CloudServiceStatus | null) {
@@ -364,14 +284,13 @@ function cloudAction(
     openAccount: () => void;
     openRelease: () => void;
     retry: () => void;
-    switchService: () => void;
   },
 ): () => void {
   if (cloud?.serviceStatus === "UPDATE_REQUIRED") return actions.openRelease;
   switch (cloud?.lastError?.action) {
     case "RECONNECT_PROVIDER":
     case "CHANGE_PROVIDER":
-      return actions.switchService;
+      return actions.retry;
     case "RETRY":
     case "REFRESH_TOKEN":
       return actions.retry;
@@ -388,7 +307,7 @@ function cloudActionLabel(cloud: CloudServiceStatus | null): string {
     case "RECONNECT_PROVIDER":
       return "重新连接";
     case "CHANGE_PROVIDER":
-      return "切换 AI 服务";
+      return "重试连接";
     case "RETRY":
       return zhCN.account.retry;
   }

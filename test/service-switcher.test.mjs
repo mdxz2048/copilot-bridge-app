@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { performServiceSwitch } from "../dist-electron/service-switcher.js";
+import { requireCloudMode,requireCloudTarget,migrateCloudMode } from "../dist-electron/cloud-mode-policy.js";
 
 const previous = {
   backendModel: "gpt-5.6-terra",
@@ -106,4 +107,11 @@ test("does not start Remote mode during maintenance or a required update", async
     /正在维护/,
   );
   assert.equal(restarts, 0);
+});
+
+test('Cloud-only guards reject legacy transports before use and migration restores Original before saving',async()=>{
+  assert.throws(()=>requireCloudTarget('LOCAL'),/关闭开关/);assert.doesNotThrow(()=>requireCloudTarget('REMOTE'));assert.throws(()=>requireCloudMode(previous),/仅支持 Cloud/);assert.throws(()=>requireCloudMode({...previous,backendMode:'REMOTE',providerConnectionId:'legacy'}),/仅支持 Cloud/);
+  const events=[];const result=await migrateCloudMode(previous,{isBridgeActive:async()=>true,restoreOriginal:async()=>events.push('restore-original'),writeSettings:async value=>events.push(value)});assert.equal(events[0],'restore-original');assert.equal(result.backendMode,'REMOTE');assert.equal(result.providerConnectionId,null);assert.equal(result.backendModel,null);
+  const writes=[];await assert.rejects(migrateCloudMode(previous,{isBridgeActive:async()=>true,restoreOriginal:async()=>{throw Error('cannot restore')},writeSettings:async value=>writes.push(value)}),/cannot restore/);assert.deepEqual(writes,[]);
+  const idle=[];await migrateCloudMode({...previous,backendMode:'REMOTE',providerConnectionId:'old-provider'},{isBridgeActive:async()=>false,restoreOriginal:async()=>{throw Error('must not change Original')},writeSettings:async value=>idle.push(value)});assert.equal(idle[0].providerConnectionId,null);
 });

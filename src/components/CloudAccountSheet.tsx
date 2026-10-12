@@ -19,7 +19,7 @@ interface CloudAccountSheetProps {
   onManageSubscription: () => void;
   onRefresh: () => void;
   onRevokeDevice: (id: string) => void;
-  onUseLocal: () => void;
+  onUseOriginal: () => void;
 }
 
 export function CloudAccountSheet({
@@ -34,7 +34,7 @@ export function CloudAccountSheet({
   onManageSubscription,
   onRefresh,
   onRevokeDevice,
-  onUseLocal,
+  onUseOriginal,
 }: CloudAccountSheetProps) {
   const copy = zhCN.account;
   const authenticated = status?.authState === "AUTHENTICATED";
@@ -270,7 +270,7 @@ export function CloudAccountSheet({
               onManageAccount={onManageAccount}
               onManageSubscription={onManageSubscription}
               onRefresh={onRefresh}
-              onUseLocal={onUseLocal}
+              onUseOriginal={onUseOriginal}
               state={status?.authState ?? "SIGNED_OUT"}
               accountAvailable={status?.accountManagementAvailable === true}
               subscriptionAvailable={
@@ -487,7 +487,7 @@ function AccountActions({
   onManageAccount,
   onManageSubscription,
   onRefresh,
-  onUseLocal,
+  onUseOriginal,
   state,
   subscriptionAvailable,
 }: {
@@ -497,7 +497,7 @@ function AccountActions({
   onManageAccount: () => void;
   onManageSubscription: () => void;
   onRefresh: () => void;
-  onUseLocal: () => void;
+  onUseOriginal: () => void;
   state: CloudAuthState;
   subscriptionAvailable: boolean;
 }) {
@@ -541,8 +541,8 @@ function AccountActions({
         </Button>
       )}
       {state !== "AUTHENTICATED" && (
-        <Button className="secondary" disabled={busy} onClick={onUseLocal} type="button">
-          {copy.useLocal}
+        <Button className="secondary" disabled={busy} onClick={onUseOriginal} type="button">
+          恢复 ChatGPT 原账号
         </Button>
       )}
       {state === "AUTHENTICATED" && (

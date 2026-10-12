@@ -22,11 +22,11 @@ export function BridgeActivationBar({
           {!chatGptInstalled ? "请先安装 ChatGPT，安装完成后才能开启 Bridge"
             : pending
             ? profile?.pendingProfile === "bridge"
-              ? "Bridge 连接待生效：保存工作后重新打开 ChatGPT 即可"
-              : "原账号连接待生效：保存工作后重新打开 ChatGPT 即可"
+              ? "Cloud 模式待生效：保存工作后重启 ChatGPT 即可"
+              : "自己的 ChatGPT 待生效：保存工作后重启 ChatGPT 即可"
             : enabled
-              ? "ChatGPT 使用下方选择的 AI 服务"
-              : "关闭时，ChatGPT 使用原账号配置"}
+              ? "已开启：ChatGPT 使用 Copilot Bridge Cloud"
+              : "已关闭：使用你自己的 ChatGPT 账号"}
         </span>
       </div>
       <Toggle

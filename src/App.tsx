@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   AppSettings,
-  AuthStatus,
   BridgeModel,
   BridgeStatus,
   ChatGptStatus,
   CloudServiceStatus,
   Diagnostics,
-  ProfileId,
   ProfileStatus,
 } from "./bridge-api";
 import { AppTitleBar } from "./components/AppTitleBar";
@@ -16,16 +14,11 @@ import { BridgeActivationBar } from "./components/BridgeActivationBar";
 import { Button } from "./components/Button";
 import { CloudAccountSheet } from "./components/CloudAccountSheet";
 import { CurrentServiceCard } from "./components/CurrentServiceCard";
-import { FirstRunDialog } from "./components/FirstRunDialog";
 import { Modal } from "./components/Modal";
 import { ProductSettingsSheet } from "./components/ProductSettingsSheet";
-import { ServiceSelectionSheet } from "./components/ServiceSelectionSheet";
 import { zhCN } from "./locales/zh-CN";
 import { displayModel } from "./model-display";
-import {
-  buildProviders,
-  type AIProviderId,
-} from "./domain/product-models";
+
 
 const DEFAULT_SETTINGS: AppSettings = {
   backendModel: null,
@@ -34,7 +27,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoLaunch: true,
   minimizeToTray: true,
   autoBridgeStart: true,
-  backendMode: "LOCAL",
+  backendMode: "REMOTE",
   providerConnectionId: null,
   theme: "system",
   onboardingCompleted: false,
@@ -50,36 +43,21 @@ export function App() {
     state: "NOT_INSTALLED",
     message: "正在检测 ChatGPT…",
   });
-  const [auth, setAuth] = useState<AuthStatus>({
-    state: "idle",
-    message: "请在浏览器中完成 GitHub 登录。",
-  });
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [servicesOpen, setServicesOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [cloudLoginIssue, setCloudLoginIssue] = useState<"SUBSCRIPTION_REQUIRED" | null>(null);
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
-  const [activateCloudAfterLogin, setActivateCloudAfterLogin] = useState(false);
-  const activateLocalAfterLogin = useRef(false);
-  const onboardingTarget = useRef<AppSettings["backendMode"] | null>(null);
-  const [onboardingInProgress, setOnboardingInProgress] = useState(false);
+  const [pendingMode, setPendingMode] = useState<boolean | null>(null);
+  const confirmedMode = useRef<boolean | null>(null);
   const [restartDismissed, setRestartDismissed] = useState(false);
   const [restartingChatGpt, setRestartingChatGpt] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
-  const [pendingProvider, setPendingProvider] = useState<AIProviderId | null>(null);
-  const [copilotPreflightOpen, setCopilotPreflightOpen] = useState(false);
-  const [customApiOpen, setCustomApiOpen] = useState(false);
-  const [customApiLabel, setCustomApiLabel] = useState("我的 DeepSeek");
-  const [customApiKey, setCustomApiKey] = useState("");
-  const onLocalLoginSuccess = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (settings.theme === "system") {
@@ -126,17 +104,13 @@ export function App() {
     void refreshApp();
     void refreshCloud();
     void window.copilotBridge.getAppVersion().then(setVersion);
-    const removeAuth = window.copilotBridge.onCopilotLoginStatus((next) => {
-      setAuth(next);
-      if (next.state === "success") {
-        window.setTimeout(() => setLoginOpen(false), 800);
-        onLocalLoginSuccess.current();
-      }
-    });
     const removeBridge = window.copilotBridge.onBridgeStatus((next) => {
       setBridge(next);
       if (next.state === "ready") {
-        void window.copilotBridge.getModels().then(setModels);
+        void window.copilotBridge.getModels().then(setModels).catch(error => {
+          setModels([]);
+          showError(error, "暂时无法读取 Cloud 模型，请检查账户或更新后重试。");
+        });
       }
     });
     const removeProfile = window.copilotBridge.onProfileStatus(setProfile);
@@ -146,7 +120,6 @@ export function App() {
     });
     const removeCloud = window.copilotBridge.onCloudStatus(setCloud);
     return () => {
-      removeAuth();
       removeBridge();
       removeProfile();
       removeChatGpt();
@@ -173,7 +146,7 @@ export function App() {
   const persistSettings = async (next: AppSettings) => {
     setBusy(true);
     try {
-      const persisted = await window.copilotBridge.updateSettings(next);
+      const persisted = await window.copilotBridge.updateSettings({ ...next, backendMode: "REMOTE", providerConnectionId: null });
       setSettings(persisted);
       const nextBridge = await window.copilotBridge.getBridgeStatus();
       setBridge(nextBridge);
@@ -189,107 +162,60 @@ export function App() {
     }
   };
 
-  const finishOnboarding = async (
-    target: AppSettings["backendMode"],
-    currentSettings: AppSettings,
-  ) => {
-    if (onboardingTarget.current !== target) return;
-    try {
-      const persisted = await window.copilotBridge.updateSettings({
-        ...currentSettings,
-        onboardingCompleted: true,
-      });
-      setSettings(persisted);
-      onboardingTarget.current = null;
-      setOnboardingInProgress(false);
-    } catch (error) {
-      onboardingTarget.current = null;
-      setOnboardingInProgress(false);
-      showError(error, "首次设置未能保存，请重试。");
+  const requestModeSwitch = (enabled: boolean) => {
+    if (busy) return;
+    if (enabled && chatGpt.state !== "INSTALLED") {
+      setNotice("请先安装 ChatGPT，安装完成后才能开启 Cloud。");
+      return;
     }
+    setPendingMode(enabled);
   };
 
-  const switchService = async (
-    target: AppSettings["backendMode"],
-    authenticatedCloud?: CloudServiceStatus,
-  ) => {
-    const cloudStatus = authenticatedCloud ?? cloud;
-    if (target === "REMOTE"
-      && cloudStatus?.authState !== "AUTHENTICATED") {
-      setActivateCloudAfterLogin(true);
-      setServicesOpen(false);
+  const applyConfirmedMode = async (enabled: boolean, authenticatedCloud?: CloudServiceStatus) => {
+    if (confirmedMode.current !== enabled) return;
+    if (enabled && (authenticatedCloud ?? cloud)?.authState !== "AUTHENTICATED") {
       setCloudOpen(true);
       return;
     }
-    if (
-      target === settings.backendMode
-      && bridge?.state === "ready"
-      && (
-        onboardingTarget.current !== target
-        || (
-          models.length > 0
-          && (target === "LOCAL"
-            || (cloudStatus?.serviceStatus === "AVAILABLE" && !cloudStatus.lastError))
-        )
-      )
-      && !(target === "REMOTE" && settings.providerConnectionId)
-    ) {
-      setServicesOpen(false);
-      await finishOnboarding(target, settings);
-      return;
-    }
     setBusy(true);
+    setProgressOpen(true);
     setNotice(null);
     try {
-      const result = await window.copilotBridge.switchAiService(target);
-      setSettings(result.settings);
-      setBridge(result.bridge);
-      setModels(result.models);
-      setServicesOpen(false);
+      let nextSettings = settings;
+      if (enabled) {
+        const result = await window.copilotBridge.switchAiService("REMOTE");
+        setSettings(result.settings);
+        setBridge(result.bridge);
+        setModels(result.models);
+        nextSettings = result.settings;
+        await window.copilotBridge.prepareBridgeEnvironment();
+      }
+      // Restoring Original does not need Cloud authentication, availability or models.
+      const nextProfile = await window.copilotBridge.activateProfile(enabled ? "bridge" : "original");
+      setProfile(nextProfile);
+      setRestartError(null);
+      setRestartDismissed(false);
       setCloudOpen(false);
-      setNotice(
-        target === "REMOTE"
-          ? "✓ 已切换到 Copilot Bridge 云服务"
-          : "✓ 已切换到我的 GitHub Copilot",
-      );
-      await finishOnboarding(target, result.settings);
-      return;
+      confirmedMode.current = null;
+      setNotice(enabled ? "✓ Cloud 连接已配置，重启 ChatGPT 后生效" : "✓ 原账号连接已恢复，重启 ChatGPT 后生效");
+      if (!nextSettings.onboardingCompleted) {
+        try {
+          const saved = await window.copilotBridge.updateSettings({ ...nextSettings, backendMode: "REMOTE", providerConnectionId: null, onboardingCompleted: true });
+          setSettings(saved);
+        } catch {
+          setNotice("连接已切换，重启 ChatGPT 后生效；首次使用记录保存失败，可稍后重试。");
+        }
+      }
     } catch (error) {
-      showError(error, "AI 服务切换失败，已恢复之前的服务。");
-      if (target === "LOCAL") {
-        const unavailable = error instanceof Error
-          && /没有可用模型|no available model/i.test(error.message);
-        setAuth({
-          state: unavailable ? "no_subscription" : "network_error",
-          message: unavailable
-            ? "未检测到可用的 GitHub Copilot 订阅。"
-            : "GitHub Copilot 暂时无法连接。",
-        });
-        setLoginOpen(true);
-      }
-      if (onboardingTarget.current === target) {
-        onboardingTarget.current = null;
-        setOnboardingInProgress(false);
-      }
-      return;
+      confirmedMode.current = null;
+      showError(error, enabled ? "Cloud 连接切换失败，请检查登录和服务状态后重试。" : "原账号连接恢复失败，请重试。");
     } finally {
+      setProgressOpen(false);
       setBusy(false);
     }
   };
 
-  onLocalLoginSuccess.current = () => {
-    if (activateLocalAfterLogin.current) {
-      activateLocalAfterLogin.current = false;
-      void switchService("LOCAL");
-    } else {
-      void refreshApp();
-    }
-  };
-
-  const loginCloud = async (credentials: {
-    email: string;
-    password: string;
-  }) => {
+  const loginCloud = async (credentials: { email: string; password: string }) => {
     setCloudLoginIssue(null);
     setBusy(true);
     setNotice(null);
@@ -297,94 +223,14 @@ export function App() {
       const next = await window.copilotBridge.loginCloud(credentials);
       setCloud(next);
       setCloudLoginIssue(null);
-      if (activateCloudAfterLogin || settings.backendMode !== "REMOTE"
-        || onboardingTarget.current === "REMOTE") {
-        setActivateCloudAfterLogin(false);
-        await switchService("REMOTE", next);
-      }
+      // Signing in from the account page alone must not change ChatGPT's mode.
+      if (confirmedMode.current === true) await applyConfirmedMode(true, next);
     } catch (error) {
-      if (error instanceof Error && /SUBSCRIPTION_REQUIRED/i.test(error.message)) {
-        setCloudLoginIssue("SUBSCRIPTION_REQUIRED");
-      }
+      if (error instanceof Error && /SUBSCRIPTION_REQUIRED/i.test(error.message)) setCloudLoginIssue("SUBSCRIPTION_REQUIRED");
       showError(error, "登录失败，请检查账号信息后重试。");
     } finally {
       setBusy(false);
     }
-  };
-
-  const startLocalLogin = async () => {
-    setLoginOpen(true);
-    setNotice(null);
-    try {
-      await window.copilotBridge.startCopilotLogin();
-    } catch (error) {
-      showError(error, "暂时无法开始 GitHub Copilot 登录。");
-      activateLocalAfterLogin.current = false;
-      if (onboardingTarget.current === "LOCAL") {
-        onboardingTarget.current = null;
-        setOnboardingInProgress(false);
-        setLoginOpen(false);
-      }
-    }
-  };
-
-  const completeOnboarding = async (
-    target: AppSettings["backendMode"],
-  ) => {
-    onboardingTarget.current = target;
-    setOnboardingInProgress(true);
-    if (target === "LOCAL" && bridge?.state !== "ready") {
-      activateLocalAfterLogin.current = true;
-      await startLocalLogin();
-      return;
-    }
-    await switchService(target);
-  };
-
-  const switchProfile = async (target: ProfileId) => {
-    setBusy(true);
-    setProgressOpen(true);
-    try {
-      setProfile(await window.copilotBridge.activateProfile(target));
-    } catch (error) {
-      const fallback = error instanceof Error && error.message.trim()
-        ? `ChatGPT 环境切换失败：${error.message}`
-        : "ChatGPT 环境切换失败。";
-      showError(error, fallback);
-    } finally {
-      setProgressOpen(false);
-      setBusy(false);
-    }
-  };
-
-  const prepareBridgeProfile = async () => {
-    setSetupOpen(false);
-    try {
-      await window.copilotBridge.prepareBridgeEnvironment();
-      await switchProfile("bridge");
-    } catch (error) {
-      showError(error, "无法准备 Copilot 环境。");
-    }
-  };
-
-  const setBridgeEnabled = async (enabled: boolean) => {
-    if (enabled && chatGpt.state !== 'INSTALLED') {
-      setNotice('请先安装 ChatGPT，安装完成后才能开启 Bridge。');
-      return;
-    }
-    if (enabled) {
-      if (bridge?.state !== "ready") {
-        showError(
-          new Error("AI service unavailable"),
-          "请先连接当前 AI 服务，再启用 Copilot Bridge。",
-        );
-        setServicesOpen(true);
-        return;
-      }
-      setSetupOpen(true);
-      return;
-    }
-    await switchProfile("original");
   };
 
   const openDiagnostics = async () => {
@@ -395,61 +241,8 @@ export function App() {
       showError(error, "无法读取诊断信息。");
     }
   };
-
-  const currentModel = displayModel(
-    settings.backendModel ?? models[0]?.id ?? "",
-  );
-  const serviceHealthy = bridge?.state === "ready"
-    && (
-      settings.backendMode === "LOCAL"
-      || cloud?.authState === "AUTHENTICATED"
-    );
-  const providers = buildProviders(settings, cloud, bridge, models);
-  const currentProvider = providers.find((provider) => provider.active)!;
-  const targetProvider = providers.find(
-    (provider) => provider.id === pendingProvider,
-  );
-
-  const activateCustomApi = async () => {
-    const provider = providers.find(
-      (item) => item.id === "custom-api",
-    );
-    if (!provider) return;
-    const connection = cloud?.providerConnections.find(
-      (item) => item.status === "ACTIVE",
-    );
-    setBusy(true);
-    try {
-      if (connection) {
-        const result = await window.copilotBridge.activateCloudProvider(
-          connection.id,
-        );
-        setSettings(result.settings);
-        setBridge(result.bridge);
-        setModels(result.models);
-      } else {
-        const result = await window.copilotBridge.connectCloudProvider({
-            providerId: cloud!.providers.find(
-              (item) => item.code.toUpperCase() === "DEEPSEEK",
-            )!.id,
-            label: customApiLabel,
-            apiKey: customApiKey,
-          });
-        setSettings(result.settings);
-        setBridge(result.bridge);
-        setModels(result.models);
-        setCloud(result.status);
-      }
-      setCustomApiKey("");
-      setCustomApiOpen(false);
-      setPendingProvider(null);
-      setNotice("✓ 已切换到我的 API");
-    } catch (error) {
-      showError(error, "API Key 验证失败，未切换当前服务。");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const currentModel = displayModel(settings.backendModel ?? models[0]?.id ?? "");
+  const serviceHealthy = bridge?.state === "ready" && cloud?.authState === "AUTHENTICATED";
 
   const installChatGpt = () => {
     setInstallOpen(true);
@@ -472,7 +265,7 @@ export function App() {
         <div className="product-alert" role="status">
           <span>
             {cloud.updateState === "MAINTENANCE"
-              ? "云服务正在维护，本地 GitHub Copilot 仍可使用。"
+              ? "Cloud 正在维护，可关闭开关恢复 ChatGPT 原账号。"
               : cloud.updateState === "REQUIRED"
                 ? "需要更新 Copilot Bridge 后才能继续使用云服务。"
                 : `Copilot Bridge ${
@@ -499,7 +292,7 @@ export function App() {
       <BridgeActivationBar
         busy={busy}
         chatGptInstalled={chatGpt.state === 'INSTALLED'}
-        onChange={(enabled) => void setBridgeEnabled(enabled)}
+        onChange={requestModeSwitch}
         profile={profile}
       />
 
@@ -507,7 +300,7 @@ export function App() {
         busy={busy}
         cloud={cloud}
         onLogin={() => {
-          setActivateCloudAfterLogin(false);
+          confirmedMode.current = null;
           setCloudOpen(true);
         }}
         onOpenDetails={() => {
@@ -518,8 +311,8 @@ export function App() {
           void window.copilotBridge.manageCloudSubscription().catch(
             (error: unknown) => showError(error, "无法打开订阅管理页面。"),
           )}
-        onUseCloud={() => void switchService("REMOTE")}
-        service={settings.backendMode}
+        onUseCloud={() => requestModeSwitch(true)}
+        service="REMOTE"
       />
 
       <CurrentServiceCard
@@ -529,8 +322,7 @@ export function App() {
         chatGpt={chatGpt}
         cloud={cloud}
         models={models}
-        onConnectLocal={() => void startLocalLogin()}
-        onEnableChatGpt={() => setSetupOpen(true)}
+        onEnableChatGpt={() => requestModeSwitch(true)}
         onInstallChatGpt={installChatGpt}
         onOpenAccount={() => setCloudOpen(true)}
         onOpenChatGpt={() => void window.copilotBridge.launchChatGpt()}
@@ -540,9 +332,7 @@ export function App() {
             (error: unknown) => showError(error, "无法打开更新下载页面。"),
           )}
         onRetryCloud={() => void refreshCloud()}
-        onSwitchService={() => setServicesOpen(true)}
         profile={profile}
-        provider={currentProvider}
         settings={settings}
         onUpdateSettings={(next) => void persistSettings(next)}
       />
@@ -572,7 +362,7 @@ export function App() {
 
       {loaded && !settings.onboardingCompleted && chatGpt.state !== 'INSTALLED' && !installOpen && (
         <Modal title="先安装 ChatGPT">
-          <p>安装官方 ChatGPT 客户端后，才能选择 AI 服务并开启 Bridge。</p>
+          <p>安装官方 ChatGPT 客户端后，才能开启 Cloud 模式。</p>
           {chatGpt.state === 'ERROR' && <p role="alert">{chatGpt.message}</p>}
           <Button disabled={chatGpt.state === 'INSTALLING'} onClick={installChatGpt} type="button">
             {chatGpt.state === 'INSTALLING' ? '正在安装 ChatGPT…' : '安装 ChatGPT'}
@@ -580,168 +370,6 @@ export function App() {
           <Button className="secondary" disabled={chatGpt.state === "INSTALLING" && chatGpt.step !== "WAITING_FOR_STORE"} onClick={downloadChatGpt} type="button">下载并安装</Button>
         </Modal>
       )}
-      {loaded && !settings.onboardingCompleted && chatGpt.state === 'INSTALLED' && !installOpen && !onboardingInProgress && (
-        <FirstRunDialog
-          busy={busy}
-          onChoose={(service) => void completeOnboarding(service)}
-        />
-      )}
-
-      {servicesOpen && (
-        <ServiceSelectionSheet
-          busy={busy}
-          onClose={() => setServicesOpen(false)}
-          onSelect={(provider) => {
-            setServicesOpen(false);
-            if (provider === "custom-api") {
-              const connection = cloud?.providerConnections.find(
-                (item) => item.status === "ACTIVE",
-              );
-              if (connection) {
-                setPendingProvider(provider);
-              } else {
-                setCustomApiOpen(true);
-              }
-              return;
-            }
-            if (provider === "github-copilot" && bridge?.state !== "ready") {
-              setPendingProvider(provider);
-              setCopilotPreflightOpen(true);
-              return;
-            }
-            setPendingProvider(provider);
-          }}
-          providers={providers}
-        />
-      )}
-
-      {pendingProvider && targetProvider && !copilotPreflightOpen && (
-        <Modal
-          onClose={() => setPendingProvider(null)}
-          title="切换 AI 服务"
-        >
-          <p>将从：</p>
-          <p className="switch-provider-name">{currentProvider.name}</p>
-          <p>切换到：</p>
-          <p className="switch-provider-name">{targetProvider.name}</p>
-          <p>切换后，ChatGPT 的新请求将使用新的 AI 服务。</p>
-          <div className="modal-actions">
-            <Button
-              className="secondary"
-              onClick={() => setPendingProvider(null)}
-              type="button"
-            >
-              取消
-            </Button>
-            <Button
-              onClick={() => {
-                if (pendingProvider === "custom-api") {
-                  void activateCustomApi();
-                } else {
-                  const target = pendingProvider === "bridge-cloud"
-                    ? "REMOTE"
-                    : "LOCAL";
-                  setPendingProvider(null);
-                  void switchService(target);
-                }
-              }}
-              type="button"
-            >
-              切换
-            </Button>
-          </div>
-        </Modal>
-      )}
-
-      {copilotPreflightOpen && (
-        <Modal
-          onClose={() => {
-            setCopilotPreflightOpen(false);
-            setPendingProvider(null);
-          }}
-          title="使用你的 GitHub Copilot"
-        >
-          <p>当前设备尚未连接 GitHub Copilot。</p>
-          <p>你是否已经订阅 GitHub Copilot？</p>
-          <div className="modal-actions">
-            <Button
-              className="secondary"
-              onClick={() => {
-                setCopilotPreflightOpen(false);
-                setPendingProvider(null);
-                setServicesOpen(true);
-              }}
-              type="button"
-            >
-              我还没有
-            </Button>
-            <Button
-              onClick={() => {
-                setCopilotPreflightOpen(false);
-                setPendingProvider(null);
-                activateLocalAfterLogin.current = true;
-                void startLocalLogin();
-              }}
-              type="button"
-            >
-              我已订阅
-            </Button>
-          </div>
-        </Modal>
-      )}
-
-      {customApiOpen && (
-        <Modal
-          onClose={() => {
-            setCustomApiOpen(false);
-            setCustomApiKey("");
-          }}
-          title="连接我的 API"
-        >
-          <p>
-            当前 Server Contract 支持经过服务端验证和加密存储的 DeepSeek
-            API Key。Desktop 不会保存或回显你的 Key。
-          </p>
-          <div className="cloud-login-fields">
-            <label>
-              <span>连接名称</span>
-              <input
-                onChange={(event) => setCustomApiLabel(event.target.value)}
-                value={customApiLabel}
-              />
-            </label>
-            <label>
-              <span>API Key</span>
-              <input
-                autoComplete="off"
-                onChange={(event) => setCustomApiKey(event.target.value)}
-                type="password"
-                value={customApiKey}
-              />
-            </label>
-          </div>
-          <div className="modal-actions">
-            <Button
-              className="secondary"
-              onClick={() => {
-                setCustomApiOpen(false);
-                setCustomApiKey("");
-              }}
-              type="button"
-            >
-              取消
-            </Button>
-            <Button
-              disabled={busy || customApiKey.length < 8 || !customApiLabel.trim()}
-              onClick={() => void activateCustomApi()}
-              type="button"
-            >
-              验证并使用
-            </Button>
-          </div>
-        </Modal>
-      )}
-
       {settingsOpen && (
         <ProductSettingsSheet
           bridge={bridge}
@@ -762,11 +390,7 @@ export function App() {
           loginIssue={cloudLoginIssue}
           onClose={() => {
             setCloudOpen(false);
-            if (onboardingTarget.current === "REMOTE") {
-              onboardingTarget.current = null;
-              setOnboardingInProgress(false);
-            }
-            setActivateCloudAfterLogin(false);
+            confirmedMode.current = null;
           }}
           onLogin={(credentials) => void loginCloud(credentials)}
           onOpenRegistration={() =>
@@ -802,83 +426,9 @@ export function App() {
               setBusy,
               showError,
             )}
-          onUseLocal={() => void switchService("LOCAL")}
+          onUseOriginal={() => { setCloudOpen(false); requestModeSwitch(false); }}
           status={cloud}
         />
-      )}
-
-      {loginOpen && (
-        <Modal onClose={() => {
-          setLoginOpen(false);
-          activateLocalAfterLogin.current = false;
-          if (onboardingTarget.current === "LOCAL") {
-            onboardingTarget.current = null;
-            setOnboardingInProgress(false);
-          }
-        }} title="连接 GitHub Copilot">
-          <p>{auth.message}</p>
-          <ol className="auth-steps">
-            <li className={authStepDone(auth.state, 1) ? "done" : ""}>
-              ① 登录 GitHub
-            </li>
-            <li className={authStepDone(auth.state, 2) ? "done" : ""}>
-              ② 完成设备授权
-            </li>
-            <li className={authStepDone(auth.state, 3) ? "done" : ""}>
-              ③ 自动检测 Copilot
-            </li>
-          </ol>
-          {auth.deviceCode && (
-            <div className="device-code-actions">
-              <code>{auth.deviceCode}</code>
-              <Button
-                className="secondary compact"
-                onClick={() => void navigator.clipboard.writeText(auth.deviceCode!)}
-                type="button"
-              >
-                复制验证码
-              </Button>
-              {auth.verificationUrl && (
-                <Button
-                  className="secondary compact"
-                  onClick={() =>
-                    void window.copilotBridge.openCopilotVerification(
-                      auth.verificationUrl!,
-                    )}
-                  type="button"
-                >
-                  打开 GitHub 授权
-                </Button>
-              )}
-            </div>
-          )}
-          {auth.state === "success" && (
-            <p className="success-message">✓ GitHub Copilot 已连接</p>
-          )}
-          {auth.state === "no_subscription" && (
-            <div className="auth-warning">
-              <strong>GitHub 已连接</strong>
-              <p>但当前账号未检测到可用的 GitHub Copilot 订阅。</p>
-            </div>
-          )}
-          <div className="modal-actions">
-            <Button
-              className="secondary"
-              onClick={() => {
-                void window.copilotBridge.cancelCopilotLogin();
-                setLoginOpen(false);
-                activateLocalAfterLogin.current = false;
-                if (onboardingTarget.current === "LOCAL") {
-                  onboardingTarget.current = null;
-                  setOnboardingInProgress(false);
-                }
-              }}
-              type="button"
-            >
-              {zhCN.common.cancel}
-            </Button>
-          </div>
-        </Modal>
       )}
 
       {installOpen && (
@@ -906,24 +456,24 @@ export function App() {
         </Modal>
       )}
 
-      {setupOpen && (
-        <Modal onClose={() => setSetupOpen(false)} title="准备 Bridge 连接">
-          <p>
-            Bridge 将切换模型连接，继续使用现有会话和工作区。切换后重启 ChatGPT 即可生效。
-          </p>
+      {pendingMode !== null && (
+        <Modal onClose={() => setPendingMode(null)} title={pendingMode ? "切换到 Cloud？" : "切换到 ChatGPT 原账号？"}>
+          <p>{pendingMode ? "开启后，ChatGPT 将通过 Bridge 使用 Cloud 模型。" : "关闭后，ChatGPT 将恢复你的原账号连接。"}</p>
+          <p>确认切换后需要重启 ChatGPT 才能生效，无需重启 Windows。</p>
           <div className="modal-actions">
-            <Button className="secondary" onClick={() => setSetupOpen(false)} type="button">
-              {zhCN.common.cancel}
-            </Button>
-            <Button onClick={() => void prepareBridgeProfile()} type="button">
-              配置并继续
-            </Button>
+            <Button className="secondary" onClick={() => setPendingMode(null)} type="button">取消</Button>
+            <Button disabled={busy} onClick={() => {
+              const target = pendingMode;
+              setPendingMode(null);
+              confirmedMode.current = target;
+              void applyConfirmedMode(target);
+            }} type="button">确认切换</Button>
           </div>
         </Modal>
       )}
 
       {progressOpen && (
-        <Modal title="正在准备 Copilot">
+        <Modal title="正在切换 ChatGPT 连接">
           <ul className="progress-steps">
             <li>✓ 检查 AI 服务</li>
             <li>✓ 启动 Copilot Bridge</li>
@@ -937,8 +487,8 @@ export function App() {
         <Modal onClose={() => { if (!restartingChatGpt) setRestartDismissed(true); }} title="现在重启 ChatGPT？">
           <p>
             {profile.pendingProfile === "bridge"
-              ? "Bridge 模型连接已配置，请重新打开 ChatGPT。"
-              : "原账号模型配置已恢复，请重新打开 ChatGPT。"}
+              ? "已切换到 Copilot Bridge Cloud，重启 ChatGPT 后生效。"
+              : "你自己的 ChatGPT 原账号配置已恢复，重启 ChatGPT 后生效。"}
           </p>
           <p>保存工作后即可重启 ChatGPT。运行中的任务会中止，会话和工作区保留；无需重启 Windows。</p>
           {restartError && <p role="alert">{restartError}</p>}
@@ -971,7 +521,7 @@ export function App() {
             <strong>
               {settings.backendMode === "REMOTE"
                 ? zhCN.product.cloudService
-                : zhCN.product.localService}
+                : "Cloud（尚未开启）"}
             </strong>
             <span>Bridge</span>
             <strong>{diagnostics.bridge.message}</strong>
@@ -1032,6 +582,9 @@ async function runCloudAction(
 
 function friendlyError(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
+  if (/CLIENT_UPGRADE_REQUIRED|请升级 Copilot Bridge|需要更新 Copilot Bridge/i.test(error.message)) {
+    return "当前 Bridge 版本已停止服务，请使用右上角更新按钮安装最新版后重试。关闭开关仍可恢复自己的 ChatGPT。";
+  }
   if (/DEVICE_REVOKED/i.test(error.message)) return zhCN.account.deviceRevokedMessage;
   if (/SUBSCRIPTION_EXPIRED/i.test(error.message)) {
     return zhCN.account.subscriptionExpiredMessage;
@@ -1046,19 +599,4 @@ function friendlyError(error: unknown, fallback: string): string {
     return zhCN.account.serverUnreachableMessage;
   }
   return fallback;
-}
-
-function authStepDone(state: AuthStatus["state"], step: number): boolean {
-  const progress: Record<AuthStatus["state"], number> = {
-    idle: 0,
-    requesting_code: 0,
-    waiting_for_user: 1,
-    verifying: 2,
-    success: 3,
-    no_subscription: 3,
-    expired: 1,
-    network_error: 0,
-    cancelled: 0,
-  };
-  return progress[state] >= step;
 }

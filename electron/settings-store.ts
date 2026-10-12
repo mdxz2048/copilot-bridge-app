@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoLaunch: true,
   minimizeToTray: true,
   autoBridgeStart: true,
-  backendMode: "LOCAL",
+  backendMode: "REMOTE",
   providerConnectionId: null,
   theme: "system",
   onboardingCompleted: false,
