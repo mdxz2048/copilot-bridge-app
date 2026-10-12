@@ -187,7 +187,7 @@ export function CloudAccountSheet({
               <span style={{ width: `${String(normalizedUsage)}%` }} />
             </div>
             <small>
-              {status.billing?`可用 ¥${status.billing.remainingRmb.toFixed(4)} · 网站余额 ¥${status.billing.balanceRmb.toFixed(4)} · 账号 ${status.billing.accountRpm} 次/分钟 · 设备 ${status.billing.deviceRpm} 次/分钟`:status.remainingPoints == null
+              {status.billing?`可用 ¥${status.billing.remainingRmb.toFixed(4)} · 网站余额 ¥${status.billing.balanceRmb.toFixed(4)} · 模型请求次数不限`:status.remainingPoints == null
                 ? "剩余点数待服务端提供"
                 : `剩余 ${formatPoints(status.remainingPoints)} 点`}
             </small>
