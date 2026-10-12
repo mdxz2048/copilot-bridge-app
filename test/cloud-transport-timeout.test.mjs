@@ -10,7 +10,7 @@ test('model responses use their long deadline while control API keeps its short 
   t.mock.method(AbortSignal,'timeout',ms=>{deadlines.push(ms);return new AbortController().signal;});
   const api=client(async url=>url.endsWith('/v1/responses')?new Response('data: {}\n\n',{headers:{'content-type':'text/event-stream'}}):Response.json({minimumVersion:'0.3.1',latestVersion:'0.3.1',maintenance:false,features:{cloudGateway:true}}));
   await api.getClientConfig();await api.createResponse({model:'deepseek/test',input:'test',stream:true},{threadId:'test-thread'});
-  assert.deepEqual(deadlines,[30000,900000]);
+  assert.deepEqual(deadlines,[30000,70*60000]);
 });
 test('caller cancellation still stops a long model request and never replays the POST',async()=>{
   let calls=0;const controller=new AbortController();

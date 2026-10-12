@@ -107,7 +107,7 @@ export class HttpCloudClient implements CloudClient {
     this.devices = options.devices;
     this.deviceKeys = options.deviceKeys;
     this.timeoutMs = options.timeoutMs ?? 30_000;
-    this.responseTimeoutMs = options.responseTimeoutMs ?? 15 * 60_000;
+    this.responseTimeoutMs = options.responseTimeoutMs ?? 70 * 60_000;
     this.defaultHeaders = new Headers(options.defaultHeaders);
     this.fetch = options.fetch ?? globalThis.fetch;
   }
@@ -599,16 +599,16 @@ async function responseError(response: Response): Promise<CloudError> {
     const text=Buffer.concat(chunks).toString("utf8");try{payload=JSON.parse(text);}catch{payload={excerpt:sanitizeFailure(text,12*1024).value};}
   } catch (error) {
     return new CloudError(
-      "INVALID_SERVER_RESPONSE",
-      `Cloud error response was not JSON (HTTP ${String(response.status)}).`,
+      response.status===413?"PAYLOAD_TOO_LARGE":"INVALID_SERVER_RESPONSE",
+      response.status===413?"请求体超过代理或模型服务允许的容量，请减少本轮内容或联系管理员检查请求大小限制。":`Cloud error response was not JSON (HTTP ${String(response.status)}).`,
       { cause: error,httpStatus:response.status,requestId:response.headers.get("X-Bridge-AI-Request-Id")??response.headers.get("X-Request-Id")??undefined },
     );
   }
   const parsed = ErrorResponseSchema.safeParse(payload);
   if (!parsed.success) {
     return new CloudError(
-      "INVALID_SERVER_RESPONSE",
-      `Cloud error response did not match the frozen contract (HTTP ${String(response.status)}).`,
+      response.status===413?"PAYLOAD_TOO_LARGE":"INVALID_SERVER_RESPONSE",
+      response.status===413?"请求体超过代理或模型服务允许的容量，请减少本轮内容或联系管理员检查请求大小限制。":`Cloud error response did not match the frozen contract (HTTP ${String(response.status)}).`,
       { cause: parsed.error,httpStatus:response.status,requestId:response.headers.get("X-Bridge-AI-Request-Id")??response.headers.get("X-Request-Id")??undefined,responseBody:sanitizeFailure(payload,12*1024).value },
     );
   }

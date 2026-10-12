@@ -4,7 +4,7 @@ import {randomUUID,randomBytes,createCipheriv,createDecipheriv} from 'node:crypt
 import {mkdtemp,readFile,rm,stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {FailureCapture,FailureFeedbackOutbox,sanitizeFailure} from '../dist-electron/cloud/failure-feedback.js';
+import {FailureCapture,FailureFeedbackOutbox,sanitizeFailure,requestStats} from '../dist-electron/cloud/failure-feedback.js';
 import {RemoteBridgeServer} from '../dist-electron/cloud/remote-bridge-server.js';
 import {CloudError} from '../dist-electron/cloud/cloud-error.js';
 import {HttpCloudClient} from '../dist-electron/cloud/http-cloud-client.js';
@@ -98,4 +98,44 @@ test('stale getMe response cannot overwrite owner after a concurrent account log
  let access='old-access',resolveMe;const device={deviceId:B,deviceName:'fixture',platform:'win32',osVersion:'11',appVersion:'0.3.6'},newUser={id:B,email:'fixture-b@example.test',role:'USER',status:'ACTIVE'};
  const client=new HttpCloudClient({baseUrl:'https://fixture.test',tokens:{getAccessToken:()=>access,rotate:async data=>{access=data.accessToken}},devices:{get:async()=>device},deviceKeys:{get:async()=>({publicKeyJwk:{kty:'EC',crv:'P-256',x:'x',y:'y'},sign:()=>new Headers()})},fetch:async url=>url.endsWith('/auth/me')?new Promise(resolve=>{resolveMe=resolve}):Response.json({accessToken:'new-access',refreshToken:'new-refresh',expiresIn:1800,user:newUser,device:{...device,id:randomUUID(),userId:B,status:'ACTIVE',activatedAt:new Date().toISOString(),lastSeenAt:null}})});
  const pending=client.getMe();await until(()=>Boolean(resolveMe));await client.login({email:newUser.email,password:'synthetic-fixture',device});resolveMe(Response.json({user:{id:A,email:'fixture-a@example.test',role:'USER',status:'ACTIVE'}}));assert.equal((await pending).id,A);assert.equal(client.getCachedUserId(),B);
+});
+
+test('request statistics measure full protocol payload independently of bounded private excerpts',()=>{
+ const request={input:[{type:'function_call',call_id:'call1',name:'write',arguments:'一'.repeat(50000)},{type:'custom_tool_call',input:'fixed'},{type:'function_call_output',output:[{type:'input_text',text:'private output'}]},...Array.from({length:80},()=>({role:'user',content:'private document'}))],tools:[{type:'function',name:'write'}]};
+ const bodyBytes=Buffer.byteLength(JSON.stringify(request)),stats=requestStats(request,bodyBytes),capture=new FailureCapture(A,'0.3.7',randomUUID());capture.request('desktop',request);capture.stats('desktop',stats);const result=capture.failure('cloud_http',{code:'PAYLOAD_TOO_LARGE',message:'capacity'});
+ assert.equal(stats.inputCount,83);assert.equal(stats.toolCallCount,2);assert.equal(stats.toolArgumentBytes,150005);assert.equal(stats.toolOutputCount,1);assert.equal(stats.toolOutputBytes,Buffer.byteLength(JSON.stringify(request.input[2].output)));assert.deepEqual(result.requestStats.desktop,stats);assert.ok(result.truncated);assert.ok(Buffer.byteLength(JSON.stringify(result))<96*1024);assert.doesNotMatch(JSON.stringify(stats),/private|write|一/);
+});
+
+test('local Bridge forwards exact 64MiB code payload unchanged; oversized input returns diagnostic 413 before Cloud',async()=>{
+ const limit=64*1024*1024,base={model:MODEL,input:[{type:'function_call',call_id:'large_call',name:'write_code',arguments:''}]},overhead=Buffer.byteLength(JSON.stringify(base));const code='CODE_START\n'+' '.repeat(limit-overhead-100)+'\nCODE_END';base.input[0].arguments=code;
+ // Account for JSON newline escapes; pad the actual JSON wire to exactly the boundary.
+ let body=JSON.stringify(base);body+=' '.repeat(limit-Buffer.byteLength(body));assert.equal(Buffer.byteLength(body),limit);
+ const fixture=await setup(request=>{assert.equal(request.input[0].arguments,code);throw new CloudError('PAYLOAD_TOO_LARGE','provider capacity',{httpStatus:413})});
+ try{const response=await fixture.post({}, {body});assert.equal(response.status,413);await response.json();assert.equal(fixture.requests.length,1);assert.equal(fixture.reports.length,1);assert.equal(fixture.reports[0].requestStats.desktop.bodyBytes,limit);assert.equal(fixture.reports[0].requestStats.desktop.toolArgumentBytes,Buffer.byteLength(code));assert.ok(fixture.reports[0].requestStats.forwarded.bodyBytes>10*1024*1024);assert.ok(Buffer.byteLength(JSON.stringify(fixture.reports[0]))<96*1024);
+  const tooLarge=await fixture.post({}, {body:body+' '});assert.equal(tooLarge.status,413);const error=await tooLarge.json();assert.equal(error.error.code,'PAYLOAD_TOO_LARGE');assert.equal(fixture.requests.length,1);assert.equal(fixture.reports.length,2);assert.equal(fixture.reports[1].stage,'local_validation');assert.equal(fixture.reports[1].requestStats.desktop.declaredBodyBytes,limit+1);assert.ok(fixture.reports[1].requestStats.desktop.bodyBytes>limit);assert.deepEqual(fixture.reports[1].request,{});
+ }finally{await fixture.bridge.stop();}
+});
+
+test('HTML 413 has actionable capacity error and bounded sanitized proxy excerpt while formal Cloud errors remain intact',async()=>{
+ const tokens={getAccessToken:()=> 'fixture-token'},devices={get:async()=>({deviceId:B})},deviceKeys={get:async()=>({sign:()=>new Headers()})};
+ for(const formal of [false,true]){const client=new HttpCloudClient({baseUrl:'https://fixture.test',tokens,devices,deviceKeys,fetch:async()=>formal?Response.json({error:{code:'UPSTREAM_PAYLOAD_LIMIT',message:'正式上游容量说明',requestId:'formal_req'}},{status:413}):new Response('<html>nginx 413 password="PROXY_SECRET" '+'x'.repeat(90000)+'</html>',{status:413})});
+  await assert.rejects(client.createResponse({model:MODEL,input:'fixture'},{threadId:'fixture'}),error=>{assert.equal(error.httpStatus,413);assert.equal(error.code,formal?'UPSTREAM_PAYLOAD_LIMIT':'PAYLOAD_TOO_LARGE');assert.match(error.message,formal?/正式上游/:/容量/);assert.ok(Buffer.byteLength(JSON.stringify(error.responseBody))<13*1024);assert.doesNotMatch(JSON.stringify(error.responseBody),/PROXY_SECRET/);return true;});
+ }
+});
+
+test('model HTTP deadline is 70min/configurable, management stays 30s and caller cancellation remains linked',async t=>{
+ const deadlines=[];t.mock.method(AbortSignal,'timeout',ms=>{deadlines.push(ms);return new AbortController().signal});let requestSignal;
+ const make=extra=>new HttpCloudClient({baseUrl:'https://fixture.test',tokens:{getAccessToken:()=> 'fixture-token'},devices:{get:async()=>({deviceId:B})},deviceKeys:{get:async()=>({sign:()=>new Headers()})},fetch:async(url,options)=>{requestSignal=options.signal;return url.endsWith('/auth/me')?Response.json({user:{id:A,email:'fixture@example.test',role:'USER',status:'ACTIVE'}}):Response.json(payload())},...extra});
+ const client=make({});await client.getMe();const cancel=new AbortController();await client.createResponse({model:MODEL,input:'fixture'},{threadId:'fixture',signal:cancel.signal});assert.deepEqual(deadlines,[30000,70*60000]);assert.equal(requestSignal.aborted,false);cancel.abort();assert.equal(requestSignal.aborted,true);await make({responseTimeoutMs:12345}).createResponse({model:MODEL,input:'fixture'},{threadId:'fixture'});assert.equal(deadlines.at(-1),12345);
+});
+
+test('20MiB continuous tool/text values cannot overflow redaction regex or interrupt forwarding',async()=>{
+ const huge='x'.repeat(20*1024*1024),capture=new FailureCapture(A,'0.3.7',randomUUID());const safe=sanitizeFailure({input:huge},20*1024);assert.ok(safe.truncated);assert.ok(Buffer.byteLength(JSON.stringify(safe.value))<20*1024);capture.request('desktop',{input:huge});capture.event({type:'response.output_text.delta',delta:huge});capture.http({output:huge});capture.stats('desktop',{bodyBytes:20*1024*1024});assert.ok(capture.failure('cloud_transport',{message:huge}).truncated);
+ const fixture=await setup(request=>{assert.equal(request.input[0].content,huge);return {contentType:'application/json',response:Response.json(payload())}});try{const response=await fixture.post({input:huge});assert.equal(response.status,200);await response.json();assert.equal(fixture.requests.length,1);assert.equal(fixture.reports.length,0);}finally{await fixture.bridge.stop();}
+});
+
+test('diagnostic acquisition failures fail closed without throwing or retaining unsanitized content',()=>{
+ const poison=new Proxy({},{ownKeys(){throw Error('private-credential-in-error')}}),capture=new FailureCapture(A,'0.3.7',randomUUID());assert.doesNotThrow(()=>{capture.request('desktop',poison);capture.http(poison);capture.event(poison);capture.stats('desktop',{bodyBytes:-1});});const report=capture.failure('local_validation',{message:'safe failure'});assert.ok(report.truncated);assert.doesNotMatch(JSON.stringify(report),/private-credential-in-error/);assert.match(JSON.stringify(report),/diagnostic excerpt unavailable/);
+ const text=JSON.stringify(sanitizeFailure({input:'password="'+('S'.repeat(20*1024*1024))+'"\nSAFE_LAST_LINE'}).value);assert.doesNotMatch(text,/SSSSSS/);assert.match(text,/SAFE_LAST_LINE/);
+ const brokenError=new Proxy({},{get(){throw Error('UNSAFE_CAPTURE_EXCEPTION')}}),fallback=new FailureCapture(A,'0.3.7',randomUUID()).failure('local_validation',brokenError);assert.equal(fallback.error.code,'DIAGNOSTIC_CAPTURE_ERROR');assert.doesNotMatch(JSON.stringify(fallback),/UNSAFE_CAPTURE_EXCEPTION/);
 });

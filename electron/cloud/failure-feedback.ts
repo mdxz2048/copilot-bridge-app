@@ -3,12 +3,31 @@ import {randomUUID} from "node:crypto";
 import {mkdir,readFile,writeFile,rename,stat} from "node:fs/promises";
 import {dirname} from "node:path";
 
+export const RequestStatsSchema=z.object({
+  bodyBytes:z.number().int().nonnegative(),declaredBodyBytes:z.number().int().nonnegative().optional(),bodyLimitBytes:z.number().int().nonnegative().optional(),
+  inputCount:z.number().int().nonnegative().optional(),toolDefinitionCount:z.number().int().nonnegative().optional(),toolCallCount:z.number().int().nonnegative().optional(),
+  toolOutputCount:z.number().int().nonnegative().optional(),toolArgumentBytes:z.number().int().nonnegative().optional(),toolOutputBytes:z.number().int().nonnegative().optional(),
+});
+export type RequestStats=z.infer<typeof RequestStatsSchema>;
+/** Counts from the original request, before diagnostic excerpt limits. No text is returned. */
+export function requestStats(value:unknown,bodyBytes:number):RequestStats {
+  const request=value&&typeof value==="object"?value as Record<string,unknown>:{};
+  const input=Array.isArray(request.input)?request.input:request.input===undefined?[]:[request.input];
+  let toolCallCount=0,toolOutputCount=0,toolArgumentBytes=0,toolOutputBytes=0;
+  const bytes=(item:unknown)=>item===undefined?0:Buffer.byteLength(typeof item==="string"?item:JSON.stringify(item));
+  for(const raw of input){if(!raw||typeof raw!=="object")continue;const item=raw as Record<string,unknown>;
+    if(item.type==="function_call"||item.type==="custom_tool_call"){toolCallCount++;toolArgumentBytes+=bytes(item.arguments??item.input);}
+    if(item.type==="function_call_output"||item.type==="custom_tool_call_output"){toolOutputCount++;toolOutputBytes+=bytes(item.output);}
+  }
+  return {bodyBytes,inputCount:input.length,toolDefinitionCount:Array.isArray(request.tools)?request.tools.length:0,toolCallCount,toolOutputCount,toolArgumentBytes,toolOutputBytes};
+}
 export const FailureFeedbackSchema=z.object({
   id:z.uuid(),ownerUserId:z.uuid(),occurredAt:z.iso.datetime(),appVersion:z.string().max(40),traceId:z.string().max(200),
   requestId:z.string().max(200).optional(),responseId:z.string().max(200).optional(),threadId:z.string().max(200).optional(),
   stage:z.enum(["local_validation","cloud_http","cloud_transport","stream_failed","stream_incomplete","stream_disconnected"]),
   error:z.object({code:z.string().max(100),message:z.string().max(4096),httpStatus:z.number().int().optional()}),
   request:z.object({desktop:z.unknown().optional(),forwarded:z.unknown().optional()}),
+  requestStats:z.object({desktop:RequestStatsSchema.optional(),forwarded:RequestStatsSchema.optional()}).optional(),
   reply:z.object({http:z.unknown().optional(),events:z.array(z.unknown()).optional()}),truncated:z.boolean().optional(),
 });
 export type FailureFeedback=z.infer<typeof FailureFeedbackSchema>;
@@ -18,6 +37,12 @@ const credentialKey=/(?:authorization|cookie|password|passwd|secret|credential|(
 const binaryKey=/^(?:file_data|file_url|image_url|image_data|audio|audio_data|video|binary|base64|encrypted_content|encrypted_reasoning|b64_json)$/i;
 
 function redactText(value:string):string {
+  // Bound BEFORE regex processing: V8 can exhaust its regexp stack on a huge
+  // continuous token. Start a retained tail on a complete line, never in a secret.
+  if(value.length>16384){
+    const tailStart=value.length-12288,newline=value.indexOf("\n",tailStart);
+    value=value.slice(0,4096)+"\n[TRUNCATED_MIDDLE]\n"+(newline>=0?value.slice(newline+1):"[OMITTED_PARTIAL_LINE]");
+  }
   return value.replace(/\bsk-[A-Za-z0-9_-]{6,}/g,"[REDACTED_KEY]")
     .replace(/\bBearer\s+[^\s"',;]+/gi,"Bearer [REDACTED]")
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,"[REDACTED_JWT]")
@@ -37,6 +62,7 @@ export function sanitizeFailure(value:unknown,limit=MAX_REPORT):{value:unknown;t
     if(typeof item==="string"){
       // Arguments / tool outputs often contain JSON strings with nested credentials.
       if(/^[\s]*[\[{]/.test(item)&&item.length<512*1024){try{return JSON.stringify(visit(JSON.parse(item),"",depth+1));}catch{}}
+      if(item.length>16384)truncated=true;
       const text=redactText(item);const remaining=Math.min(8192,Math.floor(budget/4));
       if(text.length>remaining)truncated=true;
       const head=Math.floor(remaining/4),result=text.length>remaining?text.slice(0,head)+"[TRUNCATED_MIDDLE]"+text.slice(-Math.max(1,remaining-head)):text;budget-=Buffer.byteLength(result)+16;return result;
@@ -55,16 +81,22 @@ export class FailureCapture {
   private readonly report:FailureFeedback;
   private emitted=false;
   constructor(ownerUserId:string,appVersion:string,traceId:string){this.report={id:randomUUID(),ownerUserId,appVersion,traceId,occurredAt:new Date().toISOString(),stage:"local_validation",error:{code:"LOCAL_ERROR",message:"Request failed"},request:{},reply:{events:[]}};}
-  request(which:"desktop"|"forwarded",value:unknown){const safe=sanitizeFailure(value,20*1024);this.report.request[which]=safe.value;this.report.truncated ||= safe.truncated;}
+  request(which:"desktop"|"forwarded",value:unknown){try{const safe=sanitizeFailure(value,20*1024);this.report.request[which]=safe.value;this.report.truncated ||= safe.truncated;}catch{this.report.request[which]={omitted:"diagnostic excerpt unavailable"};this.report.truncated=true;}}
+  stats(which:"desktop"|"forwarded",value:RequestStats){try{this.report.requestStats??={};this.report.requestStats[which]=RequestStatsSchema.parse(value);}catch{this.report.truncated=true;}}
   association(values:{requestId?:string|null;responseId?:string|null;threadId?:string|null}){for(const name of ["requestId","responseId","threadId"] as const)if(values[name])this.report[name]=values[name]!.slice(0,200);}
-  http(value:unknown){const safe=sanitizeFailure(value,8*1024);this.report.reply.http=safe.value;this.report.truncated ||= safe.truncated;}
-  event(value:unknown){const safe=sanitizeFailure(value,8*1024);const events=this.report.reply.events!;events.push(safe.value);this.report.truncated ||= safe.truncated;while(events.length>32||Buffer.byteLength(JSON.stringify(events))>28*1024){events.shift();this.report.truncated=true;}}
+  http(value:unknown){try{const safe=sanitizeFailure(value,8*1024);this.report.reply.http=safe.value;this.report.truncated ||= safe.truncated;}catch{this.report.reply.http={omitted:"diagnostic excerpt unavailable"};this.report.truncated=true;}}
+  event(value:unknown){try{const safe=sanitizeFailure(value,8*1024);const events=this.report.reply.events!;events.push(safe.value);this.report.truncated ||= safe.truncated;while(events.length>32||Buffer.byteLength(JSON.stringify(events))>28*1024){events.shift();this.report.truncated=true;}}catch{this.report.truncated=true;}}
   failure(stage:FailureFeedback["stage"],error:unknown):FailureFeedback|null {
     if(this.emitted)return null;this.emitted=true;
+    try{
     const data=error&&typeof error==="object"?error as {code?:unknown;message?:unknown;httpStatus?:number;requestId?:string;responseBody?:unknown}:{};
     this.association({requestId:data.requestId});if(data.responseBody!==undefined)this.http(data.responseBody);
     this.report.stage=stage;this.report.error={code:typeof data.code==="string"?redactText(data.code).slice(0,100):"LOCAL_ERROR",message:redactText(typeof data.message==="string"?data.message:"Request failed").slice(0,4096),...(data.httpStatus?{httpStatus:data.httpStatus}:{})};
     return FailureFeedbackSchema.parse(this.report);
+    }catch{
+      const safe=FailureFeedbackSchema.safeParse({...this.report,stage,request:{},reply:{},requestStats:undefined,truncated:true,error:{code:"DIAGNOSTIC_CAPTURE_ERROR",message:"Failure details unavailable."}});
+      return safe.success?safe.data:null;
+    }
   }
 }
 

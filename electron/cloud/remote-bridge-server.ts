@@ -19,7 +19,7 @@ import type { CloudClient } from "./cloud-client.js";
 import { CloudError } from "./cloud-error.js";
 import { requestShape, modifiedRequestFields } from "./request-diagnostics.js";
 import { normalizeDesktopRequest, createDesktopEventTranslator, desktopOutputItem, type DesktopToolBinding, type ResponsesProfile } from "./desktop-protocol.js";
-import { FailureCapture, type FailureFeedback } from "./failure-feedback.js";
+import { FailureCapture, requestStats, type FailureFeedback } from "./failure-feedback.js";
 
 interface FailureContext {capture:FailureCapture;stage:FailureFeedback["stage"];userAborted:boolean}
 
@@ -281,8 +281,11 @@ export class RemoteBridgeServer {
     feedback?:FailureContext,
   ): Promise<void> {
     const started=performance.now();let bodyBytes=0;
-    const raw = await readJson(incoming,bytes=>{bodyBytes=bytes;});
+    const declared=Number(incoming.headers["content-length"]);
+    const declaredStats=Number.isSafeInteger(declared)&&declared>=0?{declaredBodyBytes:declared}:{};
+    const raw = await readJson(incoming,bytes=>{bodyBytes=bytes;feedback?.capture.stats("desktop",{bodyBytes:bytes,bodyLimitBytes:LOCAL_BODY_LIMIT,...declaredStats});});
     feedback?.capture.request("desktop",raw);
+    feedback?.capture.stats("desktop",{...requestStats(raw,bodyBytes),bodyLimitBytes:LOCAL_BODY_LIMIT,...declaredStats});
     const parseMs=Math.round(performance.now()-started);
     this.gatewayOptions?.trace?.write("desktop_request",traceId,{sessionId:incoming.headers["session_id"],conversationId:incoming.headers["conversation_id"],model:(raw as Record<string, unknown>).model,stream:(raw as Record<string, unknown>).stream,previousResponseId:(raw as Record<string, unknown>).previous_response_id,reasoning:(raw as Record<string, unknown>).reasoning},raw);
     const selectedModel = (await this.gatewayOptions?.getModel?.()) ?? String((raw as Record<string, unknown>).model);
@@ -331,6 +334,8 @@ export class RemoteBridgeServer {
       tools: parsed.tools ?? conversation.tools,
     };
     feedback?.capture.request("forwarded",request);
+    const forwardedBytes=Buffer.byteLength(JSON.stringify(request));
+    feedback?.capture.stats("forwarded",requestStats(request,forwardedBytes));
     feedback?.capture.association({threadId:conversation.threadId});
     const pending=[...this.calls.values()].some(owner=>owner===conversation);
     this.gatewayOptions?.trace?.write("request_normalized",traceId,{responsesProfile:profile,bodyBytes,inputItemCount:Array.isArray(request.input)?request.input.length:1,toolCount:request.tools?.length??0,transformations:Object.fromEntries(normalized.transformations.map(name=>[name,true])),modifiedFields:modifiedRequestFields(raw,request),requestShapeBefore:requestShape(raw),requestShapeAfter:requestShape(request),cloudForwarded:!pending,timings:{parseMs,modelLookupMs,normalizeMs,historyMs:Math.round(performance.now()-historyStarted)},...contentShape(request.input)});
@@ -340,7 +345,7 @@ export class RemoteBridgeServer {
     outgoing.once("close", () => {
       if (!outgoing.writableEnded) {if(feedback)feedback.userAborted=true;abort.abort();}
     });
-    this.gatewayOptions?.trace?.write("cloud_request",traceId,{threadId:conversation.threadId,logicalModelId:request.model,responsesProfile:profile,bodyBytes:Buffer.byteLength(JSON.stringify(request)),reasoningMode:request.reasoning?.mode,stream:request.stream,toolCount:request.tools?.length ?? 0,pendingCalls:[...this.calls].filter(([,owner])=>owner===conversation).map(([id])=>id)},request);
+    this.gatewayOptions?.trace?.write("cloud_request",traceId,{threadId:conversation.threadId,logicalModelId:request.model,responsesProfile:profile,bodyBytes:forwardedBytes,reasoningMode:request.reasoning?.mode,stream:request.stream,toolCount:request.tools?.length ?? 0,pendingCalls:[...this.calls].filter(([,owner])=>owner===conversation).map(([id])=>id)},request);
     const cloudStarted=performance.now();
     if(feedback)feedback.stage="cloud_transport";
     const transport = await this.client.createResponse(request, {
@@ -666,15 +671,19 @@ function responseFromEvent(
   return parsed.success ? parsed.data : null;
 }
 
+const LOCAL_BODY_LIMIT=64*1024*1024;
 async function readJson(request: IncomingMessage, onBytes?: (bytes:number)=>void): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of request) {
+  // Keep the HTTP socket writable when rejecting an oversized body.
+  for await (const chunk of request.iterator({destroyOnReturn:false})) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 10 * 1024 * 1024) {
-      throw new CloudError("VALIDATION_ERROR", "Request body is too large.", {
-        httpStatus: 400,
+    onBytes?.(size);
+    if (size > LOCAL_BODY_LIMIT) {
+      request.resume();
+      throw new CloudError("PAYLOAD_TOO_LARGE", "请求体超过本地 Bridge 的 64MiB 容量，请减少本轮内容或开启新会话。", {
+        httpStatus: 413,
       });
     }
     chunks.push(buffer);
