@@ -166,17 +166,18 @@ export function CloudAccountSheet({
             value={formatDate(status.validUntil)}
           />
 
-          <h3>{status.billing?"人民币余额与额度":"AI 点数"}</h3>
+          {authenticated && status.billing && status.billing.balanceRmb <= 0 && <p role="status" className="form-feedback">余额不足，请联系管理员增加余额。当前仍可使用模型。</p>}
+          <h3>{status.billing?"人民币余额":"AI 点数"}</h3>
           <div className="account-usage">
             <div>
               <span>本月已用</span>
               <strong>
-                {status.billing?`¥${status.billing.usedRmb.toFixed(4)} / ¥${status.billing.limitRmb}`:status.usagePointsUsed == null
+                {status.billing?`¥${status.billing.usedRmb.toFixed(4)}`:status.usagePointsUsed == null
                   ? "—"
                   : `${formatPoints(status.usagePointsUsed)} 点`}
               </strong>
             </div>
-            <div
+            {!status.billing && <div
               aria-label={`${copy.usage} ${String(normalizedUsage)}%`}
               aria-valuemax={100}
               aria-valuemin={0}
@@ -185,9 +186,9 @@ export function CloudAccountSheet({
               role="progressbar"
             >
               <span style={{ width: `${String(normalizedUsage)}%` }} />
-            </div>
+            </div>}
             <small>
-              {status.billing?`可用 ¥${status.billing.remainingRmb.toFixed(4)} · 网站余额 ¥${status.billing.balanceRmb.toFixed(4)} · 模型请求次数不限`:status.remainingPoints == null
+              {status.billing?`可用 ¥${status.billing.remainingRmb.toFixed(4)} · 网站余额 ¥${status.billing.balanceRmb.toFixed(4)} · 模型次数、并发与周期用量不限`:status.remainingPoints == null
                 ? "剩余点数待服务端提供"
                 : `剩余 ${formatPoints(status.remainingPoints)} 点`}
             </small>
@@ -535,7 +536,7 @@ function AccountActions({
           {accountAction}
         </Button>
       )}
-      {state === "SERVER_UNREACHABLE" && (
+      {(state === "SERVER_UNREACHABLE" || state === "ACCOUNT_LOCKED") && (
         <Button disabled={busy} onClick={onRefresh} type="button">
           {copy.retry}
         </Button>
@@ -585,6 +586,7 @@ function accountState(status: CloudServiceStatus | null) {
       symbol: "●",
       tone: "success",
     },
+    ACCOUNT_LOCKED: { symbol: "●", title: "账号已锁定", message: "账号已被管理员锁定，请联系管理员解锁。", tone: "danger" },
     DEVICE_REVOKED: {
       title: copy.deviceRevoked,
       message: copy.deviceRevokedMessage,

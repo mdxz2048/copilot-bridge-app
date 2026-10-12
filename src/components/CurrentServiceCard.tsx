@@ -229,6 +229,7 @@ function cloudStatePresentation(cloud: CloudServiceStatus | null) {
       message: "正在验证账号并准备云服务。",
       tone: "neutral",
     },
+    ACCOUNT_LOCKED: { symbol: "●", title: "账号已锁定", message: "账号已被管理员锁定，请联系管理员解锁。", tone: "danger" },
     DEVICE_REVOKED: {
       symbol: "●",
       title: zhCN.account.deviceRevoked,
@@ -312,6 +313,8 @@ function cloudActionLabel(cloud: CloudServiceStatus | null): string {
       return zhCN.account.retry;
   }
   switch (cloud?.authState) {
+    case "ACCOUNT_LOCKED":
+      return "查看账户";
     case "DEVICE_REVOKED":
       return zhCN.account.manageDevice;
     case "SUBSCRIPTION_EXPIRED":

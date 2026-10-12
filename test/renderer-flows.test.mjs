@@ -117,6 +117,8 @@ async function mountApp({
   });
   let loginStatus;
   let chatGptStatusListener;
+  let delaySettings = false;
+  let resolveSettings;
   let failNextSave = failSave;
   let failNextSwitch = failSwitch;
   dom.window.copilotBridge = {
@@ -126,7 +128,7 @@ async function mountApp({
       pendingProfile,
     }),
     getBridgeStatus: async () => bridge,
-    getSettings: async () => settings,
+    getSettings: async () => { const captured = settings; if (delaySettings) await new Promise(resolve => { resolveSettings = resolve; }); return captured; },
     getChatGptStatus: async () => ({ state: chatGptState, message: "" }),
     installChatGpt: async () => {
       events.push('installChatGpt');
@@ -261,6 +263,8 @@ async function mountApp({
     async loginSuccess() {
       await act(async () => loginStatus({ state: "success", message: "已连接" }));
     },
+    delayNextRefresh() { delaySettings = true; },
+    async finishRefresh() { await act(async () => { resolveSettings?.(); }); },
     async chatGptInstalled() {
       chatGptState = 'INSTALLED';
       await act(async () => chatGptStatusListener({state: 'INSTALLED', message: '已安装 ChatGPT'}));
@@ -713,4 +717,30 @@ test('failed Original restoration keeps ON and permits another explicit attempt'
 test('successful switch stays successful when only onboarding marker fails to save',async()=>{
  const app=await mountApp({initialCloudState:'AUTHENTICATED',failSave:true});
  try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'true');assert.match(app.text,/现在重启 ChatGPT/);assert.match(app.text,/首次使用记录保存失败/);assert.doesNotMatch(app.text,/连接切换失败/);}finally{await app.dispose();}
+});
+
+
+test("a locked account is visible even when login has not loaded account details", async () => {
+  const app = await mountApp({initialCloudState:"ACCOUNT_LOCKED"});
+  try { assert.match(app.text, /账号已锁定/); assert.match(app.text, /请联系管理员解锁/); }
+  finally { await app.dispose(); }
+});
+
+
+test("late pre-switch refresh cannot undo a single confirmed ON or OFF", async () => {
+  for (const activeProfile of ["original", "bridge"]) {
+    const app = await mountApp({activeProfile, chatGptState:"NOT_INSTALLED", initialCloudState:"AUTHENTICATED", initialSettings:{onboardingCompleted:true}});
+    try {
+      app.delayNextRefresh();
+      await app.chatGptInstalled();
+      await app.clickSelector('button[role="switch"]');
+      await app.click("确认切换");
+      const target = activeProfile === "original" ? "bridge" : "original";
+      assert.equal(app.document.querySelector('button[role="switch"]').getAttribute("aria-checked"), String(target === "bridge"));
+      await app.finishRefresh();
+      assert.equal(app.document.querySelector('button[role="switch"]').getAttribute("aria-checked"), String(target === "bridge"));
+      assert.equal(app.events.filter(event => event === `activate:${target}`).length, 1);
+      assert.match(app.text, /现在重启 ChatGPT/);
+    } finally { await app.dispose(); }
+  }
 });

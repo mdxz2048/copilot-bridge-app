@@ -2,6 +2,7 @@ import type { CloudAuthState } from "./auth-state.js";
 
 export const KNOWN_CLOUD_ERROR_CODES = [
   "TOKEN_EXPIRED",
+  "ACCOUNT_DISABLED",
   "DEVICE_REVOKED",
   "SUBSCRIPTION_REQUIRED",
   "SUBSCRIPTION_EXPIRED",
@@ -84,6 +85,8 @@ export function cloudErrorPolicy(error: unknown): CloudErrorPolicy {
         action: "REFRESH_TOKEN",
         retryable: true,
       };
+    case "ACCOUNT_DISABLED":
+      return { authState: "ACCOUNT_LOCKED", action: "NONE", retryable: false };
     case "DEVICE_REVOKED":
       return {
         authState: "DEVICE_REVOKED",

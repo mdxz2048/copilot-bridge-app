@@ -302,8 +302,14 @@ export class CloudFoundation {
   }
 
   async syncPolicy(): Promise<CloudServiceStatus | null> {
-    if (this.auth.state !== "AUTHENTICATED") return null;
-    try {this.account = await this.client.getMeV2();} catch(error) {this.applyErrorState(error);throw error;}
+    if (this.auth.state !== "AUTHENTICATED" && this.auth.state !== "ACCOUNT_LOCKED") return null;
+    try {
+      this.account = await this.client.getMeV2();
+      this.lastError = null;
+      if (this.auth.state === "ACCOUNT_LOCKED") this.transitionFromAny("AUTHENTICATED");
+    } catch (error) {
+      this.applyErrorState(error);
+    }
     return this.getStatus();
   }
   private async performRefresh(): Promise<CloudServiceStatus> {
@@ -432,7 +438,7 @@ export class CloudFoundation {
     this.lastError = {
       requestId: error && typeof error === "object" && "requestId" in error && typeof error.requestId === "string" ? error.requestId : undefined,
       code: cloudErrorCode(error) ?? "UNKNOWN",
-      message: error instanceof Error
+      message: cloudErrorCode(error) === "ACCOUNT_DISABLED" ? "账号已被管理员锁定，请联系管理员解锁。" : error instanceof Error
         ? error.message
         : "Cloud 服务发生未知错误。",
       action: policy.action,
@@ -627,6 +633,8 @@ function statusMessage(state: CloudAuthState): string {
       return "正在验证账号并注册当前设备。";
     case "AUTHENTICATED":
       return "Cloud 服务已连接。";
+    case "ACCOUNT_LOCKED":
+      return "账号已被管理员锁定，请联系管理员解锁。";
     case "DEVICE_REVOKED":
       return "当前设备已被撤销，请重新登录或管理设备。";
     case "SUBSCRIPTION_REQUIRED":

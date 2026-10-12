@@ -165,6 +165,7 @@ function cloudConnection(
       return "connecting";
     case "SERVER_UNREACHABLE":
       return "unavailable";
+    case "ACCOUNT_LOCKED":
     case "DEVICE_REVOKED":
     case "SUBSCRIPTION_EXPIRED":
     case "SUBSCRIPTION_REQUIRED":

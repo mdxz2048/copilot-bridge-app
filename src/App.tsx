@@ -55,6 +55,8 @@ export function App() {
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [pendingMode, setPendingMode] = useState<boolean | null>(null);
   const confirmedMode = useRef<boolean | null>(null);
+  const appStateRevision = useRef(0);
+  const chatGptState = useRef<ChatGptStatus["state"]>("NOT_INSTALLED");
   const [restartDismissed, setRestartDismissed] = useState(false);
   const [restartingChatGpt, setRestartingChatGpt] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export function App() {
   }, [settings.theme]);
 
   const refreshApp = async () => {
+    const revision = ++appStateRevision.current;
     try {
       const [nextProfile, nextBridge, nextSettings, nextChatGpt] =
         await Promise.all([
@@ -76,17 +79,20 @@ export function App() {
           window.copilotBridge.getSettings(),
           window.copilotBridge.getChatGptStatus(),
         ]);
+      if (revision !== appStateRevision.current) return;
       setProfile(nextProfile);
       setBridge(nextBridge);
       setSettings(nextSettings);
+      chatGptState.current = nextChatGpt.state;
       setChatGpt(nextChatGpt);
       if (nextBridge.state === "ready") {
-        setModels(await window.copilotBridge.getModels());
+        const nextModels = await window.copilotBridge.getModels();
+        if (revision === appStateRevision.current) setModels(nextModels);
       } else {
         setModels([]);
       }
     } catch (error) {
-      showError(error, "暂时无法读取应用状态。");
+      if (revision === appStateRevision.current) showError(error, "暂时无法读取应用状态。");
     } finally {
       setLoaded(true);
     }
@@ -113,10 +119,15 @@ export function App() {
         });
       }
     });
-    const removeProfile = window.copilotBridge.onProfileStatus(setProfile);
+    const removeProfile = window.copilotBridge.onProfileStatus((next) => {
+      ++appStateRevision.current;
+      setProfile(next);
+    });
     const removeChatGpt = window.copilotBridge.onChatGptStatus((next) => {
+      const newlyInstalled = next.state === "INSTALLED" && chatGptState.current !== "INSTALLED";
+      chatGptState.current = next.state;
       setChatGpt(next);
-      if (next.state === "INSTALLED") void refreshApp();
+      if (newlyInstalled) void refreshApp();
     });
     const removeCloud = window.copilotBridge.onCloudStatus(setCloud);
     return () => {
@@ -144,6 +155,7 @@ export function App() {
   }, [profile?.restartRequired, profile?.pendingProfile]);
 
   const persistSettings = async (next: AppSettings) => {
+    ++appStateRevision.current;
     setBusy(true);
     try {
       const persisted = await window.copilotBridge.updateSettings({ ...next, backendMode: "REMOTE", providerConnectionId: null });
@@ -163,7 +175,7 @@ export function App() {
   };
 
   const requestModeSwitch = (enabled: boolean) => {
-    if (busy) return;
+    if (busy || restartingChatGpt) return;
     if (enabled && chatGpt.state !== "INSTALLED") {
       setNotice("请先安装 ChatGPT，安装完成后才能开启 Cloud。");
       return;
@@ -177,6 +189,7 @@ export function App() {
       setCloudOpen(true);
       return;
     }
+    ++appStateRevision.current;
     setBusy(true);
     setProgressOpen(true);
     setNotice(null);
@@ -290,7 +303,7 @@ export function App() {
       )}
 
       <BridgeActivationBar
-        busy={busy}
+        busy={busy || restartingChatGpt}
         chatGptInstalled={chatGpt.state === 'INSTALLED'}
         onChange={requestModeSwitch}
         profile={profile}
@@ -483,7 +496,7 @@ export function App() {
         </Modal>
       )}
 
-      {profile?.restartRequired && chatGpt.state === "INSTALLED" && !restartDismissed && (
+      {profile?.restartRequired && !progressOpen && chatGpt.state === "INSTALLED" && !restartDismissed && (
         <Modal onClose={() => { if (!restartingChatGpt) setRestartDismissed(true); }} title="现在重启 ChatGPT？">
           <p>
             {profile.pendingProfile === "bridge"
@@ -585,6 +598,7 @@ function friendlyError(error: unknown, fallback: string): string {
   if (/CLIENT_UPGRADE_REQUIRED|请升级 Copilot Bridge|需要更新 Copilot Bridge/i.test(error.message)) {
     return "当前 Bridge 版本已停止服务，请使用右上角更新按钮安装最新版后重试。关闭开关仍可恢复自己的 ChatGPT。";
   }
+  if (/ACCOUNT_DISABLED|账号已被管理员锁定/i.test(error.message)) return "账号已被管理员锁定，请联系管理员解锁。";
   if (/DEVICE_REVOKED/i.test(error.message)) return zhCN.account.deviceRevokedMessage;
   if (/SUBSCRIPTION_EXPIRED/i.test(error.message)) {
     return zhCN.account.subscriptionExpiredMessage;

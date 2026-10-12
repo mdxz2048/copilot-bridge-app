@@ -56,6 +56,7 @@ test("defines every required Cloud auth state and enforces transitions", () => {
     "SIGNED_OUT",
     "AUTHENTICATING",
     "AUTHENTICATED",
+    "ACCOUNT_LOCKED",
     "DEVICE_REVOKED",
     "SUBSCRIPTION_REQUIRED",
     "SUBSCRIPTION_EXPIRED",
@@ -1093,3 +1094,28 @@ function configuredAccountClient(me) {
     })
     .respond("getLatestRelease", { release: null });
 }
+
+
+test("an administrator lock has a distinct state and permits recovery after unlock", () => {
+  const policy = cloudErrorPolicy(new CloudError("ACCOUNT_DISABLED", "locked"));
+  assert.deepEqual(policy, {authState:"ACCOUNT_LOCKED", action:"NONE", retryable:false});
+  const machine = new CloudAuthStateMachine("AUTHENTICATED");
+  assert.equal(machine.transition("ACCOUNT_LOCKED"), "ACCOUNT_LOCKED");
+  assert.equal(machine.transition("AUTHENTICATING"), "AUTHENTICATING");
+  assert.equal(machine.transition("AUTHENTICATED"), "AUTHENTICATED");
+});
+
+
+test("policy polling broadcasts a lock and automatically recovers after administrator unlock", async () => {
+  const directory=await mkdtemp(join(tmpdir(),"bridge-lock-policy-"));
+  try {
+    const client=configuredAccountClient(productMe());
+    const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,"device.json"),"0.1.0"));
+    assert.equal((await foundation.refresh()).authState,"AUTHENTICATED");
+    client.getMeV2=async()=>{throw new CloudError("ACCOUNT_DISABLED","locked");};
+    assert.equal((await foundation.syncPolicy()).authState,"ACCOUNT_LOCKED");
+    assert.equal((await foundation.syncPolicy()).authState,"ACCOUNT_LOCKED");
+    client.getMeV2=async()=>productMe();
+    const restored=await foundation.syncPolicy();assert.equal(restored.authState,"AUTHENTICATED");assert.equal(restored.lastError,null);
+  } finally {await rm(directory,{recursive:true,force:true});}
+});
