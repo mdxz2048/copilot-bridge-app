@@ -744,3 +744,9 @@ test("late pre-switch refresh cannot undo a single confirmed ON or OFF", async (
     } finally { await app.dispose(); }
   }
 });
+
+
+test("Cloud model dropdown hides unready models and switches only to an available model",async()=>{
+ const app=await mountApp({activeProfile:'bridge',initialBridgeState:'ready',initialCloudState:'AUTHENTICATED',initialSettings:{onboardingCompleted:true,backendModel:'deepseek/deepseek-flash'},initialModels:[{id:'deepseek/deepseek-flash',availability:'READY',reasoningModes:['normal','auto']},{id:'openai/gpt-6-sol',availability:'READY',reasoningModes:['normal']},{id:'openai/gpt-6-luna',availability:'SETUP_REQUIRED',reasoningModes:['normal']}]});
+ try{await app.clickSelector('button[aria-label="模型"]');const options=[...app.document.querySelectorAll('[role="option"]')];assert.equal(options.length,2);assert.ok(!options.some(o=>o.textContent.includes('Luna')));await app.click('GPT-6 Sol');assert.equal(app.settings.backendModel,'openai/gpt-6-sol');assert.equal(app.settings.reasoningMode,'normal');}finally{await app.dispose();}
+});

@@ -64,7 +64,7 @@ export function CurrentServiceCard({
   const reasoningMode = reasoningModes.includes(settings.reasoningMode ?? "auto")
     ? settings.reasoningMode ?? "auto" : reasoningModes.includes(selected?.defaultReasoningMode ?? "normal")
       ? selected?.defaultReasoningMode ?? "normal" : reasoningModes[0];
-  const modelOptions = models.map((model) => ({
+  const modelOptions = models.filter(model=>!model.availability||model.availability==="READY").map((model) => ({
     value: model.id,
     label: displayModel(model.id)+(model.availability==="SETUP_REQUIRED"?" · 待开通":model.availability==="UNAVAILABLE"?" · 暂不可用":""),
   }));
