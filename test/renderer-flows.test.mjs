@@ -506,7 +506,7 @@ test("referral code copy reports success and failure without implying immediate 
   });
   try {
     await app.clickSelector(".account-status-bar");
-    await app.clickSelector(".account-link-row:nth-of-type(2)");
+    await app.clickSelector('button[aria-label="查看邀请记录"]');
     assert.match(app.text, /注册仅记录邀请，不即时发奖/);
     assert.match(app.text, /测试占位二维码和单纯的人工开通不代表已付款/);
     assert.match(app.text, /未配置可信的网站邀请链接/);
@@ -533,7 +533,7 @@ test("copies the trusted registration link and reports clipboard failures", asyn
   });
   try {
     await app.clickSelector(".account-status-bar");
-    await app.clickSelector(".account-link-row:nth-of-type(2)");
+    await app.clickSelector('button[aria-label="查看邀请记录"]');
     assert.match(app.text, /https:\/\/ai\.mddxz\.top\/register\?ref=INVITE123/);
     await app.click("复制邀请链接");
     assert.match(app.text, /邀请链接已复制/);
@@ -749,4 +749,10 @@ test("late pre-switch refresh cannot undo a single confirmed ON or OFF", async (
 test("Cloud model dropdown hides unready models and switches only to an available model",async()=>{
  const app=await mountApp({activeProfile:'bridge',initialBridgeState:'ready',initialCloudState:'AUTHENTICATED',initialSettings:{onboardingCompleted:true,backendModel:'deepseek/deepseek-flash'},initialModels:[{id:'deepseek/deepseek-flash',availability:'READY',reasoningModes:['normal','auto']},{id:'openai/gpt-6-sol',availability:'READY',reasoningModes:['normal']},{id:'openai/gpt-6-luna',availability:'SETUP_REQUIRED',reasoningModes:['normal']}]});
  try{await app.clickSelector('button[aria-label="模型"]');const options=[...app.document.querySelectorAll('[role="option"]')];assert.equal(options.length,2);assert.ok(!options.some(o=>o.textContent.includes('Luna')));await app.click('GPT-6 Sol');assert.equal(app.settings.backendModel,'openai/gpt-6-sol');assert.equal(app.settings.reasoningMode,'normal');}finally{await app.dispose();}
+});
+
+test("an exhausted wallet shows a distinct balance status while preserving the account", async () => {
+ const app=await mountApp({activeProfile:"bridge",initialCloudState:"AUTHENTICATED",cloudServiceStatus:"BALANCE_REQUIRED",initialSettings:{onboardingCompleted:true}});
+ try {assert.match(app.text,/余额不足/);assert.match(app.text,/查看账户/);assert.doesNotMatch(app.text,/仍可使用|本月额度已用完/);}
+ finally {await app.dispose();}
 });

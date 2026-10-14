@@ -17,30 +17,45 @@ async function mount(initial={state:'CURRENT'},{read,install}={}){
  await React.act(async()=>root.render(React.createElement(UpdateControl)));
  return {get button(){return document.querySelector('button');},get checks(){return checks;},get installs(){return installs;},get document(){return dom.window.document;},async emit(next){await React.act(async()=>handler(next));},async click(){await React.act(async()=>document.querySelector('button').click());},async act(fn){await React.act(fn);},async dispose(){await React.act(async()=>root.unmount());assert.equal(unsubscribed,true);dom.window.close();Object.assign(globalThis,prior);}};
 }
-test('corner update icon checks manually; READY click installs once without checking or confirmation',async()=>{
+test('corner update opens release notes before installing; missing notes and CURRENT state remain usable',async()=>{
  const app=await mount();try{
   assert.equal(app.button.textContent,'');assert.match(app.button.getAttribute('aria-label'),/检查升级/);
   await app.click();assert.equal(app.checks,1);
-  await app.emit({state:'READY',version:'0.3.1'});assert.match(app.button.title,/点击立即安装/);
-  assert.equal(app.document.querySelector('[role="dialog"]'),null);
-  await app.click();assert.equal(app.installs,1);assert.equal(app.checks,1);
+  await app.emit({state:'READY',version:'0.3.1',releaseNotes:'新增功能\n邀请好友\n问题修复\n修复切换',publishedAt:'2026-10-14T00:00:00Z'});assert.match(app.button.title,/查看更新说明/);
+  assert.equal(app.installs,0);
+  assert.match(app.document.querySelector('[role="dialog"]').textContent,/新增功能\n邀请好友/);
+  assert.match(app.document.querySelector('[role="dialog"]').textContent,/发布于/);
+  await app.act(async()=>[...app.document.querySelectorAll('button')].find(b=>b.textContent==='安装更新').click());
+  assert.equal(app.installs,1);assert.equal(app.checks,1);
+  await app.emit({state:'READY',version:'0.3.2',releaseNotes:'<img src=x onerror=alert(1)>'});
+  assert.equal(app.document.querySelector('.update-release-notes img'),null);
+  assert.match(app.document.querySelector('.update-release-notes').textContent,/<img/);
+  await app.emit({state:'READY',version:'0.3.3'});
+  assert.match(app.document.querySelector('.update-release-notes').textContent,/暂未提供/);
  }finally{await app.dispose();}
 });
 test('download progress uses bytes/total and unknown total never exposes invented percentage',async()=>{
  const app=await mount({state:'DOWNLOADING',version:'0.3.1',downloaded:25,total:100});try{
-  assert.equal(app.button.disabled,true);assert.match(app.button.title,/25%/);
+  assert.equal(app.button.disabled,false);assert.match(app.button.title,/25%/);
   assert.equal(app.document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'),'25');
   assert.equal(app.document.querySelector('.update-ring-value').getAttribute('stroke-dashoffset'),'75');
   await app.emit({state:'DOWNLOADING',version:'0.3.1',downloaded:1048576});
   assert.match(app.button.title,/1.0 MB/);assert.ok(!app.button.title.includes('%'));
   assert.equal(app.document.querySelector('[role="progressbar"]').hasAttribute('aria-valuenow'),false);
   assert.ok(app.document.querySelector('.update-ring-unknown'));
+  await app.click();assert.ok(app.document.querySelector('[role="dialog"]'));
+  assert.equal(app.checks,0);assert.equal(app.installs,0);
+  await app.act(async()=>[...app.document.querySelectorAll('button')].find(b=>b.textContent==='稍后').click());
+  assert.equal(app.document.querySelector('[role="dialog"]'),null);
+  assert.ok(app.document.querySelector('[role="progressbar"]'));
  }finally{await app.dispose();}
 });
 test('installation failures show tooltip and retry checks; pending action ignores duplicate clicks',async()=>{
  let finish;const pending=new Promise(resolve=>{finish=resolve;});
  const app=await mount({state:'READY',version:'0.3.1'},{install:async()=>{await pending;throw Error('无法启动安装程序');}});try{
-  await app.click();assert.equal(app.button.disabled,true);await app.click();assert.equal(app.installs,1);
+  await app.click();assert.equal(app.installs,0);
+  await app.act(()=>{[...app.document.querySelectorAll('button')].find(b=>b.textContent==='安装更新').click();});
+  assert.equal(app.button.disabled,true);await app.click();assert.equal(app.installs,1);
   await app.act(async()=>{finish();await pending;});
   assert.match(app.button.title,/无法启动安装程序/);assert.equal(app.button.disabled,false);
   await app.click();assert.equal(app.checks,1);

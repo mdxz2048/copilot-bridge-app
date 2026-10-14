@@ -97,6 +97,7 @@ export interface CloudServiceStatus {
   serviceStatus:
     | "WAITING_FOR_CONTRACT"
     | "AVAILABLE"
+    | "BALANCE_REQUIRED"
     | "UNREACHABLE"
     | "MAINTENANCE"
     | "UPDATE_REQUIRED";
@@ -506,7 +507,9 @@ export class CloudFoundation {
           ? "UPDATE_REQUIRED"
           : this.auth.state === "SERVER_UNREACHABLE"
             ? "UNREACHABLE"
-            : "AVAILABLE";
+            : this.auth.state === "AUTHENTICATED" && this.account?.billing && this.account.billing.balanceRmb <= 0
+              ? "BALANCE_REQUIRED"
+              : "AVAILABLE";
     return {
       contractVersion: CLOUD_CONTRACT_VERSION,
       authState: this.auth.state,
@@ -605,6 +608,7 @@ export class CloudFoundation {
 function serviceStatusMessage(
   status: CloudServiceStatus["serviceStatus"],
 ): string | null {
+  if (status === "BALANCE_REQUIRED") return "余额不足，请联系管理员增加余额后继续使用。";
   if (status === "MAINTENANCE") return "云服务正在维护，请稍后再试。";
   if (status === "UPDATE_REQUIRED") return "需要更新 Copilot Bridge 后才能继续使用云服务。";
   return null;

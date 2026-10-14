@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld("copilotBridge", {
     ipcRenderer.invoke("cloud:manage-subscription"),
   openCloudRelease: (): Promise<void> =>
     ipcRenderer.invoke("cloud:open-release"),
+  getInviteMessage: () => ipcRenderer.invoke('invite:message'),
   getUpdateStatus: () => ipcRenderer.invoke('update:status'),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke('update:check'),
   installUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),

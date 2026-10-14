@@ -1,3 +1,4 @@
+import {inviteMessage} from "./invite-message.js";
 import { ConversationCache } from './cloud/conversation-cache.js';
 import { safeStorage } from 'electron';
 import { BridgeTrace } from './cloud/bridge-trace.js';
@@ -452,7 +453,11 @@ app.whenReady().then(async () => {
   }
   ipcMain.handle("profile:status", () => profileStore.getStatus());
   ipcMain.handle("app:version", () => app.getVersion());
-  ipcMain.handle('update:status', () => updater.status);
+  ipcMain.handle('invite:message', async () => {
+  const summary=await cloudClient.getReferralSummary();
+  return inviteMessage(cloudBaseUrl,summary.code);
+});
+ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle('update:check', () => checkForUpdates(true));
   ipcMain.handle('update:install', () => installUpdate());
   ipcMain.handle("profile:activate", async (_event, target: ProfileId) => {

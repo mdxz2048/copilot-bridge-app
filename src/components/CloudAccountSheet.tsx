@@ -1,3 +1,4 @@
+import {InviteFriendControl} from "./InviteFriendControl";
 import { useState } from "react";
 import type {
   CloudAuthState,
@@ -155,6 +156,7 @@ export function CloudAccountSheet({
             {status.account}
           </p>
 
+          {authenticated && <InviteFriendControl/>}
           <h3>套餐</h3>
           <p className="account-primary-value">{status.plan ?? "—"}</p>
           <CloudValue
@@ -166,7 +168,7 @@ export function CloudAccountSheet({
             value={formatDate(status.validUntil)}
           />
 
-          {authenticated && status.billing && status.billing.balanceRmb <= 0 && <p role="status" className="form-feedback">余额不足，请联系管理员增加余额。当前仍可使用模型。</p>}
+          {authenticated && status.billing && status.billing.balanceRmb <= 0 && <p role="status" className="form-feedback">余额不足，模型请求已暂停。请联系管理员增加余额后继续使用。</p>}
           <h3>{status.billing?"人民币余额":"AI 点数"}</h3>
           <div className="account-usage">
             <div>
@@ -238,6 +240,7 @@ export function CloudAccountSheet({
           <h3>邀请奖励</h3>
           <button
             className="account-link-row"
+            aria-label="查看邀请记录"
             disabled={!status.referral}
             onClick={() => setView("referral")}
             type="button"

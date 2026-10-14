@@ -44,7 +44,7 @@ export function AccountSummaryCard({
         <span className="account-plan-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m4 7 4 4 4-7 4 7 4-4-2 11H6L4 7Z"/></svg></span>
         <strong className="account-plan-name">{cloud.plan ?? "云服务"}</strong>
         <span className="account-summary-metrics">
-          {cloud.billing ? <><span>本周期已用 ¥{cloud.billing.usedRmb.toFixed(4)}</span><span>{cloud.billing.balanceRmb <= 0 ? "余额不足 · 仍可使用" : `余额 ¥${cloud.billing.balanceRmb.toFixed(4)}`}</span></> : cloud.usagePointsUsed == null
+          {cloud.billing ? <><span>本周期已用 ¥{cloud.billing.usedRmb.toFixed(4)}</span><span>{cloud.billing.balanceRmb <= 0 ? "余额不足 · 需充值" : `余额 ¥${cloud.billing.balanceRmb.toFixed(4)}`}</span></> : cloud.usagePointsUsed == null
             ? null : <span>本月已用 {formatPoints(cloud.usagePointsUsed)} 点</span>}
           {cloud.validUntil && <span>{formatShortDate(cloud.validUntil)}到期</span>}
         </span>

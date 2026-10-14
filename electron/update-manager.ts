@@ -3,8 +3,8 @@ import { createReadStream } from 'node:fs';
 import { mkdir, open, rename, unlink, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export interface UpdateRelease { version: string; downloadUrl: string; sha256: string; platform: string; arch: string; channel: string }
-export interface UpdateStatus { state: 'CURRENT' | 'CHECKING' | 'DOWNLOADING' | 'READY' | 'ERROR'; version?: string; downloaded?: number; total?: number; message?: string }
+export interface UpdateRelease { version: string; downloadUrl: string; sha256: string; platform: string; arch: string; channel: string; releaseNotes?: string | null; publishedAt?: string | null }
+export interface UpdateStatus { state: 'CURRENT' | 'CHECKING' | 'DOWNLOADING' | 'READY' | 'ERROR'; version?: string; downloaded?: number; total?: number; message?: string; releaseNotes?: string | null; publishedAt?: string | null }
 interface UpdateOptions {
   currentVersion: string; baseUrl: string; directory: string;
   latest(): Promise<UpdateRelease | null>;
@@ -33,7 +33,7 @@ export class UpdateManager {
     if (this.pending) return this.pending;
     this.pending = this.run().catch(error => {
       this.ready = null;
-      this.emit({ state: 'ERROR', message: error instanceof Error ? error.message : String(error) });
+      this.emit({ ...this.status, state: 'ERROR', message: error instanceof Error ? error.message : String(error) });
       return this.status;
     }).finally(() => { this.pending = null; });
     return this.pending;
@@ -47,6 +47,7 @@ export class UpdateManager {
     const url = new URL(release.downloadUrl), base = new URL(this.options.baseUrl);
     if (url.protocol !== 'https:' || url.origin !== base.origin || url.username || url.password || !/^[a-f0-9]{64}$/i.test(release.sha256)) throw new Error('升级信息校验失败。');
     await mkdir(this.options.directory, { recursive: true });
+    const details = { version: release.version, releaseNotes: release.releaseNotes, publishedAt: release.publishedAt };
     const path = join(this.options.directory, `CopilotBridge-${release.version}.exe`);
     const temporary = path + '.part';
     // Keep only the offered installer; abandoned downloads cannot accumulate.
@@ -57,6 +58,7 @@ export class UpdateManager {
     try { cached = (await digest(path)).toLowerCase() === release.sha256.toLowerCase(); } catch { /* Cache may not exist. */ }
     if (!cached) {
       await unlink(path).catch((e: NodeJS.ErrnoException) => { if (e.code !== 'ENOENT') throw e; });
+      this.emit({ state: 'DOWNLOADING', ...details, downloaded: 0 });
       const response = await (this.options.fetch ?? fetch)(url, { redirect: 'error', signal: AbortSignal.timeout(15 * 60_000) });
       if (!response.ok || !response.body) throw new Error(`安装包下载失败 (${response.status})。`);
       const length = response.headers.get('content-length'), total = length ? Number(length) : undefined;
@@ -66,7 +68,7 @@ export class UpdateManager {
       const hash = createHash('sha256'); let signature = Buffer.alloc(0);
       const file = await open(temporary, 'wx', 0o600);
       try {
-        this.emit({ state: 'DOWNLOADING', version: release.version, downloaded, total });
+        this.emit({ state: 'DOWNLOADING', ...details, downloaded, total });
         for await (const chunk of response.body) {
           const bytes = Buffer.from(chunk); downloaded += bytes.length;
           if (downloaded > limit) throw new Error('安装包超过大小限制。');
@@ -74,18 +76,18 @@ export class UpdateManager {
           hash.update(bytes);
           let offset = 0;
           while (offset < bytes.length) { const written = await file.write(bytes, offset, bytes.length - offset); if (!written.bytesWritten) throw new Error('写入安装包失败。'); offset += written.bytesWritten; }
-          if (Date.now() - lastProgress > 300) { this.emit({ state: 'DOWNLOADING', version: release.version, downloaded, total }); lastProgress = Date.now(); }
+          if (Date.now() - lastProgress > 300) { this.emit({ state: 'DOWNLOADING', ...details, downloaded, total }); lastProgress = Date.now(); }
         }
         if (signature.toString('ascii') !== 'MZ' || (total !== undefined && total !== downloaded) || hash.digest('hex').toLowerCase() !== release.sha256.toLowerCase()) throw new Error('安装包校验失败，请重新检查升级。');
         await file.sync(); await file.close(); await rename(temporary, path);
       } catch (error) { await file.close().catch(() => undefined); await unlink(temporary).catch(() => undefined); throw error; }
     }
     this.ready = { path, release };
-    this.emit({ state: 'READY', version: release.version }); return this.status;
+    this.emit({ state: 'READY', ...details }); return this.status;
   }
   async installer(): Promise<string> {
     if (this.status.state !== 'READY' || !this.ready) throw new Error('安装包尚未下载完成。');
-    if (await digest(this.ready.path) !== this.ready.release.sha256.toLowerCase()) { this.ready = null; this.emit({ state: 'ERROR', message: '安装包校验失败，请重新下载。' }); throw new Error('安装包校验失败。'); }
+    if (await digest(this.ready.path) !== this.ready.release.sha256.toLowerCase()) { this.ready = null; this.emit({ ...this.status, state: 'ERROR', message: '安装包校验失败，请重新下载。' }); throw new Error('安装包校验失败。'); }
     return this.ready.path;
   }
 }

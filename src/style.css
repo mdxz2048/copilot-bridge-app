@@ -1294,6 +1294,25 @@ code {
 }
 
 .update-control { display:flex; align-items:center; flex:none; }
+.update-details,.invite-details { -webkit-app-region:no-drag; }
+.update-details h3 { margin:20px 0 10px; font-size:14px; font-weight:600; }
+.update-release-notes { max-height:min(280px,35vh); overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:16px; background:var(--surface-secondary); border:1px solid var(--border-subtle); border-radius:12px; }
+.modal .dialog-caption { font-size:12px; color:var(--text-secondary); line-height:1.7; }
+.dialog-status { padding-top:10px; }
+.modal-actions .dialog-secondary { background:var(--surface-hover); color:var(--text-primary); border:1px solid var(--border-control); }
+.modal-actions .dialog-secondary:hover { background:var(--surface-secondary); }
+.dialog-download-track { height:5px; overflow:hidden; border-radius:8px; background:var(--surface-hover); }
+.dialog-download-track span { display:block; height:100%; background:var(--success); border-radius:inherit; }
+.dialog-download-track .indeterminate { width:28%; animation:dialog-progress 1.6s ease-in-out infinite alternate; }
+.invite-label { display:block; margin:20px 0 10px; font-size:13px; font-weight:600; }
+.invite-message { display:block; width:100%; resize:vertical; min-height:140px; max-height:35vh; padding:14px; font:inherit; font-size:13px; line-height:1.8; color:var(--text-primary); background:var(--surface-secondary); border:1px solid var(--border-control); border-radius:12px; }
+.invite-message:focus-visible { outline:1px solid var(--accent); box-shadow:0 0 0 2px var(--focus-ring); }
+.invite-url { overflow-wrap:anywhere; }
+.modal .dialog-error { color:var(--danger); font-size:13px; overflow-wrap:anywhere; }
+.modal .dialog-success { color:var(--success); font-size:13px; }
+@keyframes dialog-progress { to { transform:translateX(250%); } }
+@media(prefers-reduced-motion:reduce) { .dialog-download-track .indeterminate { animation:none; } }
+@media(max-width:420px) { .modal-actions { flex-wrap:wrap; } .modal-actions button { flex:1; min-width:100px; } }
 .update-icon-button.update-ready { color:var(--accent); }
 .update-symbol { width:18px; height:18px; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .update-progress-ring { position:absolute; inset:0; width:32px; height:32px; transform:rotate(-90deg); pointer-events:none; }

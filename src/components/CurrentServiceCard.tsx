@@ -208,6 +208,9 @@ function cloudStatePresentation(cloud: CloudServiceStatus | null) {
       tone: cloud.lastError.retryable ? "warning" : "danger",
     } as const;
   }
+  if (cloud?.serviceStatus === "BALANCE_REQUIRED") {
+    return { symbol: "●", title: "余额不足", message: cloud.message, tone: "danger" } as const;
+  }
   if (cloud?.serviceStatus === "MAINTENANCE") {
     return {
       symbol: "●",
@@ -306,6 +309,7 @@ function cloudAction(
 }
 
 function cloudActionLabel(cloud: CloudServiceStatus | null): string {
+  if (cloud?.serviceStatus === "BALANCE_REQUIRED") return "查看账户";
   if (cloud?.serviceStatus === "UPDATE_REQUIRED") return "立即更新";
   switch (cloud?.lastError?.action) {
     case "RECONNECT_PROVIDER":

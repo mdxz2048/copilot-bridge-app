@@ -451,7 +451,7 @@ test("centralizes V2 business error actions", () => {
   assert.deepEqual(
     cloudErrorPolicy(new CloudError("INSUFFICIENT_POINTS", "points")),
     {
-      authState: "QUOTA_EXCEEDED",
+      authState: null,
       action: "ADD_POINTS",
       retryable: false,
     },
@@ -1134,5 +1134,18 @@ test("policy polling refreshes wallet, usage and devices and deduplicates slow r
     await new Promise(resolve=>setTimeout(resolve,0));release();
     const status=await first;await second;
     assert.equal(calls,1);assert.equal(status.remainingPoints,900);assert.equal(status.usageRequests,8);assert.deepEqual(status.devices,[]);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test("empty RMB balance blocks service without logging out and recovers after administrator credit", async () => {
+  const directory=await mkdtemp(join(tmpdir(),"bridge-balance-policy-"));
+  try {
+    const zero={...productMe(),billing:{balanceRmb:0,usedRmb:0}};
+    const client=configuredAccountClient(zero);
+    const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,"device.json"),"0.1.0"),"0.1.0");
+    const blocked=await foundation.refresh();
+    assert.equal(blocked.authState,"AUTHENTICATED");assert.equal(blocked.serviceStatus,"BALANCE_REQUIRED");assert.match(blocked.message,/余额不足/);
+    client.getMeV2=async()=>({...zero,billing:{...zero.billing,balanceRmb:10}});
+    const restored=await foundation.syncPolicy();assert.equal(restored.serviceStatus,"AVAILABLE");assert.equal(restored.authState,"AUTHENTICATED");assert.equal(restored.lastError,null);
   }finally{await rm(directory,{recursive:true,force:true});}
 });

@@ -204,6 +204,7 @@ export interface CloudServiceStatus {
   serviceStatus:
     | "WAITING_FOR_CONTRACT"
     | "AVAILABLE"
+    | "BALANCE_REQUIRED"
     | "UNREACHABLE"
     | "MAINTENANCE"
     | "UPDATE_REQUIRED";
@@ -277,11 +278,12 @@ export interface ServiceSwitchResult {
 declare global {
   interface Window {
     copilotBridge: {
+      getInviteMessage(): Promise<{message:string;downloadUrl:string;referralUrl?:string}>;
       getAppVersion(): Promise<string>;
-      getUpdateStatus(): Promise<{ state: string; version?: string; downloaded?: number; total?: number; message?: string }>;
+      getUpdateStatus(): Promise<{ state: string; version?: string; downloaded?: number; total?: number; message?: string; releaseNotes?: string | null; publishedAt?: string | null }>;
       checkForUpdates(): Promise<void>;
       installUpdate(): Promise<void>;
-      onUpdateStatus(handler: (status: { state: string; version?: string; downloaded?: number; total?: number; message?: string }) => void): () => void;
+      onUpdateStatus(handler: (status: { state: string; version?: string; downloaded?: number; total?: number; message?: string; releaseNotes?: string | null; publishedAt?: string | null }) => void): () => void;
       getProfileStatus(): Promise<ProfileStatus>;
       activateProfile(target: ProfileId): Promise<ProfileStatus>;
       acknowledgeRestart(): Promise<ProfileStatus>;

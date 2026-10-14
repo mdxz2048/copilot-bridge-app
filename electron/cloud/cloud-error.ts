@@ -106,12 +106,13 @@ export function cloudErrorPolicy(error: unknown): CloudErrorPolicy {
         retryable: false,
       };
     case "MONTHLY_QUOTA_EXCEEDED":
-    case "INSUFFICIENT_POINTS":
       return {
         authState: "QUOTA_EXCEEDED",
         action: "ADD_POINTS",
         retryable: false,
       };
+    case "INSUFFICIENT_POINTS":
+      return { authState: null, action: "ADD_POINTS", retryable: false };
     case "PROVIDER_AUTH_REQUIRED":
       return {
         authState: null,
