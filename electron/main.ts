@@ -375,9 +375,7 @@ function createWindow(): void {
   mainWindow = window;
   window.webContents.once("did-finish-load", () => {
     if(isIsolatedTestInstance)return;
-    void chatGptManager.ensureInstalledOnOpen(sendChatGptStatus,
-      () => shell.openExternal(ChatGptManager.storeUri()),
-      () => shell.openExternal(ChatGptManager.downloadPageUri()))
+    void chatGptManager.refreshStatus(sendChatGptStatus)
       .catch(error=>logDiagnostic(`Automatic official installation check failed: ${error instanceof Error?error.message:String(error)}`));
   });
   checkUpdatesOnOpen();
@@ -388,6 +386,7 @@ function createWindow(): void {
     }
   });
   window.on("focus", () => {
+    void chatGptManager.refreshStatus(sendChatGptStatus);
     void refreshCloudOnFocus()?.catch((error: unknown) => {
       logDiagnostic(`Cloud focus refresh failed: ${
         error instanceof Error ? error.message : String(error)
@@ -476,17 +475,20 @@ ipcMain.handle('update:status', () => updater.status);
     throw new Error("自动重启已暂时禁用。请先解决 Windows 蓝屏问题，再手动重启以应用环境切换。");
   });
   ipcMain.handle("bridge:status", () => bridgeManager.getStatus());
-  ipcMain.handle("chatgpt:status", () => chatGptManager.detect());
-  ipcMain.handle("chatgpt:install", () => {
+  ipcMain.handle("chatgpt:status", () => chatGptManager.refreshStatus());
+  ipcMain.handle("chatgpt:install", async () => {
+    if ((await chatGptManager.refreshStatus(sendChatGptStatus)).state === "INSTALLED") return;
     chatGptManager.install(sendChatGptStatus, () => shell.openExternal(ChatGptManager.storeUri()), () => shell.openExternal(ChatGptManager.downloadPageUri()));
   });
   ipcMain.handle("chatgpt:download", async () => {
     await chatGptManager.installOffline(join(app.getPath("userData"), "official-client"), sendChatGptStatus);
   });
-  ipcMain.handle("chatgpt:install-cancel", () => {
+  ipcMain.handle("chatgpt:install-cancel", async () => {
     const cancelled = chatGptManager.cancelInstall();
+    const detected = await chatGptManager.refreshStatus();
+    if (detected.state === "INSTALLED") { sendChatGptStatus(detected); return; }
     sendChatGptStatus(cancelled
-      ? { state: "NOT_INSTALLED", message: "已取消 ChatGPT 安装。" }
+      ? { state: "NOT_INSTALLED", message: "已取消安装包下载。商店安装不受影响，完成后会自动检测。" }
       : { state: "INSTALLING", step: "INSTALLING", message: "Windows 正在完成安装，请稍候；关闭此窗口不会中止系统安装。" });
   });
   const prepareOfficialConnection=() => prepareOfficialClientConnection({

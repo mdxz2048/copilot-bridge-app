@@ -139,6 +139,7 @@ async function mountApp({
       chatGptState = 'INSTALLING';
       chatGptStatusListener({state:'INSTALLING',step:'INSTALLING',message:'正在下载官方安装包… 25%'});
     },
+    cancelChatGptInstall: async () => { events.push('cancelChatGptInstall'); },
     launchChatGpt: async () => { events.push('launchChatGpt'); },
     getModels: async () => initialModels,
     getCloudStatus: async () => cloud,
@@ -269,6 +270,12 @@ async function mountApp({
       chatGptState = 'INSTALLED';
       await act(async () => chatGptStatusListener({state: 'INSTALLED', message: '已安装 ChatGPT'}));
     },
+    setDetectedChatGptState(value) { chatGptState = value; },
+    async emitChatGptStatus(status) {
+      chatGptState = status.state;
+      await act(async () => chatGptStatusListener(status));
+    },
+    async focusWindow() { await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus'))); },
     async dispose() {
       await act(async () => root.unmount());
       dom.window.close();
@@ -281,6 +288,66 @@ async function mountApp({
     },
   };
 }
+
+test('Store completion shows verified success then closes without changing Cloud mode',async()=>{
+ const app=await mountApp({chatGptState:'NOT_INSTALLED'});
+ try{
+  await app.click('安装 ChatGPT',true);
+  await app.emitChatGptStatus({state:'INSTALLING',step:'WAITING_FOR_STORE',message:'请在商店完成安装'});
+  assert.match(app.text,/商店不可用时，会自动从官网下载安装/);
+  assert.doesNotMatch(app.text,/下载并校验官方包/);
+  await app.chatGptInstalled();assert.match(app.text,/ChatGPT 安装完成/);
+  await app.act(async()=>{await new Promise(r=>setTimeout(r,2100))});
+  assert.equal(app.document.querySelector('[role="dialog"]'),null);
+  assert.match(app.text,/安装完成，可以开启 Cloud/);assert.deepEqual(app.events,['installChatGpt']);
+  assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'false');
+ }finally{await app.dispose();}
+});
+
+test('cancelled download does not stop detecting a later Store installation on focus',async()=>{
+ const app=await mountApp({chatGptState:'NOT_INSTALLED'});
+ try{
+  await app.click('安装 ChatGPT',true);
+  await app.emitChatGptStatus({state:'ERROR',message:'已取消安装包下载。'});
+  app.setDetectedChatGptState('INSTALLED');await app.focusWindow();
+  assert.match(app.text,/ChatGPT 安装完成/);await app.click('完成');
+  assert.equal(app.document.querySelector('[role="dialog"]'),null);
+  assert.doesNotMatch(app.text,/已取消安装包下载/);
+  assert.deepEqual(app.events,['installChatGpt']);
+ }finally{await app.dispose();}
+});
+
+test('postponing installation dismisses onboarding without cancelling downloads or reopening a dialog',async()=>{
+ const app=await mountApp({chatGptState:'NOT_INSTALLED'});
+ try{
+  await app.click('稍后');assert.equal(app.document.querySelector('[role="dialog"]'),null);
+  await app.focusWindow();assert.equal(app.document.querySelector('[role="dialog"]'),null);
+  assert.deepEqual(app.events,[]);
+ }finally{await app.dispose();}
+});
+
+test('postponed installation can be viewed again without launching a second installer',async()=>{
+ const app=await mountApp({chatGptState:'NOT_INSTALLED'});
+ try{
+  await app.click('安装 ChatGPT',true);
+  await app.emitChatGptStatus({state:'INSTALLING',step:'DOWNLOADING',message:'正在下载官方安装包…'});
+  assert.ok(!app.text.includes('下载并安装'));await app.click('稍后');
+  await app.click('查看安装进度');assert.ok(app.document.querySelector('[role="dialog"]'));
+  assert.deepEqual(app.events,['installChatGpt']);
+  await app.emitChatGptStatus({state:'INSTALLING',step:'INSTALLING',message:'Windows 正在安装…'});
+  assert.ok(!app.text.includes('取消下载'));await app.click('稍后');assert.deepEqual(app.events,['installChatGpt']);
+ }finally{await app.dispose();}
+});
+
+test('manual recheck recognizes installed ChatGPT after a failed detector and fresh launch does too',async()=>{
+ const app=await mountApp({chatGptState:'ERROR'});
+ try{
+  app.setDetectedChatGptState('INSTALLED');await app.click('已安装，重新检测');
+  assert.equal(app.document.querySelector('[role="dialog"]'),null);assert.deepEqual(app.events,[]);
+ }finally{await app.dispose();}
+ const reopened=await mountApp({chatGptState:'INSTALLED'});
+ try{assert.equal(reopened.document.querySelector('[role="dialog"]'),null);assert.deepEqual(reopened.events,[]);}finally{await reopened.dispose();}
+});
 
 test("first run installed defaults to Original without a service selector or configuration mutation", async () => {
   const app=await mountApp();try{assert.equal(app.document.querySelector('[role="dialog"]'),null);assert.doesNotMatch(app.text,/GitHub Copilot|切换 AI 服务|我的 API|本地模型/);assert.deepEqual(app.events,[]);assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'false');}finally{await app.dispose();}
@@ -372,7 +439,7 @@ test('install launch errors are visible and installation in progress cannot star
   try { await app.click('安装 ChatGPT'); assert.match(app.text, /安装程序启动失败/); }
   finally { await app.dispose(); }
   const running = await mountApp({initialSettings: {onboardingCompleted: true}, chatGptState: 'INSTALLING'});
-  try { const button = [...running.document.querySelectorAll('button')].find(b => b.textContent === '正在安装 ChatGPT…'); assert.ok(button?.disabled); assert.deepEqual(running.events, []); }
+  try { await running.click('查看安装进度'); assert.ok(running.document.querySelector('[role="dialog"]')); assert.deepEqual(running.events, []); }
   finally { await running.dispose(); }
 });
 test('Bridge switch stays disabled until ChatGPT installation is detected', async () => {
@@ -685,20 +752,18 @@ test('Old Cloud metadata falls back to normal instead of invented effort control
   } finally { await app.dispose(); }
 });
 
-test('offline official installer starts only on click, shows progress and blocks repeated downloads', async () => {
-  const app=await mountApp({chatGptState:'NOT_INSTALLED',failInstallChatGpt:true});
+test('one installation click shows automatic Store fallback progress without channel choices', async () => {
+  const app=await mountApp({chatGptState:'NOT_INSTALLED'});
   try {
-    assert.deepEqual(app.events,[]);
-    assert.ok(app.button('下载并安装'));
-    await app.click('安装 ChatGPT',true);
-    assert.match(app.text,/安装程序启动失败/);
-    await app.click('下载并安装');assert.deepEqual(app.events,['installChatGpt','openChatGptDownload']);
-    assert.match(app.text,/正在下载官方安装包… 25%/);
-    assert.match(app.text,/下载并校验官方包/);
-    const download=[...app.document.querySelectorAll('button')].find(button=>button.textContent==='下载并安装');
-    assert.equal(download.disabled,true);
-    await app.act(async()=>download.click());assert.deepEqual(app.events,['installChatGpt','openChatGptDownload']);
+    assert.deepEqual(app.events,[]);assert.doesNotMatch(app.text,/下载并安装/);
+    await app.click('安装 ChatGPT',true);assert.deepEqual(app.events,['installChatGpt']);
+    assert.match(app.text,/正在检查 ChatGPT 安装状态/);
+    await app.emitChatGptStatus({state:'INSTALLING',step:'WAITING_FOR_STORE',message:'正在通过官方 Microsoft Store 安装…'});
+    await app.emitChatGptStatus({state:'INSTALLING',step:'DOWNLOADING',message:'正在下载官方安装包… 25%'});
+    assert.match(app.text,/25%/);assert.doesNotMatch(app.text,/下载并安装/);
     assert.equal(app.document.querySelector('button[role="switch"]').disabled,true);
+    await app.click('稍后');await app.click('查看安装进度');
+    assert.deepEqual(app.events,['installChatGpt']);
   } finally {await app.dispose();}
 });
 

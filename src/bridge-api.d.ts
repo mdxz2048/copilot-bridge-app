@@ -16,7 +16,7 @@ export interface ChatGptStatus {
   packageFamilyName?: string;
   version?: string;
   appId?: string;
-  step?: "CHECKING" | "INSTALLING" | "WAITING_FOR_STORE" | "VERIFYING";
+  step?: "CHECKING" | "INSTALLING" | "DOWNLOADING" | "WAITING_FOR_STORE" | "VERIFYING";
   downloadAvailable?: boolean;
 }
 

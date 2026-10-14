@@ -88,11 +88,11 @@ export function CurrentServiceCard({
           </p>
           <div className="service-actions">
             <Button
-              disabled={busy || chatGpt.state === "INSTALLING"}
+              disabled={busy}
               onClick={chatGpt.state !== "INSTALLED" ? onInstallChatGpt : profilePending ? onRestartChatGpt : onOpenChatGpt}
               type="button"
             >
-              <ServiceActionIcon/>{chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
+              <ServiceActionIcon/>{chatGpt.state === "INSTALLING" ? "查看安装进度" : chatGpt.state !== "INSTALLED"
                 ? copy.installChatGpt
                 : profilePending
                   ? "重启 ChatGPT"
@@ -173,7 +173,7 @@ export function CurrentServiceCard({
 
         <div className="service-actions">
           <Button
-            disabled={busy || chatGpt.state === "INSTALLING"
+            disabled={busy
               || (!serviceReady && !profilePending && chatGpt.state === "INSTALLED")}
             onClick={
               chatGpt.state !== "INSTALLED"
@@ -185,7 +185,7 @@ export function CurrentServiceCard({
             }
             type="button"
           >
-            <ServiceActionIcon/>{chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT…" : chatGpt.state !== "INSTALLED"
+            <ServiceActionIcon/>{chatGpt.state === "INSTALLING" ? "查看安装进度" : chatGpt.state !== "INSTALLED"
               ? copy.installChatGpt
               : profilePending
                 ? "重启 ChatGPT"

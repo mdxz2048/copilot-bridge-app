@@ -52,11 +52,14 @@ export function App() {
   const [cloudLoginIssue, setCloudLoginIssue] = useState<"SUBSCRIPTION_REQUIRED" | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
+  const [installDismissed, setInstallDismissed] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [pendingMode, setPendingMode] = useState<boolean | null>(null);
   const confirmedMode = useRef<boolean | null>(null);
   const appStateRevision = useRef(0);
   const chatGptState = useRef<ChatGptStatus["state"]>("NOT_INSTALLED");
+  const chatGptRevision = useRef(0);
+  const [checkingInstallation, setCheckingInstallation] = useState(false);
   const [restartDismissed, setRestartDismissed] = useState(false);
   const [restartingChatGpt, setRestartingChatGpt] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export function App() {
 
   const refreshApp = async () => {
     const revision = ++appStateRevision.current;
+    const installationRevision = chatGptRevision.current;
     try {
       const [nextProfile, nextBridge, nextSettings, nextChatGpt] =
         await Promise.all([
@@ -83,8 +87,10 @@ export function App() {
       setProfile(nextProfile);
       setBridge(nextBridge);
       setSettings(nextSettings);
-      chatGptState.current = nextChatGpt.state;
-      setChatGpt(nextChatGpt);
+      if (installationRevision === chatGptRevision.current) {
+        chatGptState.current = nextChatGpt.state;
+        setChatGpt(nextChatGpt);
+      }
       if (nextBridge.state === "ready") {
         const nextModels = await window.copilotBridge.getModels();
         if (revision === appStateRevision.current) setModels(nextModels);
@@ -124,6 +130,7 @@ export function App() {
       setProfile(next);
     });
     const removeChatGpt = window.copilotBridge.onChatGptStatus((next) => {
+      ++chatGptRevision.current;
       const newlyInstalled = next.state === "INSTALLED" && chatGptState.current !== "INSTALLED";
       chatGptState.current = next.state;
       setChatGpt(next);
@@ -142,9 +149,44 @@ export function App() {
 
   useEffect(() => {
     if (chatGpt.state !== "INSTALLED" || !installOpen) return;
-    const timer = window.setTimeout(() => setInstallOpen(false), 800);
+    const timer = window.setTimeout(() => {
+      setInstallOpen(false);
+      setInstallDismissed(true);
+      setNotice("✓ ChatGPT 安装完成，可以开启 Cloud。");
+    }, 2000);
     return () => window.clearTimeout(timer);
   }, [chatGpt.state, installOpen]);
+
+  const checkInstallation = async () => {
+    if (checkingInstallation) return;
+    setCheckingInstallation(true);
+    const revision = chatGptRevision.current;
+    try {
+      const next = await window.copilotBridge.getChatGptStatus();
+      if (revision !== chatGptRevision.current) return;
+      ++chatGptRevision.current;
+      chatGptState.current = next.state;
+      setChatGpt(next);
+    } catch {
+      // A transient IPC failure is not proof that the app is uninstalled.
+    } finally { setCheckingInstallation(false); }
+  };
+
+  useEffect(() => {
+    if (!loaded || chatGpt.state === "INSTALLED") return;
+    let inFlight = false;
+    const check = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try { await checkInstallation(); } finally { inFlight = false; }
+    };
+    const timer = window.setInterval(() => { void check(); }, 5000);
+    window.addEventListener("focus", check);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", check);
+    };
+  }, [loaded, chatGpt.state]);
 
   useEffect(() => {
     if (!notice) return;
@@ -261,14 +303,14 @@ export function App() {
 
   const installChatGpt = () => {
     setInstallOpen(true);
+    if (chatGptState.current === "INSTALLING") return;
+    ++chatGptRevision.current;
+    chatGptState.current = "INSTALLING";
+    setChatGpt({state:"INSTALLING",step:"CHECKING",message:"正在检查 ChatGPT 安装状态…"});
     void window.copilotBridge.installChatGpt().catch(error => {
+      if (chatGptState.current === "INSTALLED") return;
+      chatGptState.current = "ERROR";
       setChatGpt({ state: 'ERROR', message: error instanceof Error ? error.message : '无法启动 ChatGPT 安装，请重试。' });
-    });
-  };
-  const downloadChatGpt = () => {
-    setInstallOpen(true);
-    void window.copilotBridge.openChatGptDownload().catch(() => {
-      setChatGpt({ state: "ERROR", message: "无法下载安装 ChatGPT，请重试。" });
     });
   };
 
@@ -375,16 +417,6 @@ export function App() {
         </button>
       </footer>
 
-      {loaded && !settings.onboardingCompleted && chatGpt.state !== 'INSTALLED' && !installOpen && (
-        <Modal title="先安装 ChatGPT">
-          <p>安装官方 ChatGPT 客户端后，才能开启 Cloud 模式。</p>
-          {chatGpt.state === 'ERROR' && <p role="alert">{chatGpt.message}</p>}
-          <Button disabled={chatGpt.state === 'INSTALLING'} onClick={installChatGpt} type="button">
-            {chatGpt.state === 'INSTALLING' ? '正在安装 ChatGPT…' : '安装 ChatGPT'}
-          </Button>
-          <Button className="secondary" disabled={chatGpt.state === "INSTALLING" && chatGpt.step !== "WAITING_FOR_STORE"} onClick={downloadChatGpt} type="button">下载并安装</Button>
-        </Modal>
-      )}
       {settingsOpen && (
         <ProductSettingsSheet
           bridge={bridge}
@@ -446,26 +478,23 @@ export function App() {
         />
       )}
 
-      {installOpen && (
-        <Modal onClose={() => setInstallOpen(false)} title="安装 ChatGPT">
-          <ul className="progress-steps">
-            <li>{chatGpt.step === "CHECKING" ? "◌" : "✓"} 检查系统环境</li>
-            <li>{chatGpt.step === "INSTALLING" ? "◌" : "○"} 安装 ChatGPT</li>
-            <li>{chatGpt.step === "VERIFYING" ? "◌" : "○"} 验证安装</li>
-          </ul>
-          <p>{chatGpt.message}</p>
-          {chatGpt.state !== "INSTALLED" && <p>Bridge 会下载并校验官方包，然后启动安装。请允许 Windows 管理员确认。</p>}
-          <div className="modal-actions">
-            {chatGpt.state !== "INSTALLED" && <Button disabled={chatGpt.state === "INSTALLING" && chatGpt.step !== "WAITING_FOR_STORE"} onClick={downloadChatGpt} type="button">下载并安装</Button>}
+      {(installOpen || (chatGpt.state !== "INSTALLED" && loaded && !settings.onboardingCompleted && !installDismissed)) && (
+        <Modal onClose={() => { setInstallOpen(false); setInstallDismissed(true); }} title={chatGpt.state === "INSTALLED" ? "ChatGPT 安装完成" : chatGpt.state === "INSTALLING" ? "正在安装 ChatGPT" : "先安装 ChatGPT"}>
+          <p>{chatGpt.state === "INSTALLED" ? "已检测到 ChatGPT，可开启 Cloud。" : "Bridge 会自动安装 ChatGPT；商店不可用时，会自动从官网下载安装。"}</p>
+          {chatGpt.state !== "INSTALLED" && <p role={chatGpt.state === "ERROR" ? "alert" : "status"}>{chatGpt.message}</p>}
+          {chatGpt.state === "INSTALLING" && chatGpt.step === "INSTALLING" && <p>请在 Windows 提示中允许安装，Bridge 会自动确认安装结果。</p>}
+          <div className="modal-actions installation-actions">
+            {(chatGpt.state === "NOT_INSTALLED" || chatGpt.state === "ERROR") && <Button onClick={installChatGpt} type="button">安装 ChatGPT</Button>}
+            {(chatGpt.state === "NOT_INSTALLED" || chatGpt.state === "ERROR") && <Button className="secondary" disabled={checkingInstallation} onClick={() => void checkInstallation()} type="button">{checkingInstallation ? "正在检测…" : "已安装，重新检测"}</Button>}
             <Button
               className="secondary"
               onClick={() => {
-                void window.copilotBridge.cancelChatGptInstall();
                 setInstallOpen(false);
+                setInstallDismissed(true);
               }}
               type="button"
             >
-              {zhCN.common.cancel}
+              {chatGpt.state === "INSTALLED" ? "完成" : "稍后"}
             </Button>
           </div>
         </Modal>
@@ -498,7 +527,7 @@ export function App() {
         </Modal>
       )}
 
-      {profile?.restartRequired && !progressOpen && chatGpt.state === "INSTALLED" && !restartDismissed && (
+      {profile?.restartRequired && !progressOpen && !installOpen && chatGpt.state === "INSTALLED" && !restartDismissed && (
         <Modal onClose={() => { if (!restartingChatGpt) setRestartDismissed(true); }} title="现在重启 ChatGPT？">
           <p>
             {profile.pendingProfile === "bridge"
