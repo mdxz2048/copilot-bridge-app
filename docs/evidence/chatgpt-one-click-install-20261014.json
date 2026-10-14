@@ -1,11 +1,44 @@
 {
-  "releaseStatus": "git_only_unreleased",
-  "appVersion": "0.3.15",
-  "tests": {"total": 225, "passed": 225, "failed": 0, "skipped": 0},
-  "renderer": {"themes": ["light", "dark"], "widths": [720, 900], "automaticFallbackCopy": true, "postponeAndReopen": true, "verifiedSuccessThenDone": true, "successRemainsUntilDone": true, "startupMissingAutoInstallsOnce": true, "startupInstalledNoModal": true, "cloudModeUnchanged": true, "noModalOverflow": true},
-  "windowsDetection": {"independentChannels": ["appx", "current_user_registration", "installation_directory", "official_running_process"], "localInstalledVersion": "26.1007.2314.0", "freshDetectorChecks": 2, "realPowerShellDirectoryFixture": true, "rejectsMissingExecutableAndWrongPublisher": true},
+  "releaseStatus": "published_0.3.16",
+  "appVersion": "0.3.16",
+  "tests": {
+    "total": 225,
+    "passed": 225,
+    "failed": 0,
+    "skipped": 0
+  },
+  "renderer": {
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "widths": [
+      720,
+      900
+    ],
+    "automaticFallbackCopy": true,
+    "postponeAndReopen": true,
+    "verifiedSuccessThenDone": true,
+    "successRemainsUntilDone": true,
+    "startupMissingAutoInstallsOnce": true,
+    "startupInstalledNoModal": true,
+    "cloudModeUnchanged": true,
+    "noModalOverflow": true
+  },
+  "windowsDetection": {
+    "independentChannels": [
+      "appx",
+      "current_user_registration",
+      "installation_directory",
+      "official_running_process"
+    ],
+    "localInstalledVersion": "26.1007.2314.0",
+    "freshDetectorChecks": 2,
+    "realPowerShellDirectoryFixture": true,
+    "rejectsMissingExecutableAndWrongPublisher": true
+  },
   "realInstallationPerformed": false,
   "officialClientRestarted": false,
-  "websiteUploaded": false,
+  "websiteUploaded": true,
   "cloudDeployed": false
 }
