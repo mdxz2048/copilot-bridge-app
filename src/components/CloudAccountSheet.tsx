@@ -1,5 +1,5 @@
 import {InviteFriendControl} from "./InviteFriendControl";
-import { useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type {
   CloudAuthState,
   CloudServiceStatus,
@@ -41,6 +41,23 @@ export function CloudAccountSheet({
   const authenticated = status?.authState === "AUTHENTICATED";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const passwordInputId = useId();
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const passwordSelection = useRef<{start: number; end: number; direction: "forward" | "backward" | "none"} | null>(null);
+  useEffect(() => setPasswordVisible(false), [authenticated]);
+  useLayoutEffect(() => {
+    const selection = passwordSelection.current;
+    if (selection) passwordInput.current?.setSelectionRange(selection.start, selection.end, selection.direction);
+    passwordSelection.current = null;
+  }, [passwordVisible]);
+  const togglePasswordVisibility = () => {
+    const input = passwordInput.current;
+    if (input?.selectionStart != null && input.selectionEnd != null) {
+      passwordSelection.current = {start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection ?? "none"};
+    }
+    setPasswordVisible(visible => !visible);
+  };
   const [view, setView] = useState<
     "account" | "devices" | "referral" | "usage"
   >("account");
@@ -130,15 +147,35 @@ export function CloudAccountSheet({
               value={email}
             />
           </label>
-          <label>
-            <span>{copy.password}</span>
+          <div className="cloud-password-field">
+            <label htmlFor={passwordInputId}>{copy.password}</label>
+            <div className="password-input-control">
             <input
               autoComplete="current-password"
+              id={passwordInputId}
               onChange={(event) => setPassword(event.target.value)}
-              type="password"
+              ref={passwordInput}
+              type={passwordVisible ? "text" : "password"}
               value={password}
             />
-          </label>
+            <button
+              aria-controls={passwordInputId}
+              aria-label={passwordVisible ? "隐藏密码" : "显示密码"}
+              aria-pressed={passwordVisible}
+              className="password-visibility-toggle"
+              onClick={togglePasswordVisibility}
+              onMouseDown={event => event.preventDefault()}
+              title={passwordVisible ? "隐藏密码" : "显示密码"}
+              type="button"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                <circle cx="12" cy="12" r="3" />
+                {passwordVisible && <path d="m3 3 18 18" />}
+              </svg>
+            </button>
+            </div>
+          </div>
           <Button
             disabled={busy || !email || !password}
             onClick={() => onLogin({ email: email.trim(), password })}

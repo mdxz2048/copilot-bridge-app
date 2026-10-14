@@ -384,6 +384,23 @@ test("ordinary account login does not switch ChatGPT to Cloud", async () => {
   const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('.account-status-bar');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
 });
 
+test('password visibility preserves credentials and selection without login, and reopening hides it',async()=>{
+ const app=await mountApp({initialSettings:{onboardingCompleted:true}});
+ try{
+  await app.clickSelector('.account-status-bar');await app.input('email','fixture@example.test');await app.input('password','FixturePasswordOnly');
+  const input=app.document.querySelector('input[type="password"]');input.setSelectionRange(2,7,'backward');
+  assert.equal(app.document.querySelector('[aria-label="显示密码"]').getAttribute('aria-pressed'),'false');
+  await app.clickSelector('[aria-label="显示密码"]');
+  assert.equal(input.type,'text');assert.equal(input.value,'FixturePasswordOnly');
+  assert.deepEqual([input.selectionStart,input.selectionEnd,input.selectionDirection],[2,7,'backward']);
+  assert.equal(app.document.querySelector('[aria-label="隐藏密码"]').getAttribute('aria-pressed'),'true');assert.deepEqual(app.events,[]);
+  await app.clickSelector('[aria-label="隐藏密码"]');assert.equal(input.type,'password');assert.equal(input.value,'FixturePasswordOnly');
+  await app.clickSelector('[aria-label="显示密码"]');await app.click('关闭');await app.clickSelector('.account-status-bar');
+  assert.ok(app.document.querySelector('input[type="password"]'));assert.ok(app.document.querySelector('[aria-label="显示密码"]'));
+  assert.equal(app.document.querySelector('input[type="password"]').value,'');assert.deepEqual(app.events,[]);
+ }finally{await app.dispose();}
+});
+
 test("closing confirmed Cloud login clears intent so later account login cannot enable Cloud", async () => {
   const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');await app.click('关闭');await app.clickSelector('.account-status-bar');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
 });
@@ -638,7 +655,7 @@ test("Sheet traps Tab, closes on Escape and restores the account trigger focus",
     assert.equal(sheet.getAttribute("role"), "dialog");
     assert.equal(sheet.getAttribute("aria-modal"), "true");
     const first = sheet.querySelector(".sheet-header button");
-    const last = sheet.querySelector('input[type="password"]');
+    const last = sheet.querySelector('[aria-label="显示密码"]');
     assert.ok(app.document.activeElement === first);
     await app.key("Tab", { shiftKey: true });
     assert.ok(app.document.activeElement === last);
