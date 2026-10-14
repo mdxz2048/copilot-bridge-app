@@ -289,7 +289,7 @@ async function mountApp({
   };
 }
 
-test('Store completion shows verified success then closes without changing Cloud mode',async()=>{
+test('Store completion stays visible until Done and never changes Cloud mode',async()=>{
  const app=await mountApp({chatGptState:'NOT_INSTALLED'});
  try{
   await app.click('安装 ChatGPT',true);
@@ -298,9 +298,20 @@ test('Store completion shows verified success then closes without changing Cloud
   assert.doesNotMatch(app.text,/下载并校验官方包/);
   await app.chatGptInstalled();assert.match(app.text,/ChatGPT 安装完成/);
   await app.act(async()=>{await new Promise(r=>setTimeout(r,2100))});
+  assert.match(app.text,/ChatGPT 安装完成/);await app.click('完成');
   assert.equal(app.document.querySelector('[role="dialog"]'),null);
   assert.match(app.text,/安装完成，可以开启 Cloud/);assert.deepEqual(app.events,['installChatGpt']);
   assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'false');
+ }finally{await app.dispose();}
+});
+
+test('automatic startup installation shows progress even for returning users and finishes with Done',async()=>{
+ const app=await mountApp({chatGptState:'INSTALLING',initialSettings:{onboardingCompleted:true}});
+ try{
+  assert.match(app.text,/正在安装 ChatGPT/);assert.deepEqual(app.events,[]);
+  await app.chatGptInstalled();assert.match(app.text,/ChatGPT 安装完成/);
+  await app.click('完成');assert.equal(app.document.querySelector('[role="dialog"]'),null);
+  assert.deepEqual(app.events,[]);assert.equal(app.document.querySelector('button[role="switch"]').getAttribute('aria-checked'),'false');
  }finally{await app.dispose();}
 });
 

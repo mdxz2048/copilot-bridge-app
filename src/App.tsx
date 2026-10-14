@@ -90,6 +90,7 @@ export function App() {
       if (installationRevision === chatGptRevision.current) {
         chatGptState.current = nextChatGpt.state;
         setChatGpt(nextChatGpt);
+        if (nextChatGpt.state === "INSTALLING") setInstallOpen(true);
       }
       if (nextBridge.state === "ready") {
         const nextModels = await window.copilotBridge.getModels();
@@ -132,6 +133,7 @@ export function App() {
     const removeChatGpt = window.copilotBridge.onChatGptStatus((next) => {
       ++chatGptRevision.current;
       const newlyInstalled = next.state === "INSTALLED" && chatGptState.current !== "INSTALLED";
+      if (next.state === "INSTALLING" && chatGptState.current !== "INSTALLING") setInstallOpen(true);
       chatGptState.current = next.state;
       setChatGpt(next);
       if (newlyInstalled) void refreshApp();
@@ -146,16 +148,6 @@ export function App() {
       removeModels?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (chatGpt.state !== "INSTALLED" || !installOpen) return;
-    const timer = window.setTimeout(() => {
-      setInstallOpen(false);
-      setInstallDismissed(true);
-      setNotice("✓ ChatGPT 安装完成，可以开启 Cloud。");
-    }, 2000);
-    return () => window.clearTimeout(timer);
-  }, [chatGpt.state, installOpen]);
 
   const checkInstallation = async () => {
     if (checkingInstallation) return;
@@ -491,6 +483,7 @@ export function App() {
               onClick={() => {
                 setInstallOpen(false);
                 setInstallDismissed(true);
+                if (chatGpt.state === "INSTALLED") setNotice("✓ ChatGPT 安装完成，可以开启 Cloud。");
               }}
               type="button"
             >

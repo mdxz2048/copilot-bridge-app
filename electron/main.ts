@@ -375,7 +375,9 @@ function createWindow(): void {
   mainWindow = window;
   window.webContents.once("did-finish-load", () => {
     if(isIsolatedTestInstance)return;
-    void chatGptManager.refreshStatus(sendChatGptStatus)
+    void chatGptManager.ensureInstalledOnOpen(sendChatGptStatus,
+      () => shell.openExternal(ChatGptManager.storeUri()),
+      () => shell.openExternal(ChatGptManager.downloadPageUri()))
       .catch(error=>logDiagnostic(`Automatic official installation check failed: ${error instanceof Error?error.message:String(error)}`));
   });
   checkUpdatesOnOpen();

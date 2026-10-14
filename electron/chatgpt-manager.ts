@@ -40,6 +40,16 @@ export class ChatGptManager {
   private automaticOfflineDirectory: string | undefined;
   private latestStatus: ChatGptStatus | undefined;
   private refreshing: Promise<ChatGptStatus> | undefined;
+  private startupInstallationChecked = false;
+
+  async ensureInstalledOnOpen(onStatus: (status: ChatGptStatus) => void, openStore: () => Promise<void>, openDownload?: () => Promise<void>): Promise<void> {
+    if (this.startupInstallationChecked) return;
+    this.startupInstallationChecked = true;
+    const attempt = this.installAttempt;
+    const status = await this.refreshStatus(onStatus);
+    if (attempt !== this.installAttempt || status.state !== "NOT_INSTALLED" || this.installing || this.offlineInstalling) return;
+    this.install(onStatus, openStore, openDownload);
+  }
 
   /** Installation observation survives a cancelled download or a stopped Store watcher. */
   refreshStatus(onStatus?: (status: ChatGptStatus) => void): Promise<ChatGptStatus> {

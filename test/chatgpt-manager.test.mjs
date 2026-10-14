@@ -126,10 +126,25 @@ test('cancelled Store watcher cannot overwrite the cancellation state or open do
  manager.install(status=>statuses.push(status),async()=>{},async()=>{downloaded++});child.emit('exit',1);await tick();manager.cancelInstall();const count=statuses.length;await new Promise(resolve=>setTimeout(resolve,40));assert.equal(statuses.length,count);assert.equal(downloaded,0);
 });
 
-test('opening and focusing Bridge only detect; installation requires a user click',async()=>{
- let spawned=0;const manager=new ChatGptManager(undefined,{spawnInstaller:()=>{spawned++;return new Child()}});
- manager.detect=async()=>({state:'NOT_INSTALLED',message:'missing'});
- await manager.refreshStatus();await manager.refreshStatus();assert.equal(spawned,0);
+test('startup missing installation starts automatically once and cancellation never reopens it',async()=>{
+ const manager=new ChatGptManager();let installedCount=0;
+ manager.detect=async()=>({state:'NOT_INSTALLED',message:'missing'});manager.install=()=>{installedCount++};
+ await Promise.all([manager.ensureInstalledOnOpen(()=>{},async()=>{}),manager.ensureInstalledOnOpen(()=>{},async()=>{})]);
+ manager.cancelInstall();await manager.ensureInstalledOnOpen(()=>{},async()=>{});assert.equal(installedCount,1);
+});
+
+test('startup already installed or inconclusive detection never launches an installer',async()=>{
+ for(const status of [installed,{state:'ERROR',message:'cannot detect'}]){
+  const manager=new ChatGptManager();let installedCount=0;manager.detect=async()=>status;manager.install=()=>{installedCount++};
+  await manager.ensureInstalledOnOpen(()=>{},async()=>{});assert.equal(installedCount,0);
+ }
+});
+
+test('a user action while startup detection is pending suppresses the stale automatic install',async()=>{
+ let resolveDetect,installedCount=0;const manager=new ChatGptManager();
+ manager.detect=()=>new Promise(resolve=>{resolveDetect=resolve});manager.install=()=>{installedCount++};
+ const pending=manager.ensureInstalledOnOpen(()=>{},async()=>{});manager.cancelInstall();
+ resolveDetect({state:'NOT_INSTALLED',message:'old missing'});await pending;assert.equal(installedCount,0);
 });
 
 test('Store unavailable automatically invokes real offline path rather than opening a website',async()=>{
