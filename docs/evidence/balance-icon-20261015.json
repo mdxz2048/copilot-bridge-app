@@ -1,0 +1,41 @@
+{
+  "packagedExeIconExtracted": true,
+  "iconSizes": [
+    16,
+    20,
+    24,
+    32,
+    40,
+    48,
+    64,
+    128,
+    256
+  ],
+  "nativeTaskbarVisualCheck": false,
+  "iconSha256": "4b43f54d32f75fc1489bc5286dfb49639f421a2ca6943370a4bd0d8987ef3559",
+  "appInstallerUploaded": false,
+  "runtimeProbe": "A hidden Electron probe did not complete and was terminated; no successful native-window runtime claim. EXE icon was independently extracted with Windows System.Drawing.",
+  "appTestsPassed": 227,
+  "appTestsSkipped": 0,
+  "latestBuildPassed": true,
+  "unpackedPackagingPassed": true,
+  "packagedRuntimeIconsMatchSource": true,
+  "packagedMainAndWalletCodeMatchBuild": true,
+  "appUi": {
+    "passed": true,
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "widths": [
+      720,
+      900
+    ],
+    "realAppRenderer": true,
+    "fixtureIpc": true,
+    "balanceBreakdown": true,
+    "totalBalance": true,
+    "noHorizontalOverflow": true,
+    "noPageErrors": true
+  }
+}

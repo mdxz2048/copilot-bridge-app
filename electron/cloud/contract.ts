@@ -374,6 +374,8 @@ export const SubscriptionSummaryV2Schema = z.object({
   rolloverPolicy: z.enum(["NONE", "UNLIMITED"]),
 }).nullable();
 export const WalletSummaryV2Schema = z.object({
+  regularBalance:z.number().int().nonnegative().optional(),
+  rewardBalance:z.number().int().nonnegative().optional(),
   balance: z.number().int().nonnegative(),
   unit: z.literal("AI_POINT"),
 });

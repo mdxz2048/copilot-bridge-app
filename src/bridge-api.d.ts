@@ -86,6 +86,7 @@ export interface CloudServiceStatus {
   usageTokens: number | null;
   usagePointsUsed: number | null;
   remainingPoints: number | null;
+  balanceBreakdown?: {regularRmb:number;rewardRmb:number}|null;
   billing?: {pointsPerRmb:number;currency:"CNY";balanceRmb:number;usedRmb:number;limitRmb:number|null;remainingRmb:number;accountRpm:number;deviceRpm:number;maxDevices:number}|null;
   currentDevice: string;
   currentDeviceId: string | null;

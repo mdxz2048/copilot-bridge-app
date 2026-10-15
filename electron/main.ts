@@ -299,9 +299,12 @@ async function requireInstalledChatGpt(): Promise<void> {
   if (status.state !== 'INSTALLED') throw new Error('请先安装 ChatGPT，安装完成后才能开启或切换 Bridge。');
 }
 
+function applicationIconPath() {
+  return join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(),"resources"),"icons",process.platform === "win32" ? "bridge.ico" : "bridge.png");
+}
+
 function createTrayIcon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="13" cy="16" r="9" fill="none" stroke="#007AFF" stroke-width="5"/><circle cx="23" cy="16" r="4" fill="#007AFF"/></svg>`;
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+  return nativeImage.createFromPath(applicationIconPath());
 }
 
 function ensureTray(): void {
@@ -359,6 +362,7 @@ function createWindow(): void {
     return;
   }
   const window = new BrowserWindow({
+    icon: applicationIconPath(),
     width: 900,
     height: 700,
     minWidth: 720,
@@ -431,6 +435,7 @@ function focusMainWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  if(process.platform === "win32") app.setAppUserModelId("com.copilotbridge.desktop");
   if (!hasSingleInstanceLock) return;
   Menu.setApplicationMenu(null);
   nativeTheme.on("updated", updateTitleBarOverlay);

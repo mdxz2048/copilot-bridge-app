@@ -226,8 +226,9 @@ export function CloudAccountSheet({
             >
               <span style={{ width: `${String(normalizedUsage)}%` }} />
             </div>}
+            {status.balanceBreakdown&&<small className="balance-breakdown">正常余额 ¥{status.balanceBreakdown.regularRmb.toFixed(4)} · 奖励余额 ¥{status.balanceBreakdown.rewardRmb.toFixed(4)}</small>}
             <small>
-              {status.billing?`可用 ¥${status.billing.remainingRmb.toFixed(4)} · 网站余额 ¥${status.billing.balanceRmb.toFixed(4)} · 模型次数、并发与周期用量不限`:status.remainingPoints == null
+              {status.billing?`可用总余额 ¥${status.billing.balanceRmb.toFixed(4)} · 请求次数不限`:status.remainingPoints == null
                 ? "剩余点数待服务端提供"
                 : `剩余 ${formatPoints(status.remainingPoints)} 点`}
             </small>

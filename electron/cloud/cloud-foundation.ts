@@ -49,6 +49,7 @@ export interface CloudServiceStatus {
   usagePointsUsed: number | null;
   remainingPoints: number | null;
   billing?: MeV2["billing"];
+  balanceBreakdown: {regularRmb:number;rewardRmb:number}|null;
   currentDevice: string;
   currentDeviceId: string | null;
   devices: Array<{
@@ -533,6 +534,7 @@ export class CloudFoundation {
       usageTokens: null,
       usagePointsUsed: this.account?.billing ? Math.round(this.account.billing.usedRmb*this.account.billing.pointsPerRmb) : usage?.pointsCharged ?? null,
       billing: this.account?.billing,
+      balanceBreakdown: this.account?.wallet.regularBalance!=null && this.account.wallet.rewardBalance!=null ? {regularRmb:this.account.wallet.regularBalance/10000,rewardRmb:this.account.wallet.rewardBalance/10000}:null,
       remainingPoints: this.account?.billing ? Math.round(this.account.billing.remainingRmb * this.account.billing.pointsPerRmb) : this.account?.wallet.balance ?? null,
       currentDevice: currentDevice?.status === "ACTIVE"
         ? `${deviceName} · 已激活`

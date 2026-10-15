@@ -1149,3 +1149,18 @@ test("empty RMB balance blocks service without logging out and recovers after ad
     const restored=await foundation.syncPolicy();assert.equal(restored.serviceStatus,"AVAILABLE");assert.equal(restored.authState,"AUTHENTICATED");assert.equal(restored.lastError,null);
   }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+
+test("refreshes separate regular and reward balances without inventing zero for older servers",async()=>{
+  const {WalletSummaryV2Schema}=await import("../dist-electron/cloud/contract.js");
+  assert.deepEqual(WalletSummaryV2Schema.parse({balance:15000,regularBalance:10000,rewardBalance:5000,unit:"AI_POINT"}),{balance:15000,regularBalance:10000,rewardBalance:5000,unit:"AI_POINT"});
+  const directory=await mkdtemp(join(tmpdir(),"bridge-wallet-parts-"));
+  try{
+    const base=productMe(),client=configuredAccountClient({...base,wallet:{balance:15000,regularBalance:10000,rewardBalance:5000,unit:"AI_POINT"}});
+    const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,"device.json"),"0.1.0"));
+    assert.deepEqual((await foundation.refresh()).balanceBreakdown,{regularRmb:1,rewardRmb:.5});
+    client.getMeV2=async()=>({...base,wallet:{balance:12000,regularBalance:10000,rewardBalance:2000,unit:"AI_POINT"}});
+    assert.deepEqual((await foundation.syncPolicy()).balanceBreakdown,{regularRmb:1,rewardRmb:.2});
+    client.getMeV2=async()=>base;assert.equal((await foundation.syncPolicy()).balanceBreakdown,null);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});

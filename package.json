@@ -79,10 +79,19 @@
       {
         "from": "resources/node-runtime/node.exe",
         "to": "node-runtime/node.exe"
+      },
+      {
+        "from": "resources/icons",
+        "to": "icons",
+        "filter": [
+          "*.ico",
+          "*.png"
+        ]
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "resources/icons/bridge.ico"
     },
     "nsis": {
       "oneClick": false,
