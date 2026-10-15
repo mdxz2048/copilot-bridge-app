@@ -329,6 +329,8 @@ export const ResponseSchema = z.object({
 }).passthrough();
 
 export const ClientConfigSchema = z.object({
+  announcements:z.array(z.object({id:z.string().min(1).max(80),text:z.string().min(1).max(160),action:z.enum(["INVITE","NONE"])})).max(11).optional().catch([]),
+  inviteCampaign:z.object({id:z.string(),referrerRmb:z.number().positive().max(1000),referredRmb:z.number().positive().max(1000),rewardDays:z.number().int().min(1).max(365),accountNeverExpires:z.boolean(),rules:z.string()}).nullable().optional().catch(null),
   minimumVersion: z.string(),
   latestVersion: z.string(),
   maintenance: z.boolean(),
@@ -369,6 +371,7 @@ export const SubscriptionSummaryV2Schema = z.object({
   planCode: z.string(),
   periodStart: V2InstantSchema,
   periodEnd: V2InstantSchema,
+  expiresAt:V2InstantSchema.nullable().optional(),
   monthlyPoints: z.number().int().nonnegative(),
   maxDevices: z.number().int().nonnegative(),
   rolloverPolicy: z.enum(["NONE", "UNLIMITED"]),
@@ -376,6 +379,8 @@ export const SubscriptionSummaryV2Schema = z.object({
 export const WalletSummaryV2Schema = z.object({
   regularBalance:z.number().int().nonnegative().optional(),
   rewardBalance:z.number().int().nonnegative().optional(),
+  rewardExpiresAt:V2InstantSchema.nullable().optional(),
+  rewardExpiringBalance:z.number().int().nonnegative().optional(),
   balance: z.number().int().nonnegative(),
   unit: z.literal("AI_POINT"),
 });

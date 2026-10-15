@@ -78,6 +78,7 @@ export interface CloudServiceStatus {
   plan: "Standard" | "Pro" | null;
   subscriptionStatus: string | null;
   validUntil: string | null;
+  accountNeverExpires?:boolean;
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   usage: string | null;
@@ -86,7 +87,7 @@ export interface CloudServiceStatus {
   usageTokens: number | null;
   usagePointsUsed: number | null;
   remainingPoints: number | null;
-  balanceBreakdown?: {regularRmb:number;rewardRmb:number}|null;
+  balanceBreakdown?: {regularRmb:number;rewardRmb:number;rewardExpiresAt?:string|null;rewardExpiringRmb?:number}|null;
   billing?: {pointsPerRmb:number;currency:"CNY";balanceRmb:number;usedRmb:number;limitRmb:number|null;remainingRmb:number;accountRpm:number;deviceRpm:number;maxDevices:number}|null;
   currentDevice: string;
   currentDeviceId: string | null;
@@ -165,6 +166,8 @@ export interface CloudServiceStatus {
     updatedAt?: string;
   }>;
   clientConfig: {
+    announcements?:Array<{id:string;text:string;action:"INVITE"|"NONE"}>;
+    inviteCampaign?:{id:string;referrerRmb:number;referredRmb:number;rewardDays:number;accountNeverExpires:boolean;rules:string}|null;
     minimumVersion: string;
     latestVersion: string;
     maintenance: boolean;

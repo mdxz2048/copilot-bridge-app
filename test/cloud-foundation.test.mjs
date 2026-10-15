@@ -1164,3 +1164,22 @@ test("refreshes separate regular and reward balances without inventing zero for 
     client.getMeV2=async()=>base;assert.equal((await foundation.syncPolicy()).balanceBreakdown,null);
   }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+
+test("malformed optional notices never reject the core service configuration",async()=>{
+ const {ClientConfigSchema}=await import('../dist-electron/cloud/contract.js');
+ const base={minimumVersion:'0.3.16',latestVersion:'0.3.16',maintenance:false,features:{cloudGateway:true}};
+ const value=ClientConfigSchema.parse({...base,announcements:[{id:'bad',text:'x',action:'OPEN_UNKNOWN_URL'}],inviteCampaign:{unexpected:true}});
+ assert.equal(value.features.cloudGateway,true);assert.equal(value.minimumVersion,base.minimumVersion);assert.deepEqual(value.announcements,[]);assert.equal(value.inviteCampaign,null);
+});
+
+
+test("permanent access and seven-day reward expiry are separate from usage periods",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"bridge-reward-expiry-"));
+ try{
+  const expiry=new Date(Date.now()+7*86400000).toISOString(),base=productMe();
+  const client=configuredAccountClient({...base,subscription:{id:base.account.id,status:'ACTIVE',planCode:'PAYG',periodStart:'2026-01-01T00:00:00.000Z',periodEnd:'2026-02-01T00:00:00.000Z',expiresAt:null,monthlyPoints:0,maxDevices:3,rolloverPolicy:'UNLIMITED'},wallet:{balance:60000,regularBalance:10000,rewardBalance:50000,rewardExpiresAt:expiry,rewardExpiringBalance:50000,unit:'AI_POINT'}});
+  const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,'device.json'),'0.1.0'));
+  const status=await foundation.refresh();assert.equal(status.accountNeverExpires,true);assert.equal(status.validUntil,null);assert.equal(status.currentPeriodEnd,'2026-02-01T00:00:00.000Z');assert.deepEqual(status.balanceBreakdown,{regularRmb:1,rewardRmb:5,rewardExpiresAt:expiry,rewardExpiringRmb:5});
+ }finally{await rm(directory,{recursive:true,force:true});}
+});

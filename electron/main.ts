@@ -460,8 +460,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("profile:status", () => profileStore.getStatus());
   ipcMain.handle("app:version", () => app.getVersion());
   ipcMain.handle('invite:message', async () => {
-  const summary=await cloudClient.getReferralSummary();
-  return inviteMessage(cloudBaseUrl,summary.code);
+  const [summary,configuration]=await Promise.all([cloudClient.getReferralSummary(),cloudClient.getClientConfig().catch(()=>null)]);
+  return inviteMessage(cloudBaseUrl,summary.code,configuration?.inviteCampaign);
 });
 ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle('update:check', () => checkForUpdates(true));

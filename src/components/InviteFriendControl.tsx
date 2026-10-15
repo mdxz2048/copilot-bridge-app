@@ -5,7 +5,7 @@ import {Button} from './Button';
 
 type InviteMessage={message:string;downloadUrl:string;referralUrl?:string};
 
-export function InviteFriendControl(){
+export function InviteFriendControl({compact=false}:{compact?:boolean}){
   const [open,setOpen]=useState(false);
   const [invite,setInvite]=useState<InviteMessage|null>(null);
   const [loading,setLoading]=useState(false);
@@ -34,7 +34,7 @@ export function InviteFriendControl(){
     finally{if(current===generation.current)setCopying(false);}
   }
   return <>
-    <Button type="button" onClick={()=>{setOpen(true);void load();}}>邀请好友</Button>
+    <Button type="button" className={compact?"broadcast-invite":undefined} onClick={()=>{setOpen(true);void load();}}>{compact?"去邀请":"邀请好友"}</Button>
     {open&&createPortal(<Modal title="邀请好友" onClose={close}><div className="invite-details">
       <p>原生 ChatGPT 体验，无需自行配置网络代理。<br/>自由选择账号已开通的国产或 GPT 模型。</p>
       {loading?<p className="dialog-status" role="status">正在获取最新下载地址…</p>:invite&&<>

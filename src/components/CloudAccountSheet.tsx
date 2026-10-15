@@ -202,7 +202,7 @@ export function CloudAccountSheet({
           />
           <CloudValue
             label={copy.validUntil}
-            value={formatDate(status.validUntil)}
+            value={status.accountNeverExpires?"长期有效":formatDate(status.validUntil)}
           />
 
           {authenticated && status.billing && status.billing.balanceRmb <= 0 && <p role="status" className="form-feedback">余额不足，模型请求已暂停。请联系管理员增加余额后继续使用。</p>}
@@ -227,6 +227,7 @@ export function CloudAccountSheet({
               <span style={{ width: `${String(normalizedUsage)}%` }} />
             </div>}
             {status.balanceBreakdown&&<small className="balance-breakdown">正常余额 ¥{status.balanceBreakdown.regularRmb.toFixed(4)} · 奖励余额 ¥{status.balanceBreakdown.rewardRmb.toFixed(4)}</small>}
+            {status.balanceBreakdown?.rewardExpiresAt&&<small>其中 ¥{(status.balanceBreakdown.rewardExpiringRmb??0).toFixed(4)} 奖励将于 {new Date(status.balanceBreakdown.rewardExpiresAt).toLocaleString("zh-CN")} 到期</small>}
             <small>
               {status.billing?`可用总余额 ¥${status.billing.balanceRmb.toFixed(4)} · 请求次数不限`:status.remainingPoints == null
                 ? "剩余点数待服务端提供"

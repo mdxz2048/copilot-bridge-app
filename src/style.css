@@ -1508,3 +1508,15 @@ main { max-width:none; margin:0; padding:0; }
   .service-actions { margin-top:12px; }
   .service-actions button { min-height:40px; padding-top:9px; padding-bottom:9px; }
 }
+
+/* Quiet footer announcements: no extra height or layout when absent. */
+.broadcast-region{display:flex;align-items:center;gap:6px;min-width:0;flex:1;margin-left:10px;color:var(--text-secondary)}
+.broadcast-icon{width:15px;height:15px;flex:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round;opacity:.7}
+.status-bar .broadcast-message{display:block;flex:1;min-width:0;margin:0;padding:3px 0;font-size:12px;line-height:1.5;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-secondary);animation:broadcast-enter .3s ease-out}
+.status-bar .broadcast-invite,.broadcast-invite{flex:none;min-height:24px;margin:0;padding:3px 0;border:0;border-radius:5px;background:transparent;color:var(--accent);font-size:12px;font-weight:400;white-space:nowrap;box-shadow:none}
+.status-bar .broadcast-next{margin:0;min-width:22px;min-height:24px;padding:0 4px;font-size:16px;color:var(--text-tertiary)}
+.broadcast-message:focus-visible,.broadcast-invite:focus-visible,.broadcast-next:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.broadcast-detail{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-secondary)}
+@keyframes broadcast-enter{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.status-bar .broadcast-message{animation:none}}
+@media(max-width:760px){.broadcast-region{margin-left:4px;gap:4px}.status-bar .broadcast-message,.status-bar .broadcast-invite{font-size:11px}.broadcast-icon{width:13px;height:13px}}

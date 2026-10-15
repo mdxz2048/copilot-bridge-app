@@ -83,3 +83,11 @@ test('invite text contains two product sentences and stable trusted download/ref
  assert.equal(invite.message.split('\n').length,4);
  assert.throws(()=>inviteMessage('http://other.test','CODE'));assert.throws(()=>inviteMessage('https://user:pass@example.test','CODE'));
 });
+
+
+test('invite copy includes only the currently active server campaign',()=>{
+ const campaign={referrerRmb:5,referredRmb:5,rewardDays:7};
+ const active=inviteMessage('https://ai.mddxz.top','INVITECODE',campaign);
+ assert.match(active.message,/你可获得 ¥5 体验奖励/);assert.match(active.message,/我也可获得 ¥5 奖励余额/);assert.match(active.message,/双方奖励自到账起 7 天有效/);assert.match(active.message,/异常邀请需管理员核对/);
+ assert.doesNotMatch(inviteMessage('https://ai.mddxz.top','INVITECODE',null).message,/体验奖励/);
+});

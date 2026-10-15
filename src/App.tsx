@@ -1,3 +1,5 @@
+import {BroadcastNotice} from "./components/BroadcastNotice";
+import {InviteFriendControl} from "./components/InviteFriendControl";
 import { useEffect, useRef, useState } from "react";
 import type {
   AppSettings,
@@ -395,6 +397,8 @@ export function App() {
             ? zhCN.product.serviceNormal
             : zhCN.product.needsAttention}
         <small>{version && `v${version}`}</small>
+        <BroadcastNotice items={cloud?.clientConfig?.announcements??[]} suppressed={Boolean(cloud?.updateState==="MAINTENANCE"||cloud?.updateState==="REQUIRED"||busy||restartingChatGpt||checkingInstallation||chatGpt.state!=="INSTALLED"||restartError||notice||bridge?.state==="failed"||cloud?.authState==="ACCOUNT_LOCKED"||cloud?.authState==="SERVER_UNREACHABLE"||(cloud?.authState==="AUTHENTICATED"&&cloud.billing&&cloud.billing.balanceRmb<=0)||(profile?.activeProfile==="bridge"&&!serviceHealthy))} inviteAction={cloud?.authState==="AUTHENTICATED"?<InviteFriendControl compact/>:<button className="broadcast-invite" type="button" onClick={()=>setCloudOpen(true)}>去邀请</button>}/>
+
         <button
           onClick={() =>
             bridge?.state === "failed"

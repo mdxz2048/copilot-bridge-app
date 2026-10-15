@@ -40,6 +40,7 @@ export interface CloudServiceStatus {
   plan: "Standard" | "Pro" | null;
   subscriptionStatus: string | null;
   validUntil: string | null;
+  accountNeverExpires:boolean;
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   usage: string | null;
@@ -49,7 +50,7 @@ export interface CloudServiceStatus {
   usagePointsUsed: number | null;
   remainingPoints: number | null;
   billing?: MeV2["billing"];
-  balanceBreakdown: {regularRmb:number;rewardRmb:number}|null;
+  balanceBreakdown: {regularRmb:number;rewardRmb:number;rewardExpiresAt?:string|null;rewardExpiringRmb?:number}|null;
   currentDevice: string;
   currentDeviceId: string | null;
   devices: Array<{
@@ -305,7 +306,8 @@ export class CloudFoundation {
   }
 
   async syncPolicy(): Promise<CloudServiceStatus | null> {
-    if (!["AUTHENTICATED", "ACCOUNT_LOCKED", "SERVER_UNREACHABLE", "SUBSCRIPTION_REQUIRED", "SUBSCRIPTION_EXPIRED"].includes(this.auth.state)) return null;
+    await this.refreshServiceConfiguration();
+    if (!["AUTHENTICATED", "ACCOUNT_LOCKED", "SERVER_UNREACHABLE", "SUBSCRIPTION_REQUIRED", "SUBSCRIPTION_EXPIRED"].includes(this.auth.state)) {const configuration=await this.configuration.get(),device=await this.devices.get();return this.toStatus(configuration,device.deviceId,device.deviceName);}
     this.policyInFlight ??= this.performPolicySync().finally(() => {this.policyInFlight=null;});
     return this.policyInFlight;
   }
@@ -522,7 +524,8 @@ export class CloudFoundation {
           ? "Standard"
           : null,
       subscriptionStatus: subscription?.status ?? null,
-      validUntil: subscription?.periodEnd ?? null,
+      validUntil: subscription?.expiresAt===null?null:subscription?.expiresAt??subscription?.periodEnd??null,
+      accountNeverExpires:subscription?.expiresAt===null,
       currentPeriodStart:
         subscription?.periodStart ?? null,
       currentPeriodEnd: subscription?.periodEnd ?? null,
@@ -534,7 +537,7 @@ export class CloudFoundation {
       usageTokens: null,
       usagePointsUsed: this.account?.billing ? Math.round(this.account.billing.usedRmb*this.account.billing.pointsPerRmb) : usage?.pointsCharged ?? null,
       billing: this.account?.billing,
-      balanceBreakdown: this.account?.wallet.regularBalance!=null && this.account.wallet.rewardBalance!=null ? {regularRmb:this.account.wallet.regularBalance/10000,rewardRmb:this.account.wallet.rewardBalance/10000}:null,
+      balanceBreakdown: this.account?.wallet.regularBalance!=null && this.account.wallet.rewardBalance!=null ? {regularRmb:this.account.wallet.regularBalance/10000,rewardRmb:this.account.wallet.rewardBalance/10000,...(this.account.wallet.rewardExpiresAt?{rewardExpiresAt:this.account.wallet.rewardExpiresAt,rewardExpiringRmb:(this.account.wallet.rewardExpiringBalance??0)/10000}:{})}:null,
       remainingPoints: this.account?.billing ? Math.round(this.account.billing.remainingRmb * this.account.billing.pointsPerRmb) : this.account?.wallet.balance ?? null,
       currentDevice: currentDevice?.status === "ACTIVE"
         ? `${deviceName} · 已激活`
