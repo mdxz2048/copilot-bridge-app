@@ -206,7 +206,7 @@ async function mountApp({
 
   function button(text, last = false) {
     const matches = [...dom.window.document.querySelectorAll("button")]
-      .filter((item) => item.textContent.trim() === text && !item.disabled);
+      .filter((item) => (item.getAttribute("aria-label")??item.textContent).trim() === text && !item.disabled);
     const match = last ? matches.at(-1) : matches[0];
     assert.ok(match, `Expected enabled button: ${text}`);
     return match;
@@ -520,7 +520,7 @@ test("website registration followed by subscription-required login keeps guidanc
     await app.input("password", "TwelveChars!");
     await app.click("登录", true);
     assert.match(app.text, /Cloud 套餐未开通/);
-    assert.match(app.text, /测试占位，不收款、不会自动开通/);
+    assert.match(app.text, /请联系管理员开通/);
     assert.doesNotMatch(app.text, /登录失败，请检查账号信息/);
     await app.click("打开网站账户中心查看开通说明");
     await app.click("关闭");
@@ -601,9 +601,10 @@ test("referral code copy reports success and failure without implying immediate 
   });
   try {
     await app.clickSelector(".account-status-bar");
+    await app.click('邀请好友');
     await app.clickSelector('button[aria-label="查看邀请记录"]');
     assert.match(app.text, /注册仅记录邀请，不即时发奖/);
-    assert.match(app.text, /测试占位二维码和单纯的人工开通不代表已付款/);
+    assert.match(app.text, /首次充值或管理员首次增加余额/);
     assert.match(app.text, /未配置可信的网站邀请链接/);
     assert.throws(() => app.button("复制邀请链接"), /Expected enabled button/);
     await app.click("复制邀请码");
@@ -628,6 +629,7 @@ test("copies the trusted registration link and reports clipboard failures", asyn
   });
   try {
     await app.clickSelector(".account-status-bar");
+    await app.click('邀请好友');
     await app.clickSelector('button[aria-label="查看邀请记录"]');
     assert.match(app.text, /https:\/\/ai\.mddxz\.top\/register\?ref=INVITE123/);
     await app.click("复制邀请链接");
@@ -644,17 +646,17 @@ test("copies the trusted registration link and reports clipboard failures", asyn
   }
 });
 
-test("Sheet traps Tab, closes on Escape and restores the account trigger focus", async () => {
+test("Compact dialog traps Tab, closes on Escape and restores the account trigger focus", async () => {
   const app = await mountApp({
     initialSettings: { onboardingCompleted: true },
   });
   try {
     const trigger = app.document.querySelector(".account-status-bar");
     await app.clickSelector(".account-status-bar");
-    const sheet = app.document.querySelector(".sheet");
+    const sheet = app.document.querySelector(".compact-dialog");
     assert.equal(sheet.getAttribute("role"), "dialog");
     assert.equal(sheet.getAttribute("aria-modal"), "true");
-    const first = sheet.querySelector(".sheet-header button");
+    const first = sheet.querySelector(".compact-dialog-header button");
     const last = sheet.querySelector('[aria-label="显示密码"]');
     assert.ok(app.document.activeElement === first);
     await app.key("Tab", { shiftKey: true });
@@ -662,7 +664,7 @@ test("Sheet traps Tab, closes on Escape and restores the account trigger focus",
     await app.key("Tab");
     assert.ok(app.document.activeElement === first);
     await app.key("Escape");
-    assert.equal(app.document.querySelector(".sheet"), null);
+    assert.equal(app.document.querySelector(".compact-dialog"), null);
     assert.ok(app.document.activeElement === trigger);
   } finally {
     await app.dispose();

@@ -1,0 +1,46 @@
+{
+  "passed": true,
+  "realAppRenderer": true,
+  "fixtureIpc": true,
+  "viewports": [
+    720,
+    900
+  ],
+  "heights": [
+    520,
+    700
+  ],
+  "highDpi125": true,
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "noOverviewScroll": true,
+  "systemCaptionSafe": true,
+  "logoutVisible": true,
+  "smallActions32px": true,
+  "onlineCountNotRegisteredCount": true,
+  "recordsOnlyFunding": true,
+  "settingsPersist": true,
+  "manageChatGptAction": true,
+  "restartAction": true,
+  "diagnosticsClosesSettings": true,
+  "runtimeVersion": true,
+  "longEmailAndMaxBalance": true,
+  "lockedAndZeroBalance": true,
+  "logoutLogin": true,
+  "screenshots": [
+    "work/ui/compact-account-light-720.png",
+    "work/ui/compact-settings-light-720.png",
+    "work/ui/compact-account-light-900.png",
+    "work/ui/compact-settings-light-900.png",
+    "work/ui/compact-account-light-720-520-125.png",
+    "work/ui/compact-settings-light-720-520-125.png",
+    "work/ui/compact-account-dark-720.png",
+    "work/ui/compact-settings-dark-720.png",
+    "work/ui/compact-account-dark-900.png",
+    "work/ui/compact-settings-dark-900.png",
+    "work/ui/compact-account-dark-720-520-125.png",
+    "work/ui/compact-settings-dark-720-520-125.png"
+  ]
+}

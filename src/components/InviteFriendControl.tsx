@@ -5,7 +5,7 @@ import {Button} from './Button';
 
 type InviteMessage={message:string;downloadUrl:string;referralUrl?:string};
 
-export function InviteFriendControl({compact=false}:{compact?:boolean}){
+export function InviteFriendControl({compact=false,small=false,onHistory}:{compact?:boolean;small?:boolean;onHistory?:()=>void}){
   const [open,setOpen]=useState(false);
   const [invite,setInvite]=useState<InviteMessage|null>(null);
   const [loading,setLoading]=useState(false);
@@ -34,7 +34,7 @@ export function InviteFriendControl({compact=false}:{compact?:boolean}){
     finally{if(current===generation.current)setCopying(false);}
   }
   return <>
-    <Button type="button" className={compact?"broadcast-invite":undefined} onClick={()=>{setOpen(true);void load();}}>{compact?"去邀请":"邀请好友"}</Button>
+    <Button type="button" className={compact?"broadcast-invite":small?"small-action":undefined} onClick={()=>{setOpen(true);void load();}}>{compact?"去邀请":"邀请好友"}</Button>
     {open&&createPortal(<Modal title="邀请好友" onClose={close}><div className="invite-details">
       <p>原生 ChatGPT 体验，无需自行配置网络代理。<br/>自由选择账号已开通的国产或 GPT 模型。</p>
       {loading?<p className="dialog-status" role="status">正在获取最新下载地址…</p>:invite&&<>
@@ -44,7 +44,7 @@ export function InviteFriendControl({compact=false}:{compact?:boolean}){
       </>}
       {error&&<p className="dialog-error" role="alert">{error}</p>}
       {copied&&<p className="dialog-success" role="status">已复制，可以粘贴发送给朋友。</p>}
-      <div className="modal-actions"><Button type="button" className="dialog-secondary" onClick={close}>关闭</Button>
+      <div className="modal-actions">{onHistory&&<Button type="button" className="dialog-secondary" aria-label="查看邀请记录" onClick={()=>{close();onHistory();}}>邀请记录</Button>}<Button type="button" className="dialog-secondary" onClick={close}>关闭</Button>
         {!invite&&!loading?<Button type="button" onClick={()=>void load()}>重试</Button>:<Button type="button" disabled={loading||copying||!invite} onClick={()=>void copy()}>{copying?'正在复制…':copied?'再次复制':'复制邀请内容'}</Button>}
       </div>
     </div></Modal>,document.body)}

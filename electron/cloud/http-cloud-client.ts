@@ -298,7 +298,7 @@ export class HttpCloudClient implements CloudClient {
 
   async listWalletTransactions(): Promise<WalletTransactionV2[]> {
     const response = await this.authenticatedJson(
-      "/api/v1/me/wallet/transactions",
+      "/api/v1/me/wallet/transactions?kind=account",
       z.object({ data: z.array(WalletTransactionV2Schema) }),
     );
     return response.data;

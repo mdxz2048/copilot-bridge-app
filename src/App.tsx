@@ -415,6 +415,7 @@ export function App() {
 
       {settingsOpen && (
         <ProductSettingsSheet
+          version={version}
           bridge={bridge}
           onClose={() => setSettingsOpen(false)}
           onDiagnostics={() => void openDiagnostics()}

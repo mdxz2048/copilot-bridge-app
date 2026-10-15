@@ -6,7 +6,7 @@ import type {
 } from "../bridge-api";
 import { zhCN } from "../locales/zh-CN";
 import { Button } from "./Button";
-import { Sheet } from "./Sheet";
+import { CompactDialog } from "./CompactDialog";
 
 interface CloudAccountSheetProps {
   busy: boolean;
@@ -61,72 +61,23 @@ export function CloudAccountSheet({
   const [view, setView] = useState<
     "account" | "devices" | "referral" | "usage"
   >("account");
+  useEffect(()=>setView("account"),[authenticated]);
   const state = accountState(status);
   const subscriptionRequired = !authenticated
     && (loginIssue === "SUBSCRIPTION_REQUIRED"
       || status?.authState === "SUBSCRIPTION_REQUIRED");
-  const normalizedUsage = Math.max(
-    0,
-    Math.min(100, status?.usagePercent ?? 0),
-  );
-
-  return (
-    <Sheet onClose={onClose} title={copy.title}>
-      <div className="sheet-header">
-        <span>{view === "devices" ? "我的设备" : "我的账户"}</span>
-        <Button className="secondary" onClick={onClose} type="button">
-          {zhCN.common.close}
-        </Button>
-      </div>
-
-      {view === "devices"
-        ? (
-          <DeviceList
-            currentDeviceId={status?.currentDeviceId ?? null}
-            devices={status?.devices ?? []}
-            onBack={() => setView("account")}
-            onRevoke={onRevokeDevice}
-          />
-        )
-        : view === "referral"
-          ? (
-            <ReferralDetail
-              history={status?.referralHistory ?? []}
-              onBack={() => setView("account")}
-              referral={status?.referral ?? null}
-              registrationUrl={status?.referralRegistrationUrl ?? null}
-            />
-          )
-          : view === "usage"
-            ? (
-              <UsageDetail
-                history={status?.usageHistory ?? []}
-                onBack={() => setView("account")}
-                transactions={status?.walletTransactions ?? []}
-              />
-            )
-        : (
-          <>
-            {subscriptionRequired ? (
-              <div className="account-state state-panel-warning" role="status">
-                <strong>Cloud 套餐未开通</strong>
-                <p>注册不会自动开通套餐。网站二维码仅为测试占位，不收款、不会自动开通；请联系管理员人工开通，开通后返回此处重试登录。</p>
-                {status?.accountManagementAvailable
-                  ? <Button className="secondary compact" onClick={onManageAccount} type="button">打开网站账户中心查看开通说明</Button>
-                  : <p>当前环境未配置网站入口，请联系管理员开通后重试。</p>}
-              </div>
-            ) : (
-              <div className={`account-state state-panel-${state.tone}`}>
-                <strong>
-                  <span aria-hidden="true">{state.symbol}</span>
-                  {state.title}
-                </strong>
-                <p>{state.message}</p>
-              </div>
-            )}
-
-            {!authenticated && (status?.authState === "SIGNED_OUT"
-              || status?.authState === "SUBSCRIPTION_REQUIRED") && (
+  const title=view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"充值与调整记录":"我的账户";
+  const money=Boolean(status?.billing),total=money?`¥${status!.billing!.balanceRmb.toFixed(4)}`:status?.remainingPoints==null?"—":`${formatPoints(status.remainingPoints)} 点`;
+  const online=(status?.devices??[]).filter(d=>d.status==="ACTIVE"&&(d.current||(d.lastSeenAt&&Date.now()-Date.parse(d.lastSeenAt)<300000))).length;
+  const balanceRequired=authenticated&&status?.billing!=null&&status.billing.balanceRmb<=0;
+  const healthy=authenticated&&status?.serviceStatus==="AVAILABLE"&&!balanceRequired;
+  const badge=balanceRequired?"余额不足":healthy?"账户正常":state.title;
+  const back=()=>setView("account");
+  const footer=authenticated?<><Button className="secondary compact" disabled={busy||!status?.accountManagementAvailable} onClick={onManageAccount}>账户管理</Button><Button className="compact text-action" disabled={busy} onClick={onLogout}>退出登录</Button></>:status?.authState==="SIGNED_OUT"||status?.authState==="AUTHENTICATING"?null:<AccountActions loggedIn={Boolean(status?.account)} busy={busy} onLogout={onLogout} onManageAccount={onManageAccount} onManageSubscription={onManageSubscription} onRefresh={onRefresh} onUseOriginal={onUseOriginal} state={status?.authState??"SIGNED_OUT"} accountAvailable={status?.accountManagementAvailable===true} subscriptionAvailable={status?.subscriptionManagementAvailable===true}/>;
+  return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={footer}>
+    {view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
+    {(!status?.account)&&<div className={`compact-state state-panel-${state.tone}`} role="status"><strong>{subscriptionRequired?"Cloud 套餐未开通":state.title}</strong><p>{subscriptionRequired?(status?.accountManagementAvailable?"请联系管理员开通套餐后重试登录。":"当前环境未配置网站入口，请联系管理员开通后重试。"):state.message}</p>{subscriptionRequired&&status?.accountManagementAvailable&&<Button className="secondary compact" onClick={onManageAccount}>打开网站账户中心查看开通说明</Button>}</div>}
+    {!authenticated&&(status?.authState==="SIGNED_OUT"||status?.authState==="SUBSCRIPTION_REQUIRED")&&(
         <div className="cloud-login-fields">
           <div className="cloud-auth-mode">
             <strong>登录 Cloud</strong>
@@ -136,7 +87,7 @@ export function CloudAccountSheet({
               </Button>
             )}
           </div>
-          <p>新账号请先在网站注册，待管理员开通 Cloud 套餐后返回 App 登录。</p>
+          <p>新账号请先在网站完成验证注册。通过邀请注册后，联系管理员充值即可使用。</p>
           {!status?.accountManagementAvailable && <p>当前环境未配置网站注册地址，请联系管理员。</p>}
           <label>
             <span>{copy.email}</span>
@@ -183,148 +134,19 @@ export function CloudAccountSheet({
           >
             {copy.login}
           </Button>
-        </div>
-            )}
-
-            {status?.account && (
-              <>
-          <h3>{copy.account}</h3>
-          <p className="account-primary-value" title={status.account}>
-            {status.account}
-          </p>
-
-          {authenticated && <InviteFriendControl/>}
-          <h3>套餐</h3>
-          <p className="account-primary-value">{status.plan ?? "—"}</p>
-          <CloudValue
-            label={copy.subscription}
-            value={subscriptionLabel(status.subscriptionStatus)}
-          />
-          <CloudValue
-            label={copy.validUntil}
-            value={status.accountNeverExpires?"长期有效":formatDate(status.validUntil)}
-          />
-
-          {authenticated && status.billing && status.billing.balanceRmb <= 0 && <p role="status" className="form-feedback">余额不足，模型请求已暂停。请联系管理员增加余额后继续使用。</p>}
-          <h3>{status.billing?"人民币余额":"AI 点数"}</h3>
-          <div className="account-usage">
-            <div>
-              <span>本月已用</span>
-              <strong>
-                {status.billing?`¥${status.billing.usedRmb.toFixed(4)}`:status.usagePointsUsed == null
-                  ? "—"
-                  : `${formatPoints(status.usagePointsUsed)} 点`}
-              </strong>
-            </div>
-            {!status.billing && <div
-              aria-label={`${copy.usage} ${String(normalizedUsage)}%`}
-              aria-valuemax={100}
-              aria-valuemin={0}
-              aria-valuenow={normalizedUsage}
-              className="usage-track"
-              role="progressbar"
-            >
-              <span style={{ width: `${String(normalizedUsage)}%` }} />
-            </div>}
-            {status.balanceBreakdown&&<small className="balance-breakdown">正常余额 ¥{status.balanceBreakdown.regularRmb.toFixed(4)} · 奖励余额 ¥{status.balanceBreakdown.rewardRmb.toFixed(4)}</small>}
-            {status.balanceBreakdown?.rewardExpiresAt&&<small>其中 ¥{(status.balanceBreakdown.rewardExpiringRmb??0).toFixed(4)} 奖励将于 {new Date(status.balanceBreakdown.rewardExpiresAt).toLocaleString("zh-CN")} 到期</small>}
-            <small>
-              {status.billing?`可用总余额 ¥${status.billing.balanceRmb.toFixed(4)} · 请求次数不限`:status.remainingPoints == null
-                ? "剩余点数待服务端提供"
-                : `剩余 ${formatPoints(status.remainingPoints)} 点`}
-            </small>
-          </div>
-          <CloudValue
-            label={copy.period}
-            value={formatPeriod(
-              status.currentPeriodStart,
-              status.currentPeriodEnd,
-            )}
-          />
-
-          <h3>{copy.device}</h3>
-          <button
-            className="account-link-row"
-            onClick={() => setView("devices")}
-            type="button"
-          >
-            <span>{`${String(status.devices.length)} 台设备`}</span>
-            <strong>查看 ›</strong>
-          </button>
-          {status.currentDeviceId && (
-            <div className="cloud-value">
-              <span>设备 ID</span>
-              <span className="copyable-value">
-                <strong>{maskDeviceId(status.currentDeviceId)}</strong>
-                <Button
-                  className="secondary compact"
-                  onClick={() =>
-                    void navigator.clipboard.writeText(status.currentDeviceId!)}
-                  type="button"
-                >
-                  复制
-                </Button>
-              </span>
-            </div>
-          )}
-          <CloudValue
-            label={copy.cloudStatus}
-            value={
-              status.authState === "AUTHENTICATED"
-              && status.serviceStatus === "AVAILABLE"
-                ? `● ${copy.normal}`
-                : state.title
-            }
-          />
-          <h3>邀请奖励</h3>
-          <button
-            className="account-link-row"
-            aria-label="查看邀请记录"
-            disabled={!status.referral}
-            onClick={() => setView("referral")}
-            type="button"
-          >
-            <span>
-              {status.referral
-                ? `${status.referral.rewarded} 个有效邀请 · ${formatPoints(status.referral.pointsEarned)} 点`
-                : "暂无邀请数据"}
-            </span>
-            <strong>查看 ›</strong>
-          </button>
-          <h3>账单与使用记录</h3>
-          <button
-            className="account-link-row"
-            onClick={() => setView("usage")}
-            type="button"
-          >
-            <span>
-              {`${
-                status.walletTransactions.length + status.usageHistory.length
-              } 条记录`}
-            </span>
-            <strong>查看 ›</strong>
-          </button>
-        </>
-            )}
-
-            <AccountActions
-              busy={busy}
-              onLogout={onLogout}
-              onManageAccount={onManageAccount}
-              onManageSubscription={onManageSubscription}
-              onRefresh={onRefresh}
-              onUseOriginal={onUseOriginal}
-              state={status?.authState ?? "SIGNED_OUT"}
-              accountAvailable={status?.accountManagementAvailable === true}
-              subscriptionAvailable={
-                status?.subscriptionManagementAvailable === true
-              }
-            />
-          </>
-        )}
-    </Sheet>
-  );
+        </div>)}
+    {status?.account&&<>
+      <section className="compact-wallet" aria-label="账户余额"><div className="compact-wallet-total"><span>{money?"可用总余额":"可用点数"}</span><strong>{total}</strong></div>{status.balanceBreakdown&&<div className="compact-wallet-parts"><span>正常余额 <b>¥{status.balanceBreakdown.regularRmb.toFixed(4)}</b></span><span>奖励余额 <b>¥{status.balanceBreakdown.rewardRmb.toFixed(4)}</b></span></div>}{status.balanceBreakdown?.rewardExpiresAt&&<p className="reward-expiry" title={new Date(status.balanceBreakdown.rewardExpiresAt).toLocaleString("zh-CN")}>其中 ¥{(status.balanceBreakdown.rewardExpiringRmb??0).toFixed(4)} 奖励于 {formatRewardDate(status.balanceBreakdown.rewardExpiresAt)} 到期</p>}</section>
+      <div className="compact-plan"><div><strong>{status.plan?`Cloud ${status.plan}`:"Cloud 按量使用"}</strong><small>{status.accountNeverExpires?"长期有效":`有效期至 ${formatDate(status.validUntil)}`}</small></div><button type="button" className="text-action" disabled={busy||!status.subscriptionManagementAvailable} onClick={onManageSubscription}>管理套餐 ›</button></div>
+      <div className="compact-account-actions"><button type="button" className="small-action" onClick={()=>setView("devices")}><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="10" rx="2"/><path d="M1 17h18"/></svg>在线设备 {online}{status.billing?.maxDevices?` / ${status.billing.maxDevices}`:""}</button>{authenticated&&<InviteFriendControl small onHistory={()=>setView("referral")}/>}</div>
+      <button className="compact-record-entry" type="button" onClick={()=>setView("usage")}><span>充值与调整记录</span><span aria-hidden="true">›</span></button>
+      <p className={`compact-account-note ${balanceRequired||!healthy?"attention":""}`} role="status">{balanceRequired?"余额不足，模型请求已暂停，请联系管理员充值。":!healthy?state.message:"余额与权限自动同步；需要调整请联系管理员。"}</p>
+    </>}
+    </>}
+  </CompactDialog>;
 }
+
+function formatRewardDate(value:string){return new Intl.DateTimeFormat("zh-CN",{month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(value));}
 
 function DeviceList({
   currentDeviceId,
@@ -440,13 +262,13 @@ function ReferralDetail({
           {copyFeedback && (
             <p role={copyFeedback.error ? "alert" : "status"}>{copyFeedback.message}</p>
           )}
-          <p>注册仅记录邀请，不即时发奖。需受邀人的真实付费订单满足活动门槛及风控条件后，才可能获得奖励；测试占位二维码和单纯的人工开通不代表已付款。是否入账以服务端邀请记录和点数流水为准。</p>
+          <p>注册仅记录邀请，不即时发奖。受邀新用户首次充值或管理员首次增加余额后，符合活动的双方各得 ¥5，奖励到账后 7 天有效。仅开通套餐不算充值；异常邀请需管理员核对。</p>
           <div className="detail-stats">
             <CloudValue label="已邀请" value={String(referral.registered)} />
             <CloudValue label="有效邀请" value={String(referral.rewarded)} />
             <CloudValue
               label="累计奖励"
-              value={`${formatPoints(referral.pointsEarned)} 点`}
+              value={`¥${(referral.pointsEarned/10000).toFixed(4)}`}
             />
           </div>
         </>
@@ -464,66 +286,14 @@ function ReferralDetail({
   );
 }
 
-function UsageDetail({
-  history,
-  onBack,
-  transactions,
-}: {
-  history: CloudServiceStatus["usageHistory"];
-  onBack: () => void;
-  transactions: CloudServiceStatus["walletTransactions"];
-}) {
-  return (
-    <div className="detail-view">
-      <Button className="secondary compact" onClick={onBack} type="button">
-        ‹ 返回账户
-      </Button>
-      <h3>AI 请求记录</h3>
-      {history.length === 0
-        ? <p className="empty-detail">暂无 AI 请求记录。</p>
-        : (
-          <>
-            {history.slice(0, 20).map((record) => (
-              <div className="history-row" key={record.id}>
-                <div>
-                  <strong>AI 请求</strong>
-                  <span>{formatDate(record.createdAt)}</span>
-                </div>
-                <strong>{usageStatusLabel(record.status)}</strong>
-              </div>
-            ))}
-            {history.length > 20 && (
-              <p className="empty-detail">仅显示最近 20 条请求。</p>
-            )}
-          </>
-        )}
-      <h3>点数记录</h3>
-      {transactions.length === 0
-        ? <p className="empty-detail">暂无点数记录。</p>
-        : transactions.map((transaction) => (
-          <div className="history-row" key={transaction.id}>
-            <div>
-              <strong>{walletTypeLabel(transaction.type)}</strong>
-              <span>{formatDate(transaction.createdAt)}</span>
-            </div>
-            <strong className={transaction.points >= 0 ? "positive" : ""}>
-              {`${transaction.points >= 0 ? "+" : ""}${formatPoints(transaction.points)} 点`}
-            </strong>
-          </div>
-        ))}
-    </div>
-  );
-}
-
-function usageStatusLabel(status: string): string {
-  return {
-    RUNNING: "处理中",
-    COMPLETED: "已完成",
-    FAILED: "失败",
-  }[status] ?? status;
+function BalanceRecords({onBack,transactions,total,money}:{onBack:()=>void;transactions:CloudServiceStatus["walletTransactions"];total:string;money:boolean}){
+ const records=transactions.filter(t=>['PURCHASE','ADMIN_ADJUSTMENT'].includes(t.type));
+ const amount=(points:number)=>money?`¥${(Math.abs(points)/10000).toFixed(4)}`:`${formatPoints(Math.abs(points))} 点`;
+ return <div className="detail-view balance-records"><Button className="secondary compact" onClick={onBack}>‹ 返回账户</Button><div className="compact-wallet-total"><span>当前余额</span><strong>{total}</strong></div><p className="detail-caption">仅展示最近的充值与管理员调整，不包含逐次模型扣费。</p><div className="compact-record-list">{records.length===0?<p className="empty-detail">暂无充值或管理员调整记录。</p>:records.map(t=><div className="history-row" key={t.id}><div><strong>{t.type==='PURCHASE'?'账户充值':t.points>0?'管理员增加余额':'管理员减少余额'}</strong><span>{new Date(t.createdAt).toLocaleString('zh-CN')}</span></div><div><strong className={t.points>0?'positive':''}>{t.points>0?'+':'−'} {amount(t.points)}</strong><span>变动后 {money?`¥${(t.balanceAfter/10000).toFixed(4)}`:`${formatPoints(t.balanceAfter)} 点`}</span></div></div>)}</div></div>;
 }
 
 function AccountActions({
+  loggedIn,
   accountAvailable,
   busy,
   onLogout,
@@ -534,6 +304,7 @@ function AccountActions({
   state,
   subscriptionAvailable,
 }: {
+  loggedIn:boolean;
   accountAvailable: boolean;
   busy: boolean;
   onLogout: () => void;
@@ -588,7 +359,7 @@ function AccountActions({
           恢复 ChatGPT 原账号
         </Button>
       )}
-      {state === "AUTHENTICATED" && (
+      {(state === "AUTHENTICATED"||loggedIn) && (
         <Button className="secondary" disabled={busy} onClick={onLogout} type="button">
           {copy.logout}
         </Button>
@@ -665,20 +436,6 @@ function accountState(status: CloudServiceStatus | null) {
   return states[state];
 }
 
-function subscriptionLabel(status: string | null): string {
-  if (status === "ACTIVE" || status === "TRIAL") {
-    return `● ${zhCN.account.active}`;
-  }
-  if (!status) return "—";
-  const labels: Record<string, string> = {
-    EXPIRED: "已到期",
-    PAST_DUE: "待续费",
-    CANCELED: "已取消",
-    SUSPENDED: "已暂停",
-  };
-  return labels[status] ?? status;
-}
-
 function formatDate(value: string | null): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("zh-CN", {
@@ -686,19 +443,6 @@ function formatDate(value: string | null): string {
     month: "long",
     day: "numeric",
   }).format(new Date(value));
-}
-
-function formatPeriod(start: string | null, end: string | null): string {
-  if (!start || !end) return "—";
-  const formatter = new Intl.DateTimeFormat("zh-CN", {
-    month: "long",
-    day: "numeric",
-  });
-  return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
-}
-
-function maskDeviceId(value: string): string {
-  return `${value.slice(0, 4).toUpperCase()}…${value.slice(-4).toUpperCase()}`;
 }
 
 function formatPoints(value: number): string {
@@ -727,17 +471,4 @@ function referralStatusLabel(
     REWARDED: "已奖励",
     REJECTED: "未通过",
   }[status];
-}
-
-function walletTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    PURCHASE: "购买点数",
-    SUBSCRIPTION_GRANT: "套餐发放",
-    REFERRAL_REWARD: "邀请奖励",
-    USAGE: "AI 使用",
-    REFUND: "退款",
-    EXPIRATION: "点数到期",
-    ADMIN_ADJUSTMENT: "账户调整",
-  };
-  return labels[type] ?? "点数变动";
 }
