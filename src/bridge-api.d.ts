@@ -166,7 +166,7 @@ export interface CloudServiceStatus {
     updatedAt?: string;
   }>;
   clientConfig: {
-    announcements?:Array<{id:string;text:string;action:"INVITE"|"NONE"}>;
+    announcements?:Array<{id:string;text:string;title?:string;content?:string;action:"INVITE"|"NONE"}>;
     inviteCampaign?:{id:string;referrerRmb:number;referredRmb:number;rewardDays:number;accountNeverExpires:boolean;rules:string}|null;
     minimumVersion: string;
     latestVersion: string;

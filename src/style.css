@@ -1517,6 +1517,11 @@ main { max-width:none; margin:0; padding:0; }
 .status-bar .broadcast-next{margin:0;min-width:22px;min-height:24px;padding:0 4px;font-size:16px;color:var(--text-tertiary)}
 .broadcast-message:focus-visible,.broadcast-invite:focus-visible,.broadcast-next:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .broadcast-detail{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-secondary)}
+.broadcast-count{flex:none;color:var(--text-tertiary);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.compact-dialog.broadcast-dialog{width:min(480px,calc(100vw - 32px));height:auto;max-height:min(480px,calc(100dvh - 80px))}
+.broadcast-dialog .compact-dialog-header h2{overflow-wrap:anywhere}
+.broadcast-dialog .compact-dialog-body{overflow-y:auto;min-height:0;max-height:min(320px,calc(100dvh - 230px))}
+.broadcast-dialog .broadcast-detail{margin:0;font-size:13px;line-height:1.8}
 @keyframes broadcast-enter{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.status-bar .broadcast-message{animation:none}}
 @media(max-width:760px){.broadcast-region{margin-left:4px;gap:4px}.status-bar .broadcast-message,.status-bar .broadcast-invite{font-size:11px}.broadcast-icon{width:13px;height:13px}}

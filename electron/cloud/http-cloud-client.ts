@@ -65,6 +65,7 @@ import type {
   CreateResponseOptions,
 } from "./cloud-client.js";
 import { CloudError } from "./cloud-error.js";
+import { transportFailureMessage } from "./transport-diagnostics.js";
 import type { DeviceIdentityStore } from "./device-identity.js";
 import type { DeviceKeyStore } from "./device-proof.js";
 import { withSingleTokenRefreshRetry } from "./retry.js";
@@ -554,6 +555,7 @@ export class HttpCloudClient implements CloudClient {
   }
 
   private rawFetch(path: string, init: RequestInit): Promise<Response> {
+    const startedAt=Date.now();
     const headers = new Headers(init.headers);
     if (init.body != null) headers.set("Content-Type", "application/json");
     const timeout = AbortSignal.timeout(path === "/v1/responses" ? this.responseTimeoutMs : this.timeoutMs);
@@ -568,7 +570,7 @@ export class HttpCloudClient implements CloudClient {
       if (error instanceof CloudError) throw error;
       throw new CloudError(
         "SERVER_UNREACHABLE",
-        error instanceof Error ? error.message : "Cloud Server is unreachable.",
+        transportFailureMessage(error,Date.now()-startedAt,Boolean(init.signal?.aborted),timeout.aborted),
         { cause: error },
       );
     });

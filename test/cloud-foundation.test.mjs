@@ -1120,6 +1120,17 @@ test("policy polling broadcasts a lock and automatically recovers after administ
   } finally {await rm(directory,{recursive:true,force:true});}
 });
 
+test('policy polling syncs changed and deleted notices within the next five-second cycle without rechecking releases',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'bridge-live-notices-'));let now=Date.now();t.mock.method(Date,'now',()=>now);
+ try{const client=configuredAccountClient(productMe());let announcements=[],configCalls=0,releaseCalls=0;
+  client.getClientConfig=async()=>{configCalls++;return {minimumVersion:'0.1.0',latestVersion:'0.1.0',maintenance:false,features:{cloudGateway:true},announcements};};client.getLatestRelease=async()=>{releaseCalls++;return {release:null};};
+  const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,'device.json'),'0.1.0'));
+  await foundation.refresh();announcements=[{id:'notice',text:'标题',title:'标题',content:'完整正文',action:'NONE'}];now+=5000;
+  assert.deepEqual((await foundation.syncPolicy()).clientConfig.announcements,announcements);assert.equal(releaseCalls,1);
+  announcements=[];now+=5000;assert.deepEqual((await foundation.syncPolicy()).clientConfig.announcements,[]);assert.equal(configCalls,3);assert.equal(releaseCalls,1);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
 test("policy polling refreshes wallet, usage and devices and deduplicates slow requests",async()=>{
   const directory=await mkdtemp(join(tmpdir(),"bridge-live-policy-"));
   try{

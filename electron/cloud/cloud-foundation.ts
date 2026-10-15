@@ -129,6 +129,8 @@ export class CloudFoundation {
   private latestRelease: LatestReleaseResponse["release"] = null;
   private serviceConfigurationError: string | null = null;
   private serviceConfigurationLoadedAt = 0;
+  private latestReleaseLoadedAt = 0;
+  private configurationInFlight: Promise<void> | null = null;
   private lastError: CloudServiceStatus["lastError"] = null;
   private refreshInFlight: Promise<CloudServiceStatus> | null = null;
   private policyInFlight: Promise<CloudServiceStatus | null> | null = null;
@@ -385,13 +387,18 @@ export class CloudFoundation {
   private async refreshServiceConfiguration(force = false): Promise<void> {
     if (
       !force
-      && Date.now() - this.serviceConfigurationLoadedAt < 5 * 60_000
+      && Date.now() - this.serviceConfigurationLoadedAt < 4_000
     ) {
       return;
     }
+    this.configurationInFlight ??= this.loadServiceConfiguration(force).finally(()=>{this.configurationInFlight=null;});
+    return this.configurationInFlight;
+  }
+  private async loadServiceConfiguration(force:boolean):Promise<void> {
+    const refreshRelease=force||Date.now()-this.latestReleaseLoadedAt>=5*60_000;
     const [configResult, releaseResult] = await Promise.allSettled([
       this.client.getClientConfig(),
-      this.client.getLatestRelease(),
+      refreshRelease?this.client.getLatestRelease():Promise.resolve({release:this.latestRelease}),
     ]);
     const errors: string[] = [];
     if (configResult.status === "fulfilled") {
@@ -401,6 +408,7 @@ export class CloudFoundation {
     }
     if (releaseResult.status === "fulfilled") {
       this.latestRelease = releaseResult.value.release;
+      if(refreshRelease)this.latestReleaseLoadedAt=Date.now();
     } else {
       errors.push(errorMessage(releaseResult.reason));
     }
