@@ -1,0 +1,36 @@
+{
+  "release": {
+    "id": "44698471-c9c2-44e9-a2c9-00c2aa866846",
+    "version": "0.3.19",
+    "channel": "stable",
+    "platform": "windows",
+    "arch": "x64",
+    "downloadUrl": "https://ai.mddxz.top/api/v1/releases/files/44698471-c9c2-44e9-a2c9-00c2aa866846",
+    "sha256": "5445227811fc287fd720fccca7ac099106eff1b70c5fc7ac5780e02d9f3fa977",
+    "releaseNotes": "新增账户充值入口：\n• 在“我的账户”点击“充值”，即可查看管理员微信二维码。\n• 扫码联系管理员，告知注册邮箱和充值金额，管理员增加余额后自动同步。\n• 充值说明与二维码支持浅色、深色及小窗口，保持紧凑账户布局。\n\n本次不新增在线支付，不修改模型、原账号配置或登录方式。",
+    "published": true,
+    "createdAt": "2026-10-16T13:29:31.289Z"
+  },
+  "package": {
+    "passed": true,
+    "version": "0.3.19",
+    "verifiedFiles": 47,
+    "bytes": 343367815,
+    "sha256": "5445227811fc287fd720fccca7ac099106eff1b70c5fc7ac5780e02d9f3fa977"
+  },
+  "updater": {
+    "passed": true,
+    "executionEnvironment": "server Node using unchanged compiled App UpdateManager",
+    "publicHttpsFullDownload": true,
+    "automaticDownload": true,
+    "sha256Verified": true,
+    "readyVersion": "0.3.19",
+    "clientConfigVersion": "0.3.19"
+  },
+  "appTests": 233,
+  "qrIncluded": true,
+  "qrHash": "bc8b9a38360123135c08bb0a3a19ad4c539509f4c2d005cdf4645940d9786b40",
+  "electronVersion": "44.4.5",
+  "localRuntimeUsed": true,
+  "nativeInstallationPerformed": false
+}
