@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {randomUUID} from "node:crypto";
 import {
   AccountSchema,
   ClientConfigSchema,
@@ -88,6 +89,7 @@ export class HttpCloudClient implements CloudClient {
   private readonly tokens: CloudTokenSession;
   private readonly devices: DeviceIdentityStore;
   private readonly deviceKeys: DeviceKeyStore;
+  private readonly startupSessionId=randomUUID();
   private readonly timeoutMs: number;
   private readonly responseTimeoutMs: number;
   private readonly defaultHeaders: Headers;
@@ -125,6 +127,16 @@ export class HttpCloudClient implements CloudClient {
     return response.user;
   }
 
+  async resume(request:{device:DeviceInfo;legacyDeviceId?:string}):Promise<void>{
+    await withSingleTokenRefreshRetry(()=>this.resumeWithCurrentToken(request),()=>this.refresh());
+  }
+  private async resumeWithCurrentToken(request:{device:DeviceInfo;legacyDeviceId?:string}):Promise<void>{
+    const device=RegisterDeviceRequestV2Schema.parse({...request.device,publicKeyJwk:(await this.deviceKeys.get()).publicKeyJwk});
+    const response=await this.authenticatedFetch('/api/v1/auth/resume',{method:'POST',body:JSON.stringify({device,legacyDeviceId:request.legacyDeviceId,sessionId:this.startupSessionId})});
+    const verified=await parseResponse(response,LoginResponseSchema);
+    if(verified.device.deviceId!==device.deviceId)throw new CloudError('INVALID_SERVER_RESPONSE','恢复登录返回了不一致的设备号。');
+    await this.tokens.rotate(verified);this.cachedUserId=verified.user.id;
+  }
   async login(request: LoginRequest): Promise<LoginResponse> {
     const epoch=++this.identityEpoch;
     this.cachedUserId=null;
@@ -179,6 +191,9 @@ export class HttpCloudClient implements CloudClient {
     // A refreshed session after an app upgrade must update the existing device version.
     // Do not use registerDevice's refresh retry here: retrying refreshInFlight would deadlock.
     const device = await this.devices.get();
+    if(response.device&&response.device.deviceId!==device.deviceId){
+      await this.resumeWithCurrentToken({device,legacyDeviceId:device.legacyDeviceId});return;
+    }
     const registration = RegisterDeviceRequestV2Schema.parse({ ...device, publicKeyJwk: (await this.deviceKeys.get()).publicKeyJwk });
     const registered = await this.authenticatedFetch("/api/v1/devices/register", {
       method: "POST",

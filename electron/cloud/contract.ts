@@ -39,6 +39,7 @@ export const LoginRequestSchema = z.object({
   password: z.string(),
   device: RegisterDeviceRequestV2Schema,
   replaceDeviceId: z.uuid().optional(),
+  legacyDeviceId: z.uuid().optional(),
 });
 
 export const GatewayV1LoginResponseSchema = z.object({
@@ -54,6 +55,7 @@ export const RefreshRequestSchema = z.object({
 });
 
 export const RefreshResponseSchema = z.object({
+  device: DeviceSchema.optional(),
   accessToken: z.string(),
   refreshToken: z.string(),
   expiresIn: z.literal(1800),
@@ -534,6 +536,7 @@ export type RegisterRequestV2 = z.infer<typeof RegisterRequestV2Schema>;
 export type User = z.infer<typeof UserSchema>;
 export type Device = z.infer<typeof DeviceSchema>;
 export type LoginRequest = {
+  legacyDeviceId?: string;
   replaceDeviceId?: string;
   email: string;
   password: string;

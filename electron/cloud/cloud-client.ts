@@ -40,6 +40,7 @@ export interface CreateResponseOptions {
 }
 
 export interface CloudClient {
+  resume(request:{device:DeviceInfo;legacyDeviceId?:string}):Promise<void>;
   register(request: RegisterRequestV2): Promise<User>;
   login(request: LoginRequest): Promise<LoginResponse>;
   refresh(): Promise<void>;
@@ -98,6 +99,7 @@ export class CloudContractUnavailableError extends Error {
 }
 
 export class PendingCloudClient implements CloudClient {
+  resume():Promise<never>{return this.unavailable();}
   register(): Promise<never> {
     return this.unavailable();
   }

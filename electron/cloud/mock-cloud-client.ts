@@ -35,6 +35,7 @@ import type {
 export type CloudClientMethod = keyof CloudClient;
 
 type CloudClientResponse = {
+  resume:void;
   register: User;
   login: LoginResponse;
   refresh: void;
@@ -91,6 +92,7 @@ export class MockCloudClient implements CloudClient {
     return this;
   }
 
+  resume(request:{device:DeviceInfo;legacyDeviceId?:string}):Promise<void>{this.calls.push({method:"resume",request});return this.errors.has("resume")?Promise.reject(this.errors.get("resume")):Promise.resolve();}
   register(request: RegisterRequestV2): Promise<User> {
     return this.invoke("register", request);
   }

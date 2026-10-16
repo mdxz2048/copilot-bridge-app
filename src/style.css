@@ -1542,3 +1542,5 @@ main { max-width:none; margin:0; padding:0; }
 @media(prefers-reduced-motion:reduce){.compact-dialog{animation:none}}
 
 .account-topup{text-align:center}.account-topup>.button:first-child{display:block}.admin-wechat-qr{display:block;width:200px;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:10px}.account-topup .topup-account{overflow-wrap:anywhere;user-select:text}.compact-dialog .topup-action{color:var(--accent);background:var(--accent-soft,var(--surface-secondary))}
+
+.bound-device-id{display:block;font:10px/1.5 ui-monospace,monospace;overflow-wrap:anywhere;color:var(--text-secondary);margin:4px 0}

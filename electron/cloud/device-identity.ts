@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { hostname, platform, release } from "node:os";
 import { dirname } from "node:path";
+import { hardwareDeviceId, readHardwareIdentity, type HardwareIdentity } from './hardware-identity.js';
 
 export interface DeviceIdentity {
+  legacyDeviceId?: string;
   deviceId: string;
   deviceName: string;
   platform: string;
@@ -13,29 +15,40 @@ export interface DeviceIdentity {
 
 interface PersistedDeviceIdentity {
   deviceId: string;
+  identityVersion?: 'hardware-v1';
+  legacyDeviceId?: string;
 }
 
 export class DeviceIdentityStore {
   private pending: Promise<DeviceIdentity> | null = null;
   private readonly path: string;
   private readonly appVersion: string;
+  private readonly hardware:()=>Promise<HardwareIdentity>;
 
-  constructor(path: string, appVersion: string) {
+  constructor(path: string, appVersion: string, hardware:()=>Promise<HardwareIdentity> = readHardwareIdentity) {
+    this.hardware=hardware;
     this.path = path;
     this.appVersion = appVersion;
   }
 
   get(): Promise<DeviceIdentity> {
-    this.pending ??= this.readOrCreate();
+    this.pending ??= this.readOrCreate().catch(error=>{this.pending=null;throw error;});
     return this.pending;
   }
 
   private async readOrCreate(): Promise<DeviceIdentity> {
     const persisted = await this.read();
-    const deviceId = persisted?.deviceId ?? randomUUID();
-    if (!persisted) await this.write({ deviceId });
+    let deviceId:string;
+    try { deviceId=hardwareDeviceId(await this.hardware()); }
+    catch {
+      if(!persisted)throw new Error('暂时无法读取硬件设备号，请稍后重试。');
+      deviceId=persisted.deviceId;
+    }
+    const legacyDeviceId = persisted?.deviceId!==deviceId ? (persisted?.identityVersion==='hardware-v1'?undefined:persisted?.deviceId) : persisted?.legacyDeviceId;
+    if (!persisted || persisted.deviceId!==deviceId) await this.write({deviceId,identityVersion:'hardware-v1',...(legacyDeviceId?{legacyDeviceId}:{})});
     return {
       deviceId,
+      ...(legacyDeviceId?{legacyDeviceId}:{}),
       deviceName: hostname(),
       platform: platform(),
       osVersion: release(),
@@ -51,7 +64,8 @@ export class DeviceIdentityStore {
       if (!isUuid(parsed.deviceId)) {
         throw new Error("Persisted Cloud device identity is invalid.");
       }
-      return { deviceId: parsed.deviceId };
+      if(parsed.legacyDeviceId!==undefined&&!isUuid(parsed.legacyDeviceId))throw new Error('Invalid legacy device identity.');
+      return { deviceId: parsed.deviceId,identityVersion:parsed.identityVersion,legacyDeviceId:parsed.legacyDeviceId };
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
         return null;

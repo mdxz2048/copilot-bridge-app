@@ -115,6 +115,13 @@ export interface CloudLoginCredentials {
 }
 
 export class CloudFoundation {
+  private startupValidated=false;
+  private startupValidation:Promise<void>|null=null;
+  private async validateStartup(device:Awaited<ReturnType<DeviceIdentityStore["get"]>>){
+    if(this.startupValidated)return;
+    this.startupValidation??=this.client.resume({device,legacyDeviceId:device.legacyDeviceId}).then(()=>{this.startupValidated=true;}).finally(()=>{this.startupValidation=null;});
+    await this.startupValidation;
+  }
   private loginDeviceLimit: CloudServiceStatus["loginDeviceLimit"];
   private readonly auth = new CloudAuthStateMachine();
   private readonly client: CloudClient;
@@ -161,6 +168,7 @@ export class CloudFoundation {
     await this.refreshServiceConfiguration();
     if (this.auth.state === "SIGNED_OUT") {
       try {
+        await this.validateStartup(device);
         await this.loadAccount();
         this.auth.transition("AUTHENTICATING");
         this.auth.transition("AUTHENTICATED");
@@ -195,9 +203,11 @@ export class CloudFoundation {
         email: credentials.email,
         password: credentials.password,
         replaceDeviceId: credentials.replaceDeviceId,
+        legacyDeviceId: device.legacyDeviceId,
         device,
       };
       await this.client.login(request);
+      this.startupValidated=true;
       await this.client.registerDevice(device);
       this.transitionFromAny("AUTHENTICATED");
       await this.loadAccount();
@@ -220,6 +230,7 @@ export class CloudFoundation {
   }
 
   async logout(): Promise<CloudServiceStatus> {
+    this.startupValidated=false;
     const configuration = await this.requireContract();
     try {
       await this.client.logout();
@@ -342,6 +353,7 @@ export class CloudFoundation {
     const configuration = await this.requireContract();
     const device = await this.devices.get();
     try {
+      await this.validateStartup(device);
       await this.loadAccount();
       await this.refreshServiceConfiguration();
       if (this.auth.state !== "AUTHENTICATED") {

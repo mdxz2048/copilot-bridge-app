@@ -176,6 +176,7 @@ function DeviceList({
                 {` ${device.name}`}
               </strong>
               <span>
+                <span className="bound-device-id">设备号：{device.deviceId}</span>
                 {device.platform}
                 {device.deviceId === currentDeviceId ? " · 当前设备" : ""}
               </span>

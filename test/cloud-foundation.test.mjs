@@ -562,7 +562,7 @@ test("isolates refresh credentials by Cloud host and Desktop profile", () => {
   );
 });
 
-test("creates one stable random device UUID without hardware fingerprinting", async () => {
+test("creates a stable hardware device UUID separately from the display name", async () => {
   const directory = await mkdtemp(join(tmpdir(), "copilot-cloud-device-"));
   try {
     const path = join(directory, "cloud-device.json");
@@ -575,7 +575,7 @@ test("creates one stable random device UUID without hardware fingerprinting", as
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
     assert.equal(second.deviceId, first.deviceId);
-    assert.deepEqual(Object.keys(persisted), ["deviceId"]);
+    assert.equal(persisted.identityVersion,"hardware-v1");
     assert.equal(first.appVersion, "1.2.3");
     assert.ok(first.deviceName);
     assert.ok(first.platform);
@@ -1217,5 +1217,58 @@ test("HTTP client validates limit details and sends the replacement device ID wi
   const device=await new DeviceIdentityStore(join(directory,'device.json'),'0.3.20').get();
   await assert.rejects(()=>client.login({email:'desktop@example.test',password:'test-password',device,replaceDeviceId:id}),error=>error instanceof CloudError&&error.deviceLimit?.devices[0].id===id);
   assert.equal(body.replaceDeviceId,id);assert.equal(client.getCachedUserId(),null);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("hardware identity is deterministic across stores, adapter order, hostname/OS changes and reinstalls",async()=>{
+ const {hardwareDeviceId}=await import('../dist-electron/cloud/hardware-identity.js');
+ const raw={uuid:'12345678-1234-5678-9012-123456789012',cpu:['BFEBFBFF000906EA'],mac:['00:11:22:33:44:55']};
+ const directory=await mkdtemp(join(tmpdir(),'bridge-hardware-'));
+ try{
+  const first=await new DeviceIdentityStore(join(directory,'a.json'),'0.3.21',async()=>raw).get();
+  const second=await new DeviceIdentityStore(join(directory,'b.json'),'99.0.0',async()=>({...raw,mac:['00:AA:BB:CC:DD:EE','00:11:22:33:44:55']})).get();
+  assert.equal(first.deviceId,second.deviceId);assert.equal(first.deviceId,hardwareDeviceId({...raw,cpu:['bfebfbff000906ea']}));
+  assert.notEqual(first.deviceId,hardwareDeviceId({...raw,uuid:'12345678-1234-5678-9012-123456789099'}));
+  const missingUuid={cpu:raw.cpu,mac:['00:AA:BB:CC:DD:EE','00:11:22:33:44:55']};assert.equal(hardwareDeviceId(missingUuid),hardwareDeviceId({...missingUuid,mac:missingUuid.mac.toReversed()}));
+  assert.throws(()=>hardwareDeviceId({uuid:'0'.repeat(32),cpu:[],mac:[]}));
+  const previous='11111111-1111-4111-8111-111111111111';await writeFile(join(directory,'old.json'),JSON.stringify({deviceId:previous}));
+  const migrated=await new DeviceIdentityStore(join(directory,'old.json'),'0.3.21',async()=>raw).get();assert.equal(migrated.legacyDeviceId,previous);assert.equal(migrated.deviceId,first.deviceId);
+  const moved=await new DeviceIdentityStore(join(directory,'old.json'),'0.3.21',async()=>({...raw,uuid:'12345678-1234-5678-9012-123456789099'})).get();assert.equal(moved.legacyDeviceId,undefined);assert.notEqual(moved.deviceId,first.deviceId);
+  const fallback=await new DeviceIdentityStore(join(directory,'old.json'),'0.3.21',async()=>{throw Error('CIM offline');}).get();assert.equal(fallback.deviceId,moved.deviceId);
+  await assert.rejects(()=>new DeviceIdentityStore(join(directory,'missing.json'),'0.3.21',async()=>{throw Error('CIM offline');}).get(),/硬件设备号/);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test("startup restoration validates with the platform once per process and does not store/replay a password",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'bridge-startup-auth-'));
+ try{
+  const client=configuredAccountClient(productMe()),foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,'device.json'),'0.3.21'));
+  const status=await foundation.getStatus();assert.equal(status.authState,'AUTHENTICATED');await foundation.getStatus();
+  const calls=client.calls.filter(c=>c.method==='resume');assert.equal(calls.length,1);assert.equal('password' in calls[0].request,false);
+  const rejected=configuredAccountClient(productMe()).reject('resume',new CloudError('DEVICE_REVOKED','设备已移除'));
+  const other=new CloudFoundation(rejected,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,'second.json'),'0.3.21'));
+  assert.equal((await other.getStatus()).authState,'DEVICE_REVOKED');assert.equal(rejected.calls.some(c=>c.method==='getMeV2'),false);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("expired cached login refreshes before migrating the hardware binding without recursive refresh or password replay",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'bridge-legacy-resume-http-'));
+ try{
+  const oldId='11111111-1111-4111-8111-111111111111',rowId='22222222-2222-4222-8222-222222222222',path=join(directory,'device.json');await writeFile(path,JSON.stringify({deviceId:oldId}));
+  const devices=new DeviceIdentityStore(path,'0.3.21',async()=>({uuid:'12345678-1234-5678-9012-123456789012',cpu:['ABCDEF1234567890']})),hardware=await devices.get(),calls=[];
+  const tokens=new CloudTokenSession(new WindowsCredentialManagerTokenStore(new MemoryCredentialManager()));await tokens.rotate({accessToken:'expired-access',refreshToken:'persisted-refresh-token-123456',expiresIn:1800});
+  const user={id:'33333333-3333-4333-8333-333333333333',email:'fixture@example.test',role:'USER',status:'ACTIVE'};
+  const record={...hardware,id:rowId,userId:user.id,status:'ACTIVE',activatedAt:new Date().toISOString(),lastSeenAt:new Date().toISOString()};
+  const client=new HttpCloudClient({baseUrl:'https://cloud.example.test',tokens,devices,deviceKeys:new DeviceKeyStore(new MemoryCredentialManager(),'resume-key'),fetch:async(input,init)=>{
+   const url=new URL(String(input)).pathname,body=JSON.parse(init.body);calls.push({url,body});
+   assert.equal('password' in body,false);
+   if(url==='/api/v1/auth/refresh')return Response.json({accessToken:'refreshed-access',refreshToken:'refreshed-token-1234567890',expiresIn:1800,device:{...record,deviceId:oldId}});
+   assert.equal(url,'/api/v1/auth/resume');assert.equal(body.device.deviceId,hardware.deviceId);assert.equal(body.legacyDeviceId,oldId);
+   if(new Headers(init.headers).get('authorization')==='Bearer expired-access')return Response.json({error:{code:'TOKEN_EXPIRED',message:'Expired',requestId:'fixture-id'}},{status:401});
+   return Response.json({accessToken:'migrated-access',refreshToken:'migrated-token-1234567890',expiresIn:1800,user,device:record});
+  }});
+  await client.resume({device:hardware,legacyDeviceId:oldId});assert.equal(tokens.getAccessToken(),'migrated-access');assert.equal(calls.filter(c=>c.url==='/api/v1/auth/refresh').length,1);assert.equal(new Set(calls.filter(c=>c.url.endsWith('/resume')).map(c=>c.body.sessionId)).size,1);assert.equal(client.getCachedUserId(),user.id);
  }finally{await rm(directory,{recursive:true,force:true});}
 });
