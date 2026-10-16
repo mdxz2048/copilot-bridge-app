@@ -50,7 +50,7 @@ contextBridge.exposeInMainWorld("copilotBridge", {
   openCloudRegistration: (): Promise<void> =>
     ipcRenderer.invoke("cloud:open-registration"),
   loginCloud: (
-    credentials: { email: string; password: string },
+    credentials: { email: string; password: string; replaceDeviceId?: string },
   ): Promise<CloudServiceStatus> =>
     ipcRenderer.invoke("cloud:login", credentials),
   logoutCloud: (): Promise<CloudServiceStatus> =>

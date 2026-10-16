@@ -236,6 +236,7 @@ async function refreshCloudStatus(): Promise<void> {
   try {
     const status = await cloudFoundation.refresh();
     broadcast("cloud:status", status);
+    if(status.loginDeviceLimit)return;
     const settings = await settingsStore.read();
     if (
       settings.backendMode === "REMOTE"
@@ -538,10 +539,11 @@ ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle("cloud:status", () => cloudFoundation.getStatus());
   ipcMain.handle("cloud:login", async (
     _event,
-    credentials: { email: string; password: string },
+    credentials: { email: string; password: string; replaceDeviceId?: string },
   ) => {
     const status = await cloudFoundation.login(credentials);
     broadcast("cloud:status", status);
+    if(status.loginDeviceLimit)return status;
     const settings = await settingsStore.read();
     if (settings.backendMode === "REMOTE") {
       requireCloudMode(settings);

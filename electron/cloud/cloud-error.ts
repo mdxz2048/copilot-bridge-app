@@ -29,6 +29,7 @@ export interface CloudErrorPolicy {
 
 export class CloudError extends Error {
   readonly code: string;
+  readonly deviceLimit?: { maxDevices: number; devices: Array<{id:string;deviceName:string;platform:string;lastSeenAt:string|null}> };
   readonly cause?: unknown;
   readonly httpStatus?: number;
   readonly requestId?: string;
@@ -39,6 +40,7 @@ export class CloudError extends Error {
     code: string,
     message: string,
     options?: {
+      deviceLimit?: { maxDevices: number; devices: Array<{id:string;deviceName:string;platform:string;lastSeenAt:string|null}> };
       cause?: unknown;
       httpStatus?: number;
       requestId?: string;
@@ -48,6 +50,7 @@ export class CloudError extends Error {
     super(message);
     this.name = "CloudError";
     this.code = code;
+    this.deviceLimit = options?.deviceLimit;
     this.cause = options?.cause;
     this.httpStatus = options?.httpStatus;
     this.requestId = options?.requestId;

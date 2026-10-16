@@ -26,6 +26,7 @@ import type {
 } from "./contract.js";
 import type { DeviceIdentityStore } from "./device-identity.js";
 import {
+  CloudError,
   authStateForCloudError,
   cloudErrorCode,
   cloudErrorPolicy,
@@ -33,6 +34,7 @@ import {
 import type { CloudErrorAction } from "./cloud-error.js";
 
 export interface CloudServiceStatus {
+  loginDeviceLimit?: { maxDevices: number; devices: Array<{id:string;deviceName:string;platform:string;lastSeenAt:string|null}> ;email:string };
   contractVersion: typeof CLOUD_CONTRACT_VERSION;
   authState: CloudAuthState;
   contractReady: boolean;
@@ -107,11 +109,13 @@ export interface CloudServiceStatus {
 }
 
 export interface CloudLoginCredentials {
+  replaceDeviceId?: string;
   email: string;
   password: string;
 }
 
 export class CloudFoundation {
+  private loginDeviceLimit: CloudServiceStatus["loginDeviceLimit"];
   private readonly auth = new CloudAuthStateMachine();
   private readonly client: CloudClient;
   private readonly configuration: CloudConfigurationProvider;
@@ -184,11 +188,13 @@ export class CloudFoundation {
   ): Promise<CloudServiceStatus> {
     const configuration = await this.requireContract();
     const device = await this.devices.get();
+    this.loginDeviceLimit=undefined;
     this.moveToAuthenticating();
     try {
       const request: LoginRequest = {
         email: credentials.email,
         password: credentials.password,
+        replaceDeviceId: credentials.replaceDeviceId,
         device,
       };
       await this.client.login(request);
@@ -197,6 +203,11 @@ export class CloudFoundation {
       await this.loadAccount();
       await this.refreshServiceConfiguration();
     } catch (error) {
+      if(error instanceof CloudError && error.code==='DEVICE_LIMIT_REACHED' && error.deviceLimit){
+        this.loginDeviceLimit={...error.deviceLimit,email:credentials.email.toLowerCase()};
+        this.moveToSignedOut();
+        return this.toStatus(configuration,device.deviceId,device.deviceName);
+      }
       this.applyErrorState(error);
       throw error;
     }
@@ -576,6 +587,7 @@ export class CloudFoundation {
       serviceConfigurationError: this.serviceConfigurationError,
       updateState,
       lastError: this.lastError,
+      loginDeviceLimit: this.loginDeviceLimit,
       accountManagementAvailable:
         configuration.accountManagementUrl !== null,
       subscriptionManagementAvailable:

@@ -618,6 +618,7 @@ async function responseError(response: Response): Promise<CloudError> {
     parsed.data.error.code,
     String(sanitizeFailure(parsed.data.error.message,4096).value),
     {
+      deviceLimit: parsed.data.error.code === "DEVICE_LIMIT_REACHED" ? parsed.data.error.details : undefined,
       httpStatus: response.status,
       requestId:
         parsed.data.error.request_id ?? parsed.data.error.requestId,

@@ -266,13 +266,14 @@ export function App() {
     }
   };
 
-  const loginCloud = async (credentials: { email: string; password: string }) => {
+  const loginCloud = async (credentials: { email: string; password: string; replaceDeviceId?: string }) => {
     setCloudLoginIssue(null);
     setBusy(true);
     setNotice(null);
     try {
       const next = await window.copilotBridge.loginCloud(credentials);
       setCloud(next);
+      if(next.loginDeviceLimit)return;
       setCloudLoginIssue(null);
       // Signing in from the account page alone must not change ChatGPT's mode.
       if (confirmedMode.current === true) await applyConfirmedMode(true, next);

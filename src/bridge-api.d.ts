@@ -71,6 +71,7 @@ export type CloudAuthState =
   | "SERVER_UNREACHABLE";
 
 export interface CloudServiceStatus {
+  loginDeviceLimit?: { maxDevices: number; devices: Array<{id:string;deviceName:string;platform:string;lastSeenAt:string|null}> ;email:string };
   contractVersion: "2.3.0";
   authState: CloudAuthState;
   contractReady: boolean;
@@ -307,6 +308,7 @@ declare global {
       getCloudStatus(): Promise<CloudServiceStatus>;
       openCloudRegistration(): Promise<void>;
       loginCloud(credentials: {
+        replaceDeviceId?: string;
         email: string;
         password: string;
       }): Promise<CloudServiceStatus>;

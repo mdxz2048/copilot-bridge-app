@@ -38,6 +38,7 @@ export const LoginRequestSchema = z.object({
   email: z.email(),
   password: z.string(),
   device: RegisterDeviceRequestV2Schema,
+  replaceDeviceId: z.uuid().optional(),
 });
 
 export const GatewayV1LoginResponseSchema = z.object({
@@ -124,6 +125,7 @@ export const ErrorResponseV2Schema = z.object({
 });
 export const ErrorResponseSchema = z.object({
   error: z.object({
+    details: z.object({maxDevices:z.number().int().min(1).max(100),devices:z.array(z.object({id:z.uuid(),deviceName:z.string().max(120),platform:z.string().max(60),lastSeenAt:z.string().nullable()})).max(100)}).optional(),
     code: ErrorCodeSchema,
     message: z.string(),
     requestId: z.string(),
@@ -532,6 +534,7 @@ export type RegisterRequestV2 = z.infer<typeof RegisterRequestV2Schema>;
 export type User = z.infer<typeof UserSchema>;
 export type Device = z.infer<typeof DeviceSchema>;
 export type LoginRequest = {
+  replaceDeviceId?: string;
   email: string;
   password: string;
   device: DeviceInfo;

@@ -1,0 +1,108 @@
+{
+  "date": "2026-10-16",
+  "release": {
+    "id": "a22b815d-ad95-4821-9d69-4cd9fe5f0f32",
+    "version": "0.3.20",
+    "channel": "stable",
+    "platform": "windows",
+    "arch": "x64",
+    "downloadUrl": "https://ai.mddxz.top/api/v1/releases/files/a22b815d-ad95-4821-9d69-4cd9fe5f0f32",
+    "sha256": "66e7da842b013662b7f24d6d3f0ab4536ba1f595df9d234aed1f8c5d16d149db",
+    "releaseNotes": "账号安全与设备管理更新：\n• 网页登录页新增忘记密码，可通过中文邮件重置密码。\n• 账户中心支持修改密码，后台用户管理支持重置、生成和复制密码。\n• App 登录设备达到上限时，可选择移除已有设备并继续登录。\n• 网页也可移除设备；被移除的设备需重新登录。\n• 修改或重置密码后，所有旧登录会话立即失效。",
+    "published": true,
+    "createdAt": "2026-10-16T14:45:09.775Z"
+  },
+  "checks": {
+    "apiUnit": 153,
+    "isolatedPostgres": 48,
+    "finalPasswordPostgresRerun": 7,
+    "contract": 10,
+    "webUnit": 15,
+    "app": 235,
+    "package": {
+      "passed": true,
+      "version": "0.3.20",
+      "verifiedFiles": 47,
+      "bytes": 343368090,
+      "sha256": "66e7da842b013662b7f24d6d3f0ab4536ba1f595df9d234aed1f8c5d16d149db"
+    },
+    "publicUpdater": {
+      "passed": true,
+      "executionEnvironment": "server Node using unchanged compiled App UpdateManager",
+      "publicHttpsFullDownload": true,
+      "automaticDownload": true,
+      "sha256Verified": true,
+      "readyVersion": "0.3.20",
+      "clientConfigVersion": "0.3.20"
+    },
+    "browser": {
+      "checks": [
+        {
+          "width": 1366,
+          "forgot": true,
+          "reset": true,
+          "change": true,
+          "removeDevice": true,
+          "overflow": false
+        },
+        {
+          "width": 390,
+          "forgot": true,
+          "reset": true,
+          "change": true,
+          "removeDevice": true,
+          "overflow": false
+        }
+      ],
+      "errors": []
+    },
+    "adminAndAppUi": {
+      "checks": [
+        {
+          "width": 1366,
+          "generate": true,
+          "copy": true,
+          "customReset": true,
+          "deviceSelection": true
+        },
+        {
+          "width": 390,
+          "generate": true,
+          "copy": true,
+          "customReset": true,
+          "deviceSelection": true
+        }
+      ]
+    },
+    "productionUi": {
+      "passed": true,
+      "checks": [
+        {
+          "width": 1366,
+          "adminResetControls": true,
+          "changePassword": true,
+          "forgotPassword": true,
+          "overflow": false
+        },
+        {
+          "width": 390,
+          "adminResetControls": true,
+          "changePassword": true,
+          "forgotPassword": true,
+          "overflow": false
+        }
+      ],
+      "errors": [],
+      "readOnly": true,
+      "noRealPasswordChanged": true,
+      "noEmailSent": true
+    }
+  },
+  "limits": {
+    "realUserPasswordsUnchanged": true,
+    "outboundRecoveryMailMockedInTests": true,
+    "realRecoveryEmailNotSent": true,
+    "installerNotExecuted": true,
+    "officialClientNotRestarted": true
+  }
+}

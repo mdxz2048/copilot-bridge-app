@@ -1194,3 +1194,28 @@ test("permanent access and seven-day reward expiry are separate from usage perio
   const status=await foundation.refresh();assert.equal(status.accountNeverExpires,true);assert.equal(status.validUntil,null);assert.equal(status.currentPeriodEnd,'2026-02-01T00:00:00.000Z');assert.deepEqual(status.balanceBreakdown,{regularRmb:1,rewardRmb:5,rewardExpiresAt:expiry,rewardExpiringRmb:5});
  }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+
+test("device-limit response reaches the sign-in sheet and a chosen replacement is forwarded",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'bridge-device-limit-'));
+ try{
+  const client=configuredAccountClient(productMe()),selection={maxDevices:1,devices:[{id:'22222222-2222-4222-8222-222222222222',deviceName:'已有电脑',platform:'Windows',lastSeenAt:null}]};
+  const requests=[];client.login=async request=>{requests.push(request);if(!request.replaceDeviceId)throw new CloudError('DEVICE_LIMIT_REACHED','设备已满',{deviceLimit:selection});return {};};client.registerDevice=async()=>({});
+  const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(directory,'device.json'),'0.3.20'));
+  const limited=await foundation.login({email:'desktop@example.test',password:'test-password'});
+  assert.equal(limited.authState,'SIGNED_OUT');assert.deepEqual(limited.loginDeviceLimit,{...selection,email:'desktop@example.test'});
+  const complete=await foundation.login({email:'desktop@example.test',password:'test-password',replaceDeviceId:selection.devices[0].id});
+  assert.equal(requests[1].replaceDeviceId,selection.devices[0].id);assert.equal(complete.authState,'AUTHENTICATED');assert.equal(complete.loginDeviceLimit,undefined);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test("HTTP client validates limit details and sends the replacement device ID without storing credentials",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'bridge-device-limit-http-'));
+ try{
+  let body;const id='22222222-2222-4222-8222-222222222222';
+  const client=new HttpCloudClient({baseUrl:'https://cloud.example.test',tokens:new CloudTokenSession(new WindowsCredentialManagerTokenStore(new MemoryCredentialManager())),devices:new DeviceIdentityStore(join(directory,'device.json'),'0.3.20'),deviceKeys:new DeviceKeyStore(new MemoryCredentialManager(),'test-limit-key'),fetch:async(_input,init)=>{body=JSON.parse(init.body);return Response.json({error:{code:'DEVICE_LIMIT_REACHED',message:'设备已满',requestId:'request-1',request_id:'request-1',details:{maxDevices:1,devices:[{id,deviceName:'电脑',platform:'Windows',lastSeenAt:null}]}}},{status:409});}});
+  const device=await new DeviceIdentityStore(join(directory,'device.json'),'0.3.20').get();
+  await assert.rejects(()=>client.login({email:'desktop@example.test',password:'test-password',device,replaceDeviceId:id}),error=>error instanceof CloudError&&error.deviceLimit?.devices[0].id===id);
+  assert.equal(body.replaceDeviceId,id);assert.equal(client.getCachedUserId(),null);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});

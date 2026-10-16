@@ -13,7 +13,7 @@ interface CloudAccountSheetProps {
   loginIssue: "SUBSCRIPTION_REQUIRED" | null;
   status: CloudServiceStatus | null;
   onClose: () => void;
-  onLogin: (credentials: { email: string; password: string }) => void;
+  onLogin: (credentials: { email: string; password: string; replaceDeviceId?: string }) => void;
   onOpenRegistration: () => void;
   onLogout: () => void;
   onManageAccount: () => void;
@@ -69,6 +69,7 @@ export function CloudAccountSheet({
   const title=view==="topup"?"联系管理员充值":view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"充值与调整记录":"我的账户";
   const money=Boolean(status?.billing),total=money?`¥${status!.billing!.balanceRmb.toFixed(4)}`:status?.remainingPoints==null?"—":`${formatPoints(status.remainingPoints)} 点`;
   const online=(status?.devices??[]).filter(d=>d.status==="ACTIVE"&&(d.current||(d.lastSeenAt&&Date.now()-Date.parse(d.lastSeenAt)<300000))).length;
+  const loginLimit=status?.loginDeviceLimit?.email===email.trim().toLowerCase()?status.loginDeviceLimit:undefined;
   const balanceRequired=authenticated&&status?.billing!=null&&status.billing.balanceRmb<=0;
   const healthy=authenticated&&status?.serviceStatus==="AVAILABLE"&&!balanceRequired;
   const badge=balanceRequired?"余额不足":healthy?"账户正常":state.title;
@@ -77,7 +78,7 @@ export function CloudAccountSheet({
   return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={footer}>
     {view==="topup"?<div className="detail-view account-topup"><Button className="secondary compact" onClick={back}>‹ 返回账户</Button><img className="admin-wechat-qr" src="./admin-wechat.png" alt="管理员微信二维码，扫码联系充值"/><p>使用微信扫码添加管理员，告知注册邮箱和充值金额。</p><p className="topup-account">注册邮箱：<strong>{status?.account}</strong></p><p>管理员增加余额后会自动同步，可返回账户查看。</p></div>:view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
     {(!status?.account)&&<div className={`compact-state state-panel-${state.tone}`} role="status"><strong>{subscriptionRequired?"Cloud 套餐未开通":state.title}</strong><p>{subscriptionRequired?(status?.accountManagementAvailable?"请联系管理员开通套餐后重试登录。":"当前环境未配置网站入口，请联系管理员开通后重试。"):state.message}</p>{subscriptionRequired&&status?.accountManagementAvailable&&<Button className="secondary compact" onClick={onManageAccount}>打开网站账户中心查看开通说明</Button>}</div>}
-    {!authenticated&&(status?.authState==="SIGNED_OUT"||status?.authState==="SUBSCRIPTION_REQUIRED")&&(
+    {!authenticated&&(status?.authState==="SIGNED_OUT"||status?.authState==="SUBSCRIPTION_REQUIRED"||status?.authState==="DEVICE_REVOKED")&&(
         <div className="cloud-login-fields">
           <div className="cloud-auth-mode">
             <strong>登录 Cloud</strong>
@@ -87,6 +88,7 @@ export function CloudAccountSheet({
               </Button>
             )}
           </div>
+          {loginLimit&&<section className="device-limit-panel" role="alert"><strong>已达到登录设备上限（{loginLimit.maxDevices} 台）</strong><p>选择一台设备移除后，继续登录此电脑。被移除的设备需要重新登录。</p>{loginLimit.devices.map(d=><div className="device-row" key={d.id}><div><strong>{d.deviceName}</strong><p>{d.platform} · {d.lastSeenAt?new Date(d.lastSeenAt).toLocaleString('zh-CN'):'暂无活动记录'}</p></div><Button className="secondary compact" disabled={busy||!password} onClick={()=>{if(window.confirm(`移除 ${d.deviceName} 并登录此电脑？`))onLogin({email:email.trim(),password,replaceDeviceId:d.id});}}>移除此设备并登录</Button></div>)}<Button className="secondary compact" disabled={busy} onClick={onManageAccount}>去网站管理设备</Button></section>}
           <p>新账号请先在网站完成验证注册。通过邀请注册后，联系管理员充值即可使用。</p>
           {!status?.accountManagementAvailable && <p>当前环境未配置网站注册地址，请联系管理员。</p>}
           <label>
