@@ -62,6 +62,11 @@ export const RefreshResponseSchema = z.object({
 });
 
 export const ErrorCodeSchema = z.enum([
+  "PURCHASE_LINK_EXPIRED",
+  "PURCHASE_LINK_USED",
+  "ORDER_ALREADY_SUBMITTED",
+  "ORDER_ALREADY_REVIEWED",
+  "INVALID_AMOUNT",
   "ACCOUNT_DISABLED",
   "AUTH_REQUIRED",
   "BILLING_REVIEW_REQUIRED",

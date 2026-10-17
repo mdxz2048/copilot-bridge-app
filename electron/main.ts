@@ -631,6 +631,12 @@ ipcMain.handle('update:status', () => updater.status);
     broadcast("cloud:status", status);
     return status;
   });
+  const purchaseAuth=async()=>{if((await cloudFoundation.getStatus()).authState!=="AUTHENTICATED")throw new Error("请先登录账号。");};
+  ipcMain.handle('reward:list',async()=>{await purchaseAuth();return cloudClient.getRewardNotices();});
+  ipcMain.handle('reward:ack',async(_event,id:string)=>{await purchaseAuth();return cloudClient.acknowledgeReward(id);});
+  ipcMain.handle('purchase:create',async()=>{await purchaseAuth();return cloudClient.createPurchaseTicket();});
+  ipcMain.handle('purchase:list',async(_event,page:number,status:string)=>{await purchaseAuth();return cloudClient.listPurchaseClaims(page,status);});
+  ipcMain.handle('purchase:status',async(_event,id:string)=>{await purchaseAuth();return cloudClient.getPurchaseTicketStatus(id);});
   ipcMain.handle("cloud:usage-settlement", (_event, responseId: string) =>
     cloudFoundation.getUsageSettlement(responseId));
   const unsupportedProvider = () => { throw new Error("Bridge 仅支持 Cloud，不再提供独立 API 连接选择。"); };

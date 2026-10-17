@@ -604,8 +604,8 @@ test("referral code copy reports success and failure without implying immediate 
     await app.clickSelector(".account-status-bar");
     await app.click('邀请好友');
     await app.clickSelector('button[aria-label="查看邀请记录"]');
-    assert.match(app.text, /注册仅记录邀请，不即时发奖/);
-    assert.match(app.text, /首次充值或管理员首次增加余额/);
+    assert.match(app.text, /新用户首次购买并审核到账后/);
+    assert.match(app.text, /双方各得 ¥5/);
     assert.match(app.text, /未配置可信的网站邀请链接/);
     assert.throws(() => app.button("复制邀请链接"), /Expected enabled button/);
     await app.click("复制邀请码");

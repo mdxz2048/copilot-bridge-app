@@ -1,3 +1,6 @@
+import {PurchaseTopup} from './PurchaseTopup';
+import type {PurchaseClient} from '../purchase-types';
+const purchaseClient:PurchaseClient={create:()=>window.copilotBridge.createPurchaseTicket(),list:(page,status)=>window.copilotBridge.listPurchaseClaims(page,status),status:id=>window.copilotBridge.getPurchaseTicketStatus(id)};
 import {InviteFriendControl} from "./InviteFriendControl";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type {
@@ -66,7 +69,7 @@ export function CloudAccountSheet({
   const subscriptionRequired = !authenticated
     && (loginIssue === "SUBSCRIPTION_REQUIRED"
       || status?.authState === "SUBSCRIPTION_REQUIRED");
-  const title=view==="topup"?"联系管理员充值":view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"充值与调整记录":"我的账户";
+  const title=view==="topup"?"充值":view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"充值与调整记录":"我的账户";
   const money=Boolean(status?.billing),total=money?`¥${status!.billing!.balanceRmb.toFixed(4)}`:status?.remainingPoints==null?"—":`${formatPoints(status.remainingPoints)} 点`;
   const online=(status?.devices??[]).filter(d=>d.status==="ACTIVE"&&(d.current||(d.lastSeenAt&&Date.now()-Date.parse(d.lastSeenAt)<300000))).length;
   const loginLimit=status?.loginDeviceLimit?.email===email.trim().toLowerCase()?status.loginDeviceLimit:undefined;
@@ -75,8 +78,8 @@ export function CloudAccountSheet({
   const badge=balanceRequired?"余额不足":healthy?"账户正常":state.title;
   const back=()=>setView("account");
   const footer=authenticated?<><Button className="secondary compact" disabled={busy||!status?.accountManagementAvailable} onClick={onManageAccount}>账户管理</Button><Button className="compact text-action" disabled={busy} onClick={onLogout}>退出登录</Button></>:status?.authState==="SIGNED_OUT"||status?.authState==="AUTHENTICATING"?null:<AccountActions loggedIn={Boolean(status?.account)} busy={busy} onLogout={onLogout} onManageAccount={onManageAccount} onManageSubscription={onManageSubscription} onRefresh={onRefresh} onUseOriginal={onUseOriginal} state={status?.authState??"SIGNED_OUT"} accountAvailable={status?.accountManagementAvailable===true} subscriptionAvailable={status?.subscriptionManagementAvailable===true}/>;
-  return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={footer}>
-    {view==="topup"?<div className="detail-view account-topup"><Button className="secondary compact" onClick={back}>‹ 返回账户</Button><img className="admin-wechat-qr" src="./admin-wechat.png" alt="管理员微信二维码，扫码联系充值"/><p>使用微信扫码添加管理员，告知注册邮箱和充值金额。</p><p className="topup-account">注册邮箱：<strong>{status?.account}</strong></p><p>管理员增加余额后会自动同步，可返回账户查看。</p></div>:view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
+  return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={view==="topup"?undefined:footer}>
+    {view==="topup"?<div className="detail-view account-topup"><Button className="secondary compact" onClick={back}>‹ 返回账户</Button><PurchaseTopup client={purchaseClient} qrSource="./xianyu-profile.jpg" onCredited={onRefresh}/></div>:view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
     {(!status?.account)&&<div className={`compact-state state-panel-${state.tone}`} role="status"><strong>{subscriptionRequired?"Cloud 套餐未开通":state.title}</strong><p>{subscriptionRequired?(status?.accountManagementAvailable?"请联系管理员开通套餐后重试登录。":"当前环境未配置网站入口，请联系管理员开通后重试。"):state.message}</p>{subscriptionRequired&&status?.accountManagementAvailable&&<Button className="secondary compact" onClick={onManageAccount}>打开网站账户中心查看开通说明</Button>}</div>}
     {!authenticated&&(status?.authState==="SIGNED_OUT"||status?.authState==="SUBSCRIPTION_REQUIRED"||status?.authState==="DEVICE_REVOKED")&&(
         <div className="cloud-login-fields">
@@ -89,7 +92,7 @@ export function CloudAccountSheet({
             )}
           </div>
           {loginLimit&&<section className="device-limit-panel" role="alert"><strong>已达到登录设备上限（{loginLimit.maxDevices} 台）</strong><p>选择一台设备移除后，继续登录此电脑。被移除的设备需要重新登录。</p>{loginLimit.devices.map(d=><div className="device-row" key={d.id}><div><strong>{d.deviceName}</strong><p>{d.platform} · {d.lastSeenAt?new Date(d.lastSeenAt).toLocaleString('zh-CN'):'暂无活动记录'}</p></div><Button className="secondary compact" disabled={busy||!password} onClick={()=>{if(window.confirm(`移除 ${d.deviceName} 并登录此电脑？`))onLogin({email:email.trim(),password,replaceDeviceId:d.id});}}>移除此设备并登录</Button></div>)}<Button className="secondary compact" disabled={busy} onClick={onManageAccount}>去网站管理设备</Button></section>}
-          <p>新账号请先在网站完成验证注册。通过邀请注册后，联系管理员充值即可使用。</p>
+          <p>新账号请先在网站完成验证注册。注册后可在账号页充值使用。</p>
           {!status?.accountManagementAvailable && <p>当前环境未配置网站注册地址，请联系管理员。</p>}
           <label>
             <span>{copy.email}</span>
@@ -142,7 +145,7 @@ export function CloudAccountSheet({
       <div className="compact-plan"><div><strong>{status.plan?`Cloud ${status.plan}`:"Cloud 按量使用"}</strong><small>{status.accountNeverExpires?"长期有效":`有效期至 ${formatDate(status.validUntil)}`}</small></div><button type="button" className="text-action" disabled={busy||!status.subscriptionManagementAvailable} onClick={onManageSubscription}>管理套餐 ›</button></div>
       <div className="compact-account-actions">{authenticated&&<Button className="small-action topup-action" onClick={()=>setView("topup")}>充值</Button>}<button type="button" className="small-action" onClick={()=>setView("devices")}><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="10" rx="2"/><path d="M1 17h18"/></svg>在线设备 {online}{status.billing?.maxDevices?` / ${status.billing.maxDevices}`:""}</button>{authenticated&&<InviteFriendControl small onHistory={()=>setView("referral")}/>}</div>
       <button className="compact-record-entry" type="button" onClick={()=>setView("usage")}><span>充值与调整记录</span><span aria-hidden="true">›</span></button>
-      <p className={`compact-account-note ${balanceRequired||!healthy?"attention":""}`} role="status">{balanceRequired?"余额不足，模型请求已暂停，请联系管理员充值。":!healthy?state.message:"余额与权限自动同步；需要调整请联系管理员。"}</p>
+      <p className={`compact-account-note ${balanceRequired||!healthy?"attention":""}`} role="status">{balanceRequired?"余额不足，模型请求已暂停，请充值。":!healthy?state.message:"余额与权限自动同步；需要调整请联系管理员。"}</p>
     </>}
     </>}
   </CompactDialog>;
@@ -265,7 +268,7 @@ function ReferralDetail({
           {copyFeedback && (
             <p role={copyFeedback.error ? "alert" : "status"}>{copyFeedback.message}</p>
           )}
-          <p>注册仅记录邀请，不即时发奖。受邀新用户首次充值或管理员首次增加余额后，符合活动的双方各得 ¥5，奖励到账后 7 天有效。仅开通套餐不算充值；异常邀请需管理员核对。</p>
+          <p>新用户首次购买并审核到账后，双方各得 ¥5。奖励 7 天有效，到账后请确认弹窗。</p>
           <div className="detail-stats">
             <CloudValue label="已邀请" value={String(referral.registered)} />
             <CloudValue label="有效邀请" value={String(referral.rewarded)} />

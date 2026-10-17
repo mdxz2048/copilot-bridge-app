@@ -283,6 +283,13 @@ export interface ServiceSwitchResult {
 declare global {
   interface Window {
     copilotBridge: {
+      getRewardNotices():ReturnType<import('./components/RewardNoticeDialog').RewardClient['list']>;
+      acknowledgeReward(id:string):Promise<unknown>;
+
+      createPurchaseTicket():Promise<import('./purchase-types').PurchaseTicket>;
+      listPurchaseClaims(page:number,status:string):Promise<import('./purchase-types').PurchaseList>;
+      getPurchaseTicketStatus(id:string):ReturnType<import('./purchase-types').PurchaseClient['status']>;
+
       getInviteMessage(): Promise<{message:string;downloadUrl:string;referralUrl?:string}>;
       getStartupWarning?(): Promise<string|null>;
     getAppVersion(): Promise<string>;

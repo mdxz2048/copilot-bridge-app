@@ -285,3 +285,8 @@ direct TXT path-attachment probe returned normal SSE but did not expose the
 fixture content to the model. Attachment parsing/wiring is therefore verified,
 but packaged document consumption and ChatGPT Desktop ATT-1/4 remain blocked
 by runtime investigation and restart stability.
+
+
+## 2026-10-18：0.3.24 已上线
+
+统一购买审核充值、手机账号绑定提交、邀请奖励审核后发放和强制确认弹窗已交付，App 257 项测试及安装包真实下载校验通过。详见 [发布记录](RELEASE_0_3_24.md)。

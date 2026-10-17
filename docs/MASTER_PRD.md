@@ -110,3 +110,8 @@ Store Desktop request.
 - Final release must run as a per-user NSIS-installed application without
   separately installed Node, npm, VS Code, or Copilot CLI. Portable EXE output
   is development-only because its self-extraction delays startup.
+
+
+## 2026-10-18：购买审核充值与奖励确认
+
+充值统一采用闲鱼个人主页下单、手机扫码提交订单号、管理员核对实付金额后 1:1 到账。取消微信加管理员充值入口。邀请双方奖励仅由新用户首次购买审核到账触发，手动调余额不触发；奖励弹窗需用户明确确认并保存回执。详见 [App 0.3.24 发布说明](RELEASE_0_3_24.md)。
