@@ -66,3 +66,11 @@ test('manager cannot pretend cancellation stopped elevated Windows deployment',a
  const directory=await ownTemp(),statuses=[];let manager;let detectCount=0;
  try{manager=new ChatGptManager(undefined,{offlineFetch:fakeFetch(),execute:async()=>{assert.equal(manager.cancelInstall(),false);assert.throws(()=>manager.install(()=>{},async()=>{}),/已在进行中/);return{stdout:'{"installed":true}',stderr:''}}});manager.detect=async()=>++detectCount===1?{state:'NOT_INSTALLED',message:'missing'}:{state:'INSTALLED',message:'installed'};await manager.installOffline(directory,s=>statuses.push(s));assert.equal(statuses.at(-1).state,'INSTALLED');assert.equal(manager.cancelInstall(),true);}finally{await rm(directory,{recursive:true,force:true})}
 });
+
+
+test('offline installer header/body stalls release waiting, clean cache and never execute installation',async()=>{
+ for(const phase of ['manifest','body']){
+  const dir=await ownTemp();let executed=false;
+  try{await assert.rejects(installOfficialClient(dir,{networkTimeouts:{connectMs:25,idleMs:25,totalMs:250},progress:()=>{},execute:async()=>{executed=true;return{stdout:'{}',stderr:''};},fetch:async input=>String(input).endsWith('/windows')?(phase==='manifest'?new Promise(()=>{}):Response.json(manifest)):new Response(new ReadableStream({start(c){c.enqueue(payload.subarray(0,1));}}))}),/网络可能不稳定/);assert.equal(executed,false);assert.deepEqual(await readdir(dir),[]);}finally{await rm(dir,{recursive:true,force:true});}
+ }
+});

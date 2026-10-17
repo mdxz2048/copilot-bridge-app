@@ -1,3 +1,4 @@
+import { networkDeadline } from './network-deadline.js';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, open, rename, unlink, readdir } from 'node:fs/promises';
@@ -10,6 +11,7 @@ interface UpdateOptions {
   latest(): Promise<UpdateRelease | null>;
   changed(status: UpdateStatus): void;
   fetch?: typeof fetch;
+  networkTimeouts?: {connectMs:number;idleMs:number;totalMs:number};
 }
 export function newerVersion(next: string, current: string): boolean {
   if (!/^\d+\.\d+\.\d+$/.test(next) || !/^\d+\.\d+\.\d+$/.test(current)) return false;
@@ -33,14 +35,16 @@ export class UpdateManager {
     if (this.pending) return this.pending;
     this.pending = this.run().catch(error => {
       this.ready = null;
-      this.emit({ ...this.status, state: 'ERROR', message: error instanceof Error ? error.message : String(error) });
+      this.emit({ ...this.status, state: 'ERROR', message: error instanceof TypeError ? '更新连接失败，网络可能不稳定，请检查网络后重试。' : error instanceof Error ? error.message : '更新暂时失败，请稍后重试。' });
       return this.status;
     }).finally(() => { this.pending = null; });
     return this.pending;
   }
   private async run(): Promise<UpdateStatus> {
     this.emit({ state: 'CHECKING' });
-    const release = await this.options.latest();
+    const checkDeadline=networkDeadline({label:'检查更新',totalMs:this.options.networkTimeouts?.connectMs??15000});
+    let release:UpdateRelease|null;
+    try{release=await checkDeadline.run(()=>this.options.latest());}finally{checkDeadline.dispose();}
     if (!release || release.channel !== 'stable' || release.platform !== 'windows' || release.arch !== 'x64' || !newerVersion(release.version, this.options.currentVersion)) {
       this.ready = null; this.emit({ state: 'CURRENT' }); return this.status;
     }
@@ -59,7 +63,10 @@ export class UpdateManager {
     if (!cached) {
       await unlink(path).catch((e: NodeJS.ErrnoException) => { if (e.code !== 'ENOENT') throw e; });
       this.emit({ state: 'DOWNLOADING', ...details, downloaded: 0 });
-      const response = await (this.options.fetch ?? fetch)(url, { redirect: 'error', signal: AbortSignal.timeout(15 * 60_000) });
+      const deadline=networkDeadline({label:'下载更新安装包',connectMs:15000,idleMs:60000,totalMs:15*60000,...this.options.networkTimeouts});
+      try {
+      const response = await deadline.run(()=>(this.options.fetch ?? fetch)(url, { redirect: 'error', signal: deadline.signal }));
+      deadline.headersReceived();
       if (!response.ok || !response.body) throw new Error(`安装包下载失败 (${response.status})。`);
       const length = response.headers.get('content-length'), total = length ? Number(length) : undefined;
       const limit = 512 * 1024 * 1024;
@@ -67,10 +74,12 @@ export class UpdateManager {
       let downloaded = 0, lastProgress = 0;
       const hash = createHash('sha256'); let signature = Buffer.alloc(0);
       const file = await open(temporary, 'wx', 0o600);
+      const reader=response.body.getReader();
       try {
         this.emit({ state: 'DOWNLOADING', ...details, downloaded, total });
-        for await (const chunk of response.body) {
-          const bytes = Buffer.from(chunk); downloaded += bytes.length;
+        for (;;) {
+          const chunk=await deadline.run(()=>reader.read());if(chunk.done)break;deadline.progress();
+          const bytes = Buffer.from(chunk.value); downloaded += bytes.length;
           if (downloaded > limit) throw new Error('安装包超过大小限制。');
           if (signature.length < 2) signature = Buffer.concat([signature, bytes.subarray(0, 2 - signature.length)]);
           hash.update(bytes);
@@ -81,6 +90,8 @@ export class UpdateManager {
         if (signature.toString('ascii') !== 'MZ' || (total !== undefined && total !== downloaded) || hash.digest('hex').toLowerCase() !== release.sha256.toLowerCase()) throw new Error('安装包校验失败，请重新检查升级。');
         await file.sync(); await file.close(); await rename(temporary, path);
       } catch (error) { await file.close().catch(() => undefined); await unlink(temporary).catch(() => undefined); throw error; }
+      finally{void reader.cancel().catch(()=>undefined);reader.releaseLock();}
+      }finally{deadline.dispose();}
     }
     this.ready = { path, release };
     this.emit({ state: 'READY', ...details }); return this.status;

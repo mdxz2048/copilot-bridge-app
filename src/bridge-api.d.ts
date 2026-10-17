@@ -284,7 +284,8 @@ declare global {
   interface Window {
     copilotBridge: {
       getInviteMessage(): Promise<{message:string;downloadUrl:string;referralUrl?:string}>;
-      getAppVersion(): Promise<string>;
+      getStartupWarning?(): Promise<string|null>;
+    getAppVersion(): Promise<string>;
       getUpdateStatus(): Promise<{ state: string; version?: string; downloaded?: number; total?: number; message?: string; releaseNotes?: string | null; publishedAt?: string | null }>;
       checkForUpdates(): Promise<void>;
       installUpdate(): Promise<void>;

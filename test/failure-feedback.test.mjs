@@ -123,10 +123,10 @@ test('HTML 413 has actionable capacity error and bounded sanitized proxy excerpt
  }
 });
 
-test('model HTTP deadline is 70min/configurable, management stays 30s and caller cancellation remains linked',async t=>{
+test('model HTTP deadline is 70min/configurable, management stays 15s and caller cancellation remains linked',async t=>{
  const deadlines=[];t.mock.method(AbortSignal,'timeout',ms=>{deadlines.push(ms);return new AbortController().signal});let requestSignal;
  const make=extra=>new HttpCloudClient({baseUrl:'https://fixture.test',tokens:{getAccessToken:()=> 'fixture-token'},devices:{get:async()=>({deviceId:B})},deviceKeys:{get:async()=>({sign:()=>new Headers()})},fetch:async(url,options)=>{requestSignal=options.signal;return url.endsWith('/auth/me')?Response.json({user:{id:A,email:'fixture@example.test',role:'USER',status:'ACTIVE'}}):Response.json(payload())},...extra});
- const client=make({});await client.getMe();const cancel=new AbortController();await client.createResponse({model:MODEL,input:'fixture'},{threadId:'fixture',signal:cancel.signal});assert.deepEqual(deadlines,[30000,70*60000]);assert.equal(requestSignal.aborted,false);cancel.abort();assert.equal(requestSignal.aborted,true);await make({responseTimeoutMs:12345}).createResponse({model:MODEL,input:'fixture'},{threadId:'fixture'});assert.equal(deadlines.at(-1),12345);
+ const client=make({});await client.getMe();const cancel=new AbortController();await client.createResponse({model:MODEL,input:'fixture'},{threadId:'fixture',signal:cancel.signal});assert.deepEqual(deadlines,[15000,70*60000]);assert.equal(requestSignal.aborted,false);cancel.abort();assert.equal(requestSignal.aborted,true);await make({responseTimeoutMs:12345}).createResponse({model:MODEL,input:'fixture'},{threadId:'fixture'});assert.equal(deadlines.at(-1),12345);
 });
 
 test('20MiB continuous tool/text values cannot overflow redaction regex or interrupt forwarding',async()=>{

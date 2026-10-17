@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-18",
+  "release": {
+    "id": "548d386f-0271-4337-99ac-946773e5801f",
+    "version": "0.3.23",
+    "channel": "stable",
+    "platform": "windows",
+    "arch": "x64",
+    "downloadUrl": "https://ai.mddxz.top/api/v1/releases/files/548d386f-0271-4337-99ac-946773e5801f",
+    "sha256": "08796172d8e7add0820bb90f6edbd670f2b48969af443f3beac60c3c456a684d",
+    "releaseNotes": "网络与超时体验优化：\n• 登录、账号、模型列表等请求增加有界等待，超时提示网络可能不稳定。\n• 补齐响应内容读取时限，结束加载后可以重试。\n• 更新与官方安装包下载增加建连、无数据和总时限，失败清理临时文件。\n• 登录续期失效停止重复请求；临时故障退避重试，减少 401/429 循环。\n• 系统登录凭据服务超时会显示提示，不再无限等待。",
+    "published": true,
+    "createdAt": "2026-10-17T16:22:57.235Z"
+  },
+  "package": {
+    "passed": true,
+    "version": "0.3.23",
+    "verifiedFiles": 50,
+    "bytes": 343290342,
+    "sha256": "08796172d8e7add0820bb90f6edbd670f2b48969af443f3beac60c3c456a684d"
+  },
+  "checks": {
+    "appTests": 254,
+    "renderer": {
+      "passed": true,
+      "realRendererAndCompiledPreload": true,
+      "shortenedTimeoutFixture": true,
+      "checks": [
+        {
+          "theme": "light",
+          "chineseTimeoutVisible": true,
+          "loginReleased": true,
+          "errors": []
+        },
+        {
+          "theme": "dark",
+          "chineseTimeoutVisible": true,
+          "loginReleased": true,
+          "errors": []
+        }
+      ]
+    },
+    "publicUpdater": {
+      "passed": true,
+      "executionEnvironment": "server Node using unchanged compiled App UpdateManager",
+      "publicHttpsFullDownload": true,
+      "automaticDownload": true,
+      "sha256Verified": true,
+      "readyVersion": "0.3.23",
+      "clientConfigVersion": "0.3.23"
+    }
+  },
+  "scope": {
+    "timeoutsAndSessionRetryImplemented": true,
+    "cloudRuntimeChanged": false,
+    "purchaseClaimsDesignOnly": true,
+    "mobileOrderTicketServiceImplemented": false
+  },
+  "limits": [
+    "Renderer uses simulated IPC and shortened waiting budgets.",
+    "No interruption of current official client, host installation, or forced logout of real users."
+  ],
+  "serverTemporaryFilesCleaned": true
+}

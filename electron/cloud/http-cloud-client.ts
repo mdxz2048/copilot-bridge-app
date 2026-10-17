@@ -1,3 +1,4 @@
+import { networkDeadline, NetworkTimeoutError } from '../network-deadline.js';
 import { z } from "zod";
 import {randomUUID} from "node:crypto";
 import {
@@ -97,6 +98,9 @@ export class HttpCloudClient implements CloudClient {
   private refreshInFlight: Promise<void> | null = null;
   private cachedUserId:string|null=null;
   private identityEpoch=0;
+  private refreshBlocked: CloudError | null = null;
+  private refreshRetryAt = 0;
+  private refreshFailures = 0;
   getCachedUserId():string|null {return this.tokens.getAccessToken()?this.cachedUserId:null;}
   submitFailureFeedback(report:FailureFeedback) {
     const body=FailureFeedbackSchema.parse(report);
@@ -109,7 +113,7 @@ export class HttpCloudClient implements CloudClient {
     this.tokens = options.tokens;
     this.devices = options.devices;
     this.deviceKeys = options.deviceKeys;
-    this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.timeoutMs = options.timeoutMs ?? 15_000;
     this.responseTimeoutMs = options.responseTimeoutMs ?? 70 * 60_000;
     this.defaultHeaders = new Headers(options.defaultHeaders);
     this.fetch = options.fetch ?? globalThis.fetch;
@@ -132,8 +136,7 @@ export class HttpCloudClient implements CloudClient {
   }
   private async resumeWithCurrentToken(request:{device:DeviceInfo;legacyDeviceId?:string}):Promise<void>{
     const device=RegisterDeviceRequestV2Schema.parse({...request.device,publicKeyJwk:(await this.deviceKeys.get()).publicKeyJwk});
-    const response=await this.authenticatedFetch('/api/v1/auth/resume',{method:'POST',body:JSON.stringify({device,legacyDeviceId:request.legacyDeviceId,sessionId:this.startupSessionId})});
-    const verified=await parseResponse(response,LoginResponseSchema);
+    const verified=await this.controlRequest('/api/v1/auth/resume',{method:'POST'},async signal=>{const response=await this.authenticatedFetch('/api/v1/auth/resume',{method:'POST',body:JSON.stringify({device,legacyDeviceId:request.legacyDeviceId,sessionId:this.startupSessionId}),signal});return parseResponse(response,LoginResponseSchema);});
     if(verified.device.deviceId!==device.deviceId)throw new CloudError('INVALID_SERVER_RESPONSE','恢复登录返回了不一致的设备号。');
     await this.tokens.rotate(verified);this.cachedUserId=verified.user.id;
   }
@@ -154,19 +157,30 @@ export class HttpCloudClient implements CloudClient {
         redirect: "manual",
       },
     );
+    if(epoch!==this.identityEpoch)throw new CloudError("UNAUTHORIZED","登录状态已变化，请重新登录。");
     await this.tokens.rotate(response);
-    if(epoch===this.identityEpoch)this.cachedUserId=response.user.id;
+    this.refreshBlocked=null;this.refreshRetryAt=0;this.refreshFailures=0;
+    this.cachedUserId=response.user.id;
     return response;
   }
 
   refresh(): Promise<void> {
-    this.refreshInFlight ??= this.performRefresh().finally(() => {
-      this.refreshInFlight = null;
-    });
+    if(this.refreshBlocked)return Promise.reject(this.refreshBlocked);
+    if(Date.now()<this.refreshRetryAt)return Promise.reject(new CloudError('SERVER_UNREACHABLE','登录续期暂时失败，网络可能不稳定，请稍后重试。'));
+    const epoch=this.identityEpoch;
+    this.refreshInFlight ??= this.performRefresh(epoch).then(()=>{this.refreshFailures=0;this.refreshRetryAt=0;}).catch(async error=>{
+      if(epoch===this.identityEpoch){
+        if(error instanceof CloudError&&['UNAUTHORIZED','DEVICE_REVOKED','ACCOUNT_DISABLED'].includes(error.code)){
+          this.refreshBlocked=new CloudError(error.code,error.code==='UNAUTHORIZED'?'登录已失效，请重新登录。':error.message,{httpStatus:error.httpStatus});
+          this.cachedUserId=null;await this.tokens.clear();
+        }else if(error instanceof CloudError&&['SERVER_UNREACHABLE','RATE_LIMITED','GATEWAY_TIMEOUT'].includes(error.code)){this.refreshRetryAt=Date.now()+Math.min(60000,10000*2**Math.min(this.refreshFailures++,3));}
+      }
+      throw this.refreshBlocked??error;
+    }).finally(()=>{this.refreshInFlight=null;});
     return this.refreshInFlight;
   }
 
-  private async performRefresh(): Promise<void> {
+  private async performRefresh(epoch:number): Promise<void> {
     const refreshToken = await this.tokens.readRefreshToken();
     if (!refreshToken) {
       throw new CloudError("UNAUTHORIZED", "No Cloud refresh token is stored.");
@@ -187,6 +201,7 @@ export class HttpCloudClient implements CloudClient {
         redirect: "manual",
       },
     );
+    if(epoch!==this.identityEpoch)throw new CloudError('UNAUTHORIZED','登录状态已变化，请重新登录。');
     await this.tokens.rotate(response);
     // A refreshed session after an app upgrade must update the existing device version.
     // Do not use registerDevice's refresh retry here: retrying refreshInFlight would deadlock.
@@ -195,11 +210,10 @@ export class HttpCloudClient implements CloudClient {
       await this.resumeWithCurrentToken({device,legacyDeviceId:device.legacyDeviceId});return;
     }
     const registration = RegisterDeviceRequestV2Schema.parse({ ...device, publicKeyJwk: (await this.deviceKeys.get()).publicKeyJwk });
-    const registered = await this.authenticatedFetch("/api/v1/devices/register", {
-      method: "POST",
-      body: JSON.stringify(registration),
+    const verified = await this.controlRequest('/api/v1/devices/register',{method:'POST'}, async signal=>{
+      const registered = await this.authenticatedFetch('/api/v1/devices/register',{method:'POST',body:JSON.stringify(registration),signal});
+      return parseResponse(registered, RegisterDeviceResponseSchema);
     });
-    const verified = await parseResponse(registered, RegisterDeviceResponseSchema);
     if (verified.device.deviceId !== device.deviceId) throw new CloudError("INVALID_SERVER_RESPONSE", "Cloud registered an unexpected device identity.");
   }
 
@@ -219,14 +233,10 @@ export class HttpCloudClient implements CloudClient {
             "No Cloud refresh token is stored.",
           );
         }
-        const response = await this.authenticatedFetch(
-          "/api/v1/auth/logout",
-          {
-            method: "POST",
-            body: JSON.stringify({ refreshToken }),
-          },
-        );
-        await parseResponse(response, LogoutResponseSchema);
+        await this.controlRequest('/api/v1/auth/logout',{method:'POST'},async signal=>{
+          const response=await this.authenticatedFetch('/api/v1/auth/logout',{method:'POST',body:JSON.stringify({refreshToken}),signal});
+          return parseResponse(response,LogoutResponseSchema);
+        });
       },
       () => this.refresh(),
     );
@@ -518,10 +528,10 @@ export class HttpCloudClient implements CloudClient {
     gateway = false,
   ): Promise<T> {
     return withSingleTokenRefreshRetry(
-      async () => {
-        const response = await this.authenticatedFetch(path, init, gateway);
+      () => this.controlRequest(path, init, async signal => {
+        const response = await this.authenticatedFetch(path, { ...init, signal }, gateway);
         return parseResponse(response, schema);
-      },
+      }),
       () => this.refresh(),
     );
   }
@@ -531,6 +541,8 @@ export class HttpCloudClient implements CloudClient {
     init: RequestInit = {},
     gateway = false,
   ): Promise<Response> {
+    if(this.refreshBlocked)throw this.refreshBlocked;
+    if(Date.now()<this.refreshRetryAt)throw new CloudError('SERVER_UNREACHABLE','登录续期暂时失败，网络可能不稳定，请稍后重试。');
     const accessToken = this.tokens.getAccessToken();
     if (!accessToken) {
       throw new CloudError("TOKEN_EXPIRED", "Cloud access token is unavailable.");
@@ -564,9 +576,24 @@ export class HttpCloudClient implements CloudClient {
     schema: z.ZodType<T>,
     init: RequestInit = {},
   ): Promise<T> {
-    const response = await this.rawFetch(path, init);
-    if (!response.ok) throw await responseError(response);
-    return parseResponse(response, schema);
+    return this.controlRequest(path, init, async signal => {
+      const response = await this.rawFetch(path, { ...init, signal });
+      if (!response.ok) throw await responseError(response);
+      return parseResponse(response, schema);
+    });
+  }
+
+  private async controlRequest<T>(path:string, init:RequestInit, action:(signal:AbortSignal)=>Promise<T>):Promise<T> {
+    const label=path.includes('/auth/login')?'登录':path.includes('/auth/refresh')?'登录续期':path.includes('/models')?'获取模型列表':path.includes('/releases')?'检查更新':path.includes('/devices')?'设备操作':path.includes('/usage')||path.includes('/wallet')?'同步余额与用量':'连接平台';
+    const deadline=networkDeadline({label,totalMs:this.timeoutMs,signal:init.signal??undefined});
+    try{return await deadline.run(()=>action(deadline.signal));}
+    catch(error){
+      if(deadline.signal.reason instanceof NetworkTimeoutError)throw new CloudError('SERVER_UNREACHABLE',deadline.signal.reason.message+((init.method??'GET')!=='GET'?' 操作结果可能已生效，请刷新状态确认。':''));
+      if(error instanceof CloudError){if(error.code==='SERVER_UNREACHABLE')throw new CloudError(error.code,`${label}连接失败，网络可能不稳定，请检查网络后重试。`,{cause:error,requestId:error.requestId});throw error;}
+      if(error instanceof SyntaxError)throw new CloudError('INVALID_SERVER_RESPONSE','平台响应不完整或格式异常，请稍后重试。');
+      if(error instanceof TypeError)throw new CloudError('SERVER_UNREACHABLE',`${label}连接中断，网络可能不稳定，请检查网络后重试。`,{cause:error});
+      throw error;
+    }finally{deadline.dispose();}
   }
 
   private rawFetch(path: string, init: RequestInit): Promise<Response> {

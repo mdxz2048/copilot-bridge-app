@@ -55,6 +55,7 @@ const effectiveCodexHome = process.env.CODEX_HOME || originalHome;
 const localCredentialTarget = `CopilotBridge.LocalGateway.${app.getPath("userData").replace(/[^a-zA-Z0-9]/g, "_")}`;
 const localCredentials = new WindowsPasswordVaultCredentialManager();
 let localGatewayKey: string | null = null;
+let startupWarning:string|null=null;
 const helperPath = app.isPackaged
   ? join(process.resourcesPath, "gateway-runtime", "gateway-token-helper.mjs")
   : join(app.getAppPath(), "dist-electron", "gateway-token-helper.mjs");
@@ -205,6 +206,11 @@ function sendChatGptStatus(status: ChatGptStatus): void {
 }
 
 async function prepareBridgeEnvironment(): Promise<void> {
+  try { await prepareLocalCredentials();startupWarning=null; }
+  catch(error){startupWarning=error instanceof Error?error.message:'本地连接初始化失败，请稍后重试。';throw error;}
+}
+
+async function prepareLocalCredentials(): Promise<void> {
   await mkdir(bridgeHome, { recursive: true });
   const configPath = join(bridgeHome, "config.toml");
   if (!existsSync(configPath)) {
@@ -232,6 +238,7 @@ wire_api = "responses"
 }
 
 async function startBridge(): Promise<void> {
+  if(!localGatewayKey)await prepareBridgeEnvironment();
   const settings = await settingsStore.read();
   requireCloudMode(settings);
   const status = await bridgeManager.start(settings);
@@ -468,7 +475,7 @@ app.whenReady().then(async () => {
     });
   }catch(error){legacyRestoreFailed=true;logDiagnostic(`Legacy connection restore failed: ${error instanceof Error?error.message:String(error)}`);}
   currentSettings = settings;
-  await prepareBridgeEnvironment();
+  await prepareBridgeEnvironment().catch(error=>logDiagnostic(`Local gateway initialization failed: ${error instanceof Error?error.name:'UnknownError'}`));
   applyTheme(settings.theme);
   if (!isIsolatedTestInstance) {
     app.setLoginItemSettings({
@@ -485,6 +492,7 @@ app.whenReady().then(async () => {
 ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle('update:check', () => checkForUpdates(true));
   ipcMain.handle('update:install', () => installUpdate());
+  ipcMain.handle("app:startup-warning",()=>startupWarning);
   ipcMain.handle("profile:activate", async (_event, target: ProfileId) => {
     if (target === 'bridge') {
       await requireInstalledChatGpt();
@@ -673,7 +681,7 @@ ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle("oauth:open-verification", () => { throw new Error("不再提供 GitHub Copilot 登录入口。"); });
 
 
-  const policyTimer = setInterval(() => {void cloudFoundation.syncPolicy().then(async status=>{if(status){broadcast("cloud:status",status);await recoverCloudBridge();}}).catch(()=>undefined);},5000);
+  const policyTimer = setInterval(() => {void cloudFoundation.syncPolicy().then(async status=>{if(status){broadcast("cloud:status",status);if(['SIGNED_OUT','DEVICE_REVOKED','ACCOUNT_LOCKED'].includes(status.authState)){if(bridgeManager.getStatus().state==='ready'){broadcast('bridge:status',await bridgeManager.stop());broadcast('bridge:models',[]);refreshTray();}}else await recoverCloudBridge();}}).catch(()=>undefined);},5000);
   let modelSyncInFlight=false;
   const modelTimer=setInterval(()=>{
     if(modelSyncInFlight||bridgeManager.getStatus().state!=="ready")return;
@@ -703,7 +711,7 @@ ipcMain.handle('update:status', () => updater.status);
     broadcast("profile:status", updated);
   }).catch(error => logDiagnostic(`Bridge profile refresh failed: ${error instanceof Error ? error.message : String(error)}`));
   if (settings.autoBridgeStart&&!legacyRestoreFailed) {
-    void startBridge();
+    void startBridge().catch(error=>logDiagnostic(`Bridge startup failed: ${error instanceof Error?error.name:"UnknownError"}`));
   }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

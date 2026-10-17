@@ -868,3 +868,9 @@ test("authenticated account with failed listener offers recovery and can open Ch
     assert.doesNotMatch(app.text,/本地连接未就绪/);
   } finally { await app.dispose(); }
 });
+
+
+test('login timeout is visible in Chinese and the login button becomes usable again',async()=>{
+ const app=await mountApp({cloudLoginError:"Error invoking remote method 'cloud:login': Error: 登录等待超时，网络或系统响应可能不稳定。操作结果可能已生效，请刷新状态确认后再试。"});
+ try{await app.clickSelector('.account-status-bar');await app.input('email','fixture@example.test');await app.input('password','fixture-password');await app.click('登录',true);assert.match(app.text,/登录等待超时/);assert.match(app.text,/网络或系统响应可能不稳定/);assert.doesNotMatch(app.text,/Error invoking remote method/);assert.ok(app.button('登录',true));}finally{await app.dispose();}
+});

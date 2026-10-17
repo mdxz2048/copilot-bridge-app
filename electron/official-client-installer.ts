@@ -1,3 +1,4 @@
+import { networkDeadline } from './network-deadline.js';
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, open, rename, rm, lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -7,7 +8,7 @@ const filename = "ChatGPT-Windows-x64.zip";
 const downloadUrl = `${origin}/api/v1/official-client/files/${filename}`;
 const maxSize = 1024 * 1024 * 1024;
 export type OfflineExecutor = (file: string, args: string[], options?: { timeout?: number; windowsHide?: boolean }) => Promise<{ stdout: string; stderr: string }>;
-export interface OfflineInstallOptions { fetch?: typeof fetch; execute: OfflineExecutor; progress: (message: string) => void; signal?: AbortSignal; installationStarted?: () => void }
+export interface OfflineInstallOptions { fetch?: typeof fetch; execute: OfflineExecutor; progress: (message: string) => void; signal?: AbortSignal; networkTimeouts?: {connectMs:number;idleMs:number;totalMs:number}; installationStarted?: () => void }
 const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 // Execute only our local installer logic; scripts supplied inside the ZIP are never run.
@@ -61,11 +62,19 @@ if (-not $registered) { throw 'Package registration failed.' }
 }
 
 export async function installOfficialClient(directory: string, options: OfflineInstallOptions): Promise<void> {
+  try { await performOfficialInstall(directory,options); }
+  catch(error){
+    if(error instanceof TypeError)throw new Error('官方安装包连接中断，网络可能不稳定，请检查网络后重试。');
+    if(error instanceof SyntaxError)throw new Error('官方安装包信息响应不完整，请稍后重试。');
+    throw error;
+  }
+}
+
+async function performOfficialInstall(directory: string, options: OfflineInstallOptions): Promise<void> {
   const request = options.fetch ?? fetch;
-  const signal=(timeout:number)=>options.signal?AbortSignal.any([options.signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout);
-  const response = await request(`${origin}/api/v1/official-client/windows`, { redirect: "error", signal: signal(30000) });
-  if (!response.ok) throw new Error("官方安装包暂时不可用，请稍后重试。");
-  const manifest = await response.json() as Record<string, unknown>;
+  const manifestDeadline=networkDeadline({label:'获取官方安装包信息',totalMs:options.networkTimeouts?.connectMs??15000,signal:options.signal});
+  let manifest:Record<string,unknown>;
+  try{manifest=await manifestDeadline.run(async()=>{const response=await request(`${origin}/api/v1/official-client/windows`,{redirect:'error',signal:manifestDeadline.signal});if(!response.ok)throw new Error('官方安装包暂时不可用，请稍后重试。');return await response.json() as Record<string,unknown>;});}finally{manifestDeadline.dispose();}
   if (manifest.arch !== "x64" || manifest.filename !== filename || manifest.downloadUrl !== downloadUrl || typeof manifest.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(manifest.sha256) || !Number.isSafeInteger(manifest.size) || Number(manifest.size) < 1 || Number(manifest.size) > maxSize) throw new Error("官方安装包清单无效。");
   const root=resolve(directory);
   await mkdir(root, { recursive: true });
@@ -76,12 +85,16 @@ export async function installOfficialClient(directory: string, options: OfflineI
     options.progress("正在下载官方 ChatGPT 安装包…");
     const file=await open(partial,"wx");
     let downloaded=0, lastProgress=0; const digest=createHash("sha256");
+    const deadline=networkDeadline({label:'下载官方安装包',connectMs:15000,idleMs:60000,totalMs:15*60000,...options.networkTimeouts,signal:options.signal});
+    let reader:ReadableStreamDefaultReader<Uint8Array>|undefined;
     try {
-      const body=await request(downloadUrl,{redirect:"error",signal:signal(15*60*1000)});
+      const body=await deadline.run(()=>request(downloadUrl,{redirect:"error",signal:deadline.signal}));deadline.headersReceived();
       if(!body.ok||!body.body) throw new Error("官方安装包下载失败。");
       const length=body.headers.get("content-length");
       if(length!==null&&Number(length)!==manifest.size) throw new Error("官方安装包大小不匹配。");
-      for await(const chunk of body.body as unknown as AsyncIterable<Uint8Array>) {
+      reader=body.body.getReader();
+      for (;;) {
+        const part=await deadline.run(()=>reader!.read());if(part.done)break;deadline.progress();const chunk=part.value;
         options.signal?.throwIfAborted();
         downloaded+=chunk.length;
         if(downloaded>Number(manifest.size)) throw new Error("官方安装包超出声明大小。");
@@ -92,7 +105,7 @@ export async function installOfficialClient(directory: string, options: OfflineI
       }
       if(downloaded!==manifest.size||digest.digest("hex")!==manifest.sha256.toLowerCase()) throw new Error("官方安装包校验失败，请重新下载。");
       await file.sync();
-    } finally {await file.close();}
+    } finally {deadline.dispose();if(reader){void reader.cancel().catch(()=>undefined);reader.releaseLock();}await file.close();}
     await rename(partial,archive);
     options.signal?.throwIfAborted();
     options.progress("官方安装包已校验，正在安装；请允许 Windows 管理员授权…");

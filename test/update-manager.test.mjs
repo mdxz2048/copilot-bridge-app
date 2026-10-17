@@ -91,3 +91,11 @@ test('invite copy includes only the currently active server campaign',()=>{
  assert.match(active.message,/注册并首次充值后/);assert.match(active.message,/你可获得 ¥5 体验奖励/);assert.match(active.message,/我也可获得 ¥5 奖励余额/);assert.match(active.message,/双方奖励自到账起 7 天有效/);assert.match(active.message,/异常邀请需管理员核对/);
  assert.doesNotMatch(inviteMessage('https://ai.mddxz.top','INVITECODE',null).message,/体验奖励/);
 });
+
+
+test('stalled manifest, download headers and body terminate with retry feedback and no partial installer',async t=>{
+ for(const phase of ['manifest','headers','body']){
+  let cancelled=false;const f=await fixture(t,{networkTimeouts:{connectMs:25,idleMs:25,totalMs:250},...(phase==='manifest'?{latest:()=>new Promise(()=>{})}:{fetch:async()=>phase==='headers'?new Promise(()=>{}):new Response(new ReadableStream({start(c){c.enqueue(bytes.subarray(0,2));},cancel(){cancelled=true;}}))})});
+  const status=await f.manager.check();assert.equal(status.state,'ERROR');assert.match(status.message,/网络可能不稳定/);assert.deepEqual(await readdir(f.directory),[]);if(phase==='body')assert.equal(cancelled,true);
+ }
+});

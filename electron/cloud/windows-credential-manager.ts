@@ -96,6 +96,9 @@ function invokeCredentialManager(request: {
     );
     let stdout = "";
     let stderr = "";
+    let settled=false;
+    const finish=(error:Error|null,output='')=>{if(settled)return;settled=true;clearTimeout(timer);if(error)reject(error);else resolve(output);};
+    const timer=setTimeout(()=>{child.kill();finish(new Error('读取或保存登录凭据等待超时，系统响应可能不稳定，请稍后重试。'));},15000);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
@@ -104,13 +107,14 @@ function invokeCredentialManager(request: {
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
-    child.once("error", reject);
+    child.once("error", error=>finish(error));
+    child.stdin.once("error",()=>finish(new Error("无法连接系统登录凭据服务，请稍后重试。")));
     child.once("exit", (code) => {
       if (code === 0) {
-        resolve(stdout);
+        finish(null,stdout);
         return;
       }
-      reject(
+      finish(
         new Error(
           `Windows Credential Manager operation failed: ${stderr.trim() || `exit ${String(code)}`}`,
         ),

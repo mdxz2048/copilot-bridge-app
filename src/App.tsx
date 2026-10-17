@@ -118,7 +118,8 @@ export function App() {
   useEffect(() => {
     void refreshApp();
     void refreshCloud();
-    void window.copilotBridge.getAppVersion().then(setVersion);
+    void window.copilotBridge.getAppVersion().then(setVersion).catch(error=>showError(error,'暂时无法读取应用版本，请重试。'));
+    if(window.copilotBridge.getStartupWarning)void window.copilotBridge.getStartupWarning().then(message=>{if(message)showError(new Error(message),'本地连接初始化失败，请重试。');}).catch(error=>showError(error,'暂时无法读取启动状态，请重试。'));
     const removeBridge = window.copilotBridge.onBridgeStatus((next) => {
       setBridge(next);
       if (next.state === "ready") {
@@ -184,7 +185,7 @@ export function App() {
 
   useEffect(() => {
     if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 4_000);
+    const timer = window.setTimeout(() => setNotice(null), /超时|网络|连接中断/.test(notice) ? 12_000 : 4_000);
     return () => window.clearTimeout(timer);
   }, [notice]);
 
@@ -630,6 +631,9 @@ async function runCloudAction(
 
 function friendlyError(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
+  const clean=error.message.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '');
+  if (/等待超时|网络可能不稳定|网络或系统响应可能不稳定|仍在处理中/.test(clean)) return clean;
+  if (/TimeoutError|AbortError|ETIMEDOUT|ECONNRESET|ENOTFOUND|请求达到时间上限|连接 Cloud 超时/.test(clean)) return '请求超时或连接中断，网络可能不稳定，请检查网络后重试。';
   if (/CLIENT_UPGRADE_REQUIRED|请升级 Copilot Bridge|需要更新 Copilot Bridge/i.test(error.message)) {
     return "当前 Bridge 版本已停止服务，请使用右上角更新按钮安装最新版后重试。关闭开关仍可恢复自己的 ChatGPT。";
   }
