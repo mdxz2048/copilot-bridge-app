@@ -115,3 +115,17 @@ test('Cloud-only guards reject legacy transports before use and migration restor
   const writes=[];await assert.rejects(migrateCloudMode(previous,{isBridgeActive:async()=>true,restoreOriginal:async()=>{throw Error('cannot restore')},writeSettings:async value=>writes.push(value)}),/cannot restore/);assert.deepEqual(writes,[]);
   const idle=[];await migrateCloudMode({...previous,backendMode:'REMOTE',providerConnectionId:'old-provider'},{isBridgeActive:async()=>false,restoreOriginal:async()=>{throw Error('must not change Original')},writeSettings:async value=>idle.push(value)});assert.equal(idle[0].providerConnectionId,null);
 });
+
+
+import { createBridgeRecovery } from "../dist-electron/bridge-recovery.js";
+test("recovery coalesces requests, respects disabled mode, and throttles failures", async () => {
+  let eligible=false, calls=0, time=100, state="stopped", release;
+  const recover=createBridgeRecovery({eligible:async()=>eligible,status:()=>({state}),now:()=>time,start:async()=>{calls++;await new Promise(resolve=>{release=resolve;});return {state};}});
+  assert.equal(await recover(),null); assert.equal(calls,0);
+  eligible=true; const first=recover(),second=recover();assert.equal(first,second);
+  await new Promise(resolve=>setImmediate(resolve));state="failed";release();await first;assert.equal(calls,1);
+  assert.equal(await recover(),null);assert.equal(calls,1);
+  const forced=recover(true);await new Promise(resolve=>setImmediate(resolve));state="ready";release();await forced;assert.equal(calls,2);
+  assert.equal(await recover(),null);
+  state="stopped";time+=16000;const next=recover();await new Promise(resolve=>setImmediate(resolve));release();await next;assert.equal(calls,3);
+});

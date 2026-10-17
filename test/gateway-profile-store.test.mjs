@@ -194,3 +194,29 @@ test("restores the original custom provider even if ChatGPT removed the provider
     assert.equal(restored.model_reasoning_effort, "high");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+
+test("observed Bridge traffic clears its pending flag while original-mode restart stays pending", async () => {
+ const directory=await mkdtemp(join(tmpdir(),"bridge-activity-"));
+ try {
+  const store=new GatewayProfileStore(directory,join(directory,"switch.json"),"node",["helper"]);
+  await store.activate("bridge");
+  const before=await readFile(join(directory,"config.toml"),"utf8");
+  assert.equal((await store.acknowledgeBridgeActivity()).restartRequired,false);
+  assert.equal(await readFile(join(directory,"config.toml"),"utf8"),before);
+  await store.activate("original");
+  const original=await store.acknowledgeBridgeActivity();
+  assert.equal(original.pendingProfile,"original");assert.equal(original.restartRequired,true);
+ } finally {await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("activity acknowledgement cannot overwrite a concurrent switch to the original account",async()=>{
+ const directory=await mkdtemp(join(tmpdir(),"bridge-activity-switch-"));
+ try {
+  const store=new GatewayProfileStore(directory,join(directory,"switch.json"),"node",["helper"]);
+  await store.activate("bridge");
+  await Promise.all([store.acknowledgeBridgeActivity(),store.activate("original"),store.acknowledgeBridgeActivity()]);
+  const result=await store.getStatus();assert.equal(result.activeProfile,"original");assert.equal(result.pendingProfile,"original");
+ }finally{await rm(directory,{recursive:true,force:true});}
+});

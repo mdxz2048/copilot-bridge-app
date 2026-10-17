@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-17",
+  "release": {
+    "id": "bdcbebeb-d17a-4630-a664-a9b38fc34248",
+    "version": "0.3.22",
+    "channel": "stable",
+    "platform": "windows",
+    "arch": "x64",
+    "downloadUrl": "https://ai.mddxz.top/api/v1/releases/files/bdcbebeb-d17a-4630-a664-a9b38fc34248",
+    "sha256": "52fc3f4fb296d2c08cad1c281378016c681b98b6f3d22464e164384bbf8bb1ea",
+    "releaseNotes": "连接恢复与状态显示修复：\n• 本地连接中断后自动重连，并提供“重试连接”。\n• 修复账号已连接但无法选择模型、无法打开 ChatGPT 的情况。\n• “待生效”改为“需重启 ChatGPT”，实际连接成功后自动清除提示。\n• 并发启动合并，停止连接时取消未完成的本地启动。",
+    "published": true,
+    "createdAt": "2026-10-17T15:26:10.172Z"
+  },
+  "package": {
+    "passed": true,
+    "version": "0.3.22",
+    "verifiedFiles": 49,
+    "bytes": 343287729,
+    "sha256": "52fc3f4fb296d2c08cad1c281378016c681b98b6f3d22464e164384bbf8bb1ea"
+  },
+  "checks": {
+    "appTests": 244,
+    "renderer": {
+      "passed": true,
+      "checks": [
+        {
+          "theme": "light",
+          "recovery": true,
+          "modelMenu": true,
+          "launchEnabled": true,
+          "errors": []
+        },
+        {
+          "theme": "dark",
+          "recovery": true,
+          "modelMenu": true,
+          "launchEnabled": true,
+          "errors": []
+        }
+      ]
+    },
+    "managerLiveRemoteStatus": true,
+    "publicUpdater": {
+      "passed": true,
+      "executionEnvironment": "server Node using unchanged compiled App UpdateManager",
+      "publicHttpsFullDownload": true,
+      "automaticDownload": true,
+      "sha256Verified": true,
+      "readyVersion": "0.3.22",
+      "clientConfigVersion": "0.3.22"
+    }
+  },
+  "productionAccountInspection": {
+    "readOnly": true,
+    "activeAccount": true,
+    "activeSubscription": true,
+    "positiveBalance": true,
+    "modelAccessGranted": true,
+    "permissionsChanged": false,
+    "personalIdentifiersOmitted": true
+  },
+  "limits": [
+    "Feedback device was not accessed; exact local failure could not be reconstructed from screenshots.",
+    "No live official-client restart, user generation, or installer execution on the development host."
+  ],
+  "cloudSourceChanged": false,
+  "temporaryServerFilesCleaned": true
+}

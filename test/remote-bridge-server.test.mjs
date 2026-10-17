@@ -374,3 +374,29 @@ test("cumulative history from another active conversation cannot satisfy a pendi
     await bridge.stop();
   }
 });
+
+
+test("concurrent starts share one authentication and stop cancels an unfinished start",async()=>{
+ let calls=0,release;
+ const client={getMe:async()=>{calls++;await new Promise(resolve=>{release=resolve;});return{id:"fixture"};}};
+ const bridge=new RemoteBridgeServer(client,0);
+ try {
+  const a=bridge.start(),b=bridge.start();assert.equal(calls,1);
+  await bridge.stop();release();await Promise.all([a,b]);assert.equal(bridge.getStatus().state,"stopped");
+  const c=bridge.start();release();assert.equal((await c).state,"ready");assert.equal(calls,2);
+ }finally{await bridge.stop();}
+});
+
+test("only authenticated model or response traffic acknowledges configuration, callback failures do not block requests",async()=>{
+ let observed=0;
+ const client={getMe:async()=>({id:"fixture"}),listModels:async()=>({data:[]})};
+ const bridge=new RemoteBridgeServer(client,0,undefined,undefined,undefined,{getApiKey:async()=>"fixture-key",onConnectionObserved:()=>{observed++;throw Error("fixture callback error");}});
+ try {
+  const status=await bridge.start(),headers={authorization:"Bearer fixture-key"};
+  assert.equal((await fetch(status.endpoint+"/health")).status,200);
+  assert.equal((await fetch(status.endpoint+"/v1/models")).status,401);
+  await fetch(status.endpoint+"/unknown",{headers});assert.equal(observed,0);
+  assert.equal((await fetch(status.endpoint+"/v1/models",{headers})).status,200);
+  assert.equal(observed,1);
+ }finally{await bridge.stop();}
+});

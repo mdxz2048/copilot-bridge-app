@@ -60,6 +60,7 @@ interface GatewayOptions {
   cache?: {load(accountId:string):RemoteConversation[];save(items:RemoteConversation[],accountId:string):void};
   trace?: {write(stage:string,traceId:string,metadata:Record<string,unknown>,body?:unknown):void};
   getApiKey: () => Promise<string | null>;
+  onConnectionObserved?: () => Promise<void> | void;
   getModel?: () => Promise<string | null>;
   getReasoning?: () => Promise<string | null>;
   failureFeedback?: {appVersion:string;ownerUserId?:()=>string|null;submit:(report:FailureFeedback)=>void};
@@ -86,6 +87,8 @@ export class RemoteBridgeServer {
   private readonly responses = new Map<string, RemoteConversation>();
   private readonly calls = new Map<string, RemoteConversation>();
   private server: Server | null = null;
+  private starting: Promise<RemoteBridgeStatus> | null = null;
+  private generation = 0;
   private status: RemoteBridgeStatus;
 
   constructor(
@@ -117,6 +120,11 @@ export class RemoteBridgeServer {
 
   async start(): Promise<RemoteBridgeStatus> {
     if (this.server) return this.status;
+    this.starting ??= this.performStart(this.generation).finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  private async performStart(generation: number): Promise<RemoteBridgeStatus> {
     this.status = {
       ...this.status,
       state: "starting",
@@ -124,6 +132,7 @@ export class RemoteBridgeServer {
     };
     try {
       const account=await this.client.getMe();
+      if (generation !== this.generation) return this.status;
       this.cacheAccountId=account.id;
       for(const conversation of this.gatewayOptions?.cache?.load(account.id)??[]) {
         if (conversation.sessionKey) this.sessions.set(conversation.sessionKey, conversation);
@@ -138,6 +147,7 @@ export class RemoteBridgeServer {
         server.once("error", reject);
         server.listen(this.port, "127.0.0.1", () => resolve());
       });
+      if (generation !== this.generation) { await new Promise<void>(resolve => server.close(() => resolve())); return this.status; }
       this.server = server;
       const activePort = serverPort(server);
       this.status = {
@@ -146,6 +156,7 @@ export class RemoteBridgeServer {
         message: "Cloud Bridge 正常",
       };
     } catch (error) {
+      if (generation !== this.generation) return this.status;
       this.status = {
         ...this.status,
         state: "failed",
@@ -156,6 +167,7 @@ export class RemoteBridgeServer {
   }
 
   async stop(): Promise<RemoteBridgeStatus> {
+    ++this.generation;
     this.persistConversations();
     const server = this.server;
     this.server = null;
@@ -224,6 +236,10 @@ export class RemoteBridgeServer {
           sendJson(response, 401, { error: { code: "UNAUTHORIZED", message: "Local Bridge credential required" } });
           return;
         }
+      }
+      if (this.gatewayOptions && ((request.method === 'GET' && url.pathname === '/v1/models') || (request.method === 'POST' && url.pathname === '/v1/responses'))) {
+        // Only authenticated traffic on the configured local endpoint proves application.
+        void Promise.resolve().then(() => this.gatewayOptions?.onConnectionObserved?.()).catch(() => undefined);
       }
       if (request.method === "GET" && url.pathname === "/health") {
         await this.client.getMe();

@@ -143,6 +143,7 @@ async function mountApp({
     launchChatGpt: async () => { events.push('launchChatGpt'); },
     getModels: async () => initialModels,
     getCloudStatus: async () => cloud,
+    refreshCloud: async () => { events.push("refreshCloud"); bridge = { state: "ready", message: "Cloud Bridge 正常", endpoint: "" }; return cloud; },
     getAppVersion: async () => "0.1.0",
     restartChatGpt: async () => {
       events.push("restartChatGpt");
@@ -850,4 +851,20 @@ test("an exhausted wallet shows a distinct balance status while preserving the a
  const app=await mountApp({activeProfile:"bridge",initialCloudState:"AUTHENTICATED",cloudServiceStatus:"BALANCE_REQUIRED",initialSettings:{onboardingCompleted:true}});
  try {assert.match(app.text,/余额不足/);assert.match(app.text,/查看账户/);assert.doesNotMatch(app.text,/仍可使用|本月额度已用完/);}
  finally {await app.dispose();}
+});
+
+
+test("authenticated account with failed listener offers recovery and can open ChatGPT", async () => {
+  const app = await mountApp({initialCloudState:"AUTHENTICATED",initialBridgeState:"failed",activeProfile:"bridge"});
+  try {
+    assert.match(app.text,/本地连接未就绪/);
+    assert.ok(!app.document.querySelector('button[aria-label="模型"]'));
+    await app.click("打开 ChatGPT");
+    assert.ok(app.events.includes("launchChatGpt"));
+    await app.click("重试连接");
+    assert.ok(app.events.includes("refreshCloud"));
+    await app.clickSelector('button[aria-label="模型"]');
+    assert.ok(app.document.querySelector('[role="option"]'));
+    assert.doesNotMatch(app.text,/本地连接未就绪/);
+  } finally { await app.dispose(); }
 });

@@ -104,6 +104,7 @@ function mergeConfigurationChanges(
 
 /** Switch only the model connection. Session storage and user environment stay intact. */
 export class GatewayProfileStore {
+  private mutations: Promise<void> = Promise.resolve();
   private readonly codexHome: string;
   private readonly statePath: string;
   private readonly helperCommand: string;
@@ -125,7 +126,11 @@ export class GatewayProfileStore {
       pendingProfile: snapshot?.pending ?? null, unrestrictedBridgeAccess: false };
   }
 
-  async activate(target: ProfileId): Promise<ProfileStatus> {
+  activate(target: ProfileId): Promise<ProfileStatus> {
+    return this.serialize(() => this.performActivate(target));
+  }
+
+  private async performActivate(target: ProfileId): Promise<ProfileStatus> {
     const previous = await this.snapshot();
     const current = await this.configuration();
     if (target === "original") {
@@ -169,10 +174,28 @@ export class GatewayProfileStore {
     return this.getStatus();
   }
 
-  async acknowledgeRestart(): Promise<ProfileStatus> {
+  acknowledgeBridgeActivity(): Promise<ProfileStatus> {
+    return this.serialize(async () => {
+      const status = await this.getStatus();
+      if (status.activeProfile === 'bridge' && status.pendingProfile === 'bridge') return this.performAcknowledgeRestart();
+      return status;
+    });
+  }
+
+  acknowledgeRestart(): Promise<ProfileStatus> {
+    return this.serialize(() => this.performAcknowledgeRestart());
+  }
+
+  private async performAcknowledgeRestart(): Promise<ProfileStatus> {
     const snapshot = await this.snapshot();
     if (snapshot) await this.save({ ...snapshot, pending: null });
     return this.getStatus();
+  }
+
+  private serialize<T>(action: () => Promise<T>): Promise<T> {
+    const next = this.mutations.then(action);
+    this.mutations = next.then(() => undefined, () => undefined);
+    return next;
   }
 
   private restoreConfiguration(snapshot: Snapshot, text: string): string {

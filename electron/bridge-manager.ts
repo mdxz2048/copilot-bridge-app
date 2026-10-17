@@ -21,6 +21,7 @@ export class BridgeManager {
   private process: ChildProcessWithoutNullStreams | null = null;
   private status: BridgeStatus;
   private processOutput = "";
+  private remoteActive = false;
   private readonly userDataPath: string;
   private readonly proxyEntrypoint: string;
   private readonly nodePath: string;
@@ -56,11 +57,12 @@ export class BridgeManager {
   }
 
   getStatus(): BridgeStatus {
-    return this.status;
+    return this.remoteActive && this.remoteBridge ? this.remoteBridge.getStatus() : this.status;
   }
 
   async start(settings: AppSettings): Promise<BridgeStatus> {
     if (settings.backendMode === "REMOTE") {
+      this.remoteActive = true;
       if (!this.remoteBridge) {
         this.status = {
           ...this.status,
@@ -74,6 +76,7 @@ export class BridgeManager {
       this.status = { ...remote };
       return this.status;
     }
+    this.remoteActive = false;
     if (this.remoteBridge?.getStatus().state !== "stopped") {
       await this.remoteBridge?.stop();
     }

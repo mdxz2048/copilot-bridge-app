@@ -57,7 +57,8 @@ export function CurrentServiceCard({
   const bridgeReady = bridge?.state === "ready";
   const profilePending = profile?.restartRequired === true;
   const serviceReady = cloudReady && bridgeReady;
-  const state = cloudStatePresentation(cloud);
+  const connectionPending = cloudReady && !bridgeReady;
+  const state = connectionPending ? {symbol:'●',title:'本地连接未就绪',message:bridge?.message || '平台账号已连接，本地转发尚未启动，请重试连接。',tone:'warning'} : cloudStatePresentation(cloud);
   const selectedModel = settings.backendModel ?? models[0]?.id ?? "";
   const selected = models.find((model) => model.id === selectedModel);
   const reasoningModes = selected?.reasoningModes?.length ? selected.reasoningModes : ["normal"];
@@ -78,7 +79,7 @@ export function CurrentServiceCard({
             <div className="service-identity"><ServiceMark original/><p className="service-name">ChatGPT 原账号</p></div>
             <span className={`service-state state-${profilePending ? "neutral" : "success"}`}>
               <span aria-hidden="true">●</span>
-              {profilePending ? "待生效" : "当前使用"}
+              {profilePending ? "需重启 ChatGPT" : "当前使用"}
             </span>
           </div>
           <p className="bridge-disabled-message">
@@ -115,7 +116,7 @@ export function CurrentServiceCard({
           <div className="service-header-state">
             <span className={`service-state state-${profilePending ? "neutral" : state.tone}`}>
               <span aria-hidden="true">{state.symbol}</span>
-              {profilePending ? "待生效" : state.title}
+              {profilePending ? "需重启 ChatGPT" : state.title}
             </span>
           </div>
         </div>
@@ -158,14 +159,14 @@ export function CurrentServiceCard({
               <Button
                 className="secondary compact"
                 disabled={busy}
-                onClick={cloudAction(cloud, {
+                onClick={connectionPending ? onRetryCloud : cloudAction(cloud, {
                   openAccount: onOpenAccount,
                   openRelease: onOpenRelease,
                   retry: onRetryCloud,
                 })}
                 type="button"
               >
-                {cloudActionLabel(cloud)}
+                {connectionPending ? "重试连接" : cloudActionLabel(cloud)}
               </Button>
             </div>
           )}
@@ -174,7 +175,7 @@ export function CurrentServiceCard({
         <div className="service-actions">
           <Button
             disabled={busy
-              || (!serviceReady && !profilePending && chatGpt.state === "INSTALLED")}
+              || (!cloudReady && !profilePending && chatGpt.state === "INSTALLED")}
             onClick={
               chatGpt.state !== "INSTALLED"
                 ? onInstallChatGpt

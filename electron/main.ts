@@ -1,3 +1,4 @@
+import { createBridgeRecovery } from './bridge-recovery.js';
 import {inviteMessage} from "./invite-message.js";
 import { ConversationCache } from './cloud/conversation-cache.js';
 import { safeStorage } from 'electron';
@@ -149,6 +150,12 @@ const remoteBridge = new RemoteBridgeServer(
     broadcast("cloud:status", status);
   },
   {
+    onConnectionObserved: async () => {
+      const before = await profileStore.getStatus();
+      if (before.pendingProfile !== 'bridge' || before.activeProfile !== 'bridge') return;
+      const status = await profileStore.acknowledgeBridgeActivity();
+      broadcast('profile:status', status);
+    },
     cache: new ConversationCache(join(app.getPath("userData"), "cloud-conversations.enc"),safeStorage),
     trace: new BridgeTrace(join(app.getPath("userData"), "diagnostics")),
     getApiKey: async () => localGatewayKey,
@@ -232,11 +239,22 @@ async function startBridge(): Promise<void> {
   refreshTray();
 }
 
+const recoverCloudBridge = createBridgeRecovery({
+  eligible: async () => {
+    const [cloud, profile, settings] = await Promise.all([cloudFoundation.getStatus(), profileStore.getStatus(), settingsStore.read()]);
+    return settings.backendMode === 'REMOTE' && profile.activeProfile === 'bridge'
+      && cloud.authState === 'AUTHENTICATED' && cloud.serviceStatus === 'AVAILABLE' && !cloud.lastError;
+  },
+  status: () => bridgeManager.getStatus(),
+  start: async () => { await startBridge(); return bridgeManager.getStatus(); },
+});
+
 async function refreshCloudStatus(): Promise<void> {
   try {
     const status = await cloudFoundation.refresh();
     broadcast("cloud:status", status);
     if(status.loginDeviceLimit)return;
+    await recoverCloudBridge(true);
     const settings = await settingsStore.read();
     if (
       settings.backendMode === "REMOTE"
@@ -559,9 +577,8 @@ ipcMain.handle('update:status', () => updater.status);
     return status;
   });
   ipcMain.handle("cloud:refresh", async () => {
-    const status = await cloudFoundation.refresh();
-    broadcast("cloud:status", status);
-    return status;
+    await refreshCloudStatus();
+    return cloudFoundation.getStatus();
   });
   ipcMain.handle("cloud:manage-account", async () => {
     const configuration = await cloudConfiguration.get();
@@ -656,7 +673,7 @@ ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle("oauth:open-verification", () => { throw new Error("不再提供 GitHub Copilot 登录入口。"); });
 
 
-  const policyTimer = setInterval(() => {void cloudFoundation.syncPolicy().then(status=>{if(status)broadcast("cloud:status",status);}).catch(()=>undefined);},5000);
+  const policyTimer = setInterval(() => {void cloudFoundation.syncPolicy().then(async status=>{if(status){broadcast("cloud:status",status);await recoverCloudBridge();}}).catch(()=>undefined);},5000);
   let modelSyncInFlight=false;
   const modelTimer=setInterval(()=>{
     if(modelSyncInFlight||bridgeManager.getStatus().state!=="ready")return;

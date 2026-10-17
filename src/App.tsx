@@ -377,13 +377,18 @@ export function App() {
         onEnableChatGpt={() => requestModeSwitch(true)}
         onInstallChatGpt={installChatGpt}
         onOpenAccount={() => setCloudOpen(true)}
-        onOpenChatGpt={() => void window.copilotBridge.launchChatGpt()}
+        onOpenChatGpt={() => void window.copilotBridge.launchChatGpt().catch(error => showError(error, "无法打开 ChatGPT，请重试连接。"))}
         onRestartChatGpt={() => { setRestartError(null); setRestartDismissed(false); }}
         onOpenRelease={() =>
           void window.copilotBridge.openCloudRelease().catch(
             (error: unknown) => showError(error, "无法打开更新下载页面。"),
           )}
-        onRetryCloud={() => void refreshCloud()}
+        onRetryCloud={() => void (async () => {
+          setBusy(true);
+          try { setCloud(await window.copilotBridge.refreshCloud()); await refreshApp(); }
+          catch (error) { showError(error, '连接恢复失败，请重试。'); }
+          finally { setBusy(false); }
+        })()}
         profile={profile}
         settings={settings}
         onUpdateSettings={(next) => void persistSettings(next)}
