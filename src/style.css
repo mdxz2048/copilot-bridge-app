@@ -1406,6 +1406,21 @@ main { max-width:none; margin:0; padding:0; }
 .account-summary-metrics>span { white-space:nowrap; }
 .account-summary-metrics>span+span { padding-left:14px; border-left:1px solid var(--border-control); }
 .account-status-bar>strong { flex:none; font-size:15px; }
+.account-summary-actions { display:flex; align-items:center; justify-content:flex-end; flex:none; gap:8px; white-space:nowrap; }
+.account-login-state { color:var(--text-secondary); font-size:12px; }
+.account-topup-link,.account-details-action { border:0; background:transparent; padding:6px 3px; font:inherit; cursor:pointer; white-space:nowrap; border-radius:5px; }
+.account-topup-link { color:var(--accent); }
+.account-details-action { color:var(--text-primary); font-weight:600; margin-left:8px; }
+.account-topup-link:hover { text-decoration:underline; text-underline-offset:3px; }
+.account-details-action:hover { color:var(--accent); }
+.account-topup-link:focus-visible,.account-details-action:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.account-topup-link:disabled { opacity:.45; cursor:wait; text-decoration:none; }
+@media(max-width:680px) {
+  .account-status-bar:has(.account-summary-actions) { flex-wrap:wrap; gap:8px 16px; }
+  .account-status-bar:has(.account-summary-actions)>.account-summary-content { flex:1 1 100%; }
+  .account-summary-actions { margin-left:auto; }
+}
+
 .app-content>section>h2 { font-size:19px; font-weight:650; margin:0 2px 18px; letter-spacing:-.25px; }
 .current-service-card { min-height:244px; padding:28px 30px; border-radius:26px; background:color-mix(in srgb,var(--surface-primary) 92%,transparent); border-color:var(--border-subtle); box-shadow:0 12px 38px rgba(28,62,119,.04); }
 .service-card-header { align-items:center; gap:20px; }
@@ -1541,7 +1556,7 @@ main { max-width:none; margin:0; padding:0; }
 @media(max-height:550px){.compact-dialog-backdrop{padding:12px}.compact-dialog{height:410px;padding:14px;gap:8px}.settings-dialog{height:390px}.compact-dialog-body{gap:8px}.compact-wallet{padding:8px 12px}.compact-dialog-footer{padding-top:7px;min-height:36px}}
 @media(prefers-reduced-motion:reduce){.compact-dialog{animation:none}}
 
-.account-topup{text-align:center}.account-topup>.button:first-child{display:block}.admin-wechat-qr{display:block;width:200px;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:10px}.account-topup .topup-account{overflow-wrap:anywhere;user-select:text}.compact-dialog .topup-action{color:var(--accent);background:var(--accent-soft,var(--surface-secondary))}
+
 
 .bound-device-id{display:block;font:10px/1.5 ui-monospace,monospace;overflow-wrap:anywhere;color:var(--text-secondary);margin:4px 0}
 
@@ -1550,4 +1565,5 @@ main { max-width:none; margin:0; padding:0; }
 
 .reward-notice-dialog{box-sizing:border-box;width:min(420px,calc(100vw - 32px));padding:32px;border:1px solid var(--line,#dce2e9);border-radius:22px;text-align:center;background:var(--surface-primary,var(--surface,#fff));color:var(--text-primary,var(--ink,#182435));box-shadow:0 24px 80px #0003}.reward-notice-dialog::backdrop{background:#162a4360;backdrop-filter:blur(4px)}.reward-notice-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;margin:auto;color:#168354;background:#e6f6ee;font-size:24px}.reward-notice-dialog h2{font-size:23px;margin:20px 0 12px}.reward-notice-dialog p{font-size:13px;line-height:1.8;color:var(--muted,#63738a)}.reward-notice-amount{display:block;font-size:42px;margin:24px 0;color:#0875ec}.reward-notice-dialog button{width:100%;border:0;border-radius:12px;background:#0875ec;color:white;padding:13px;font:inherit;cursor:pointer}.reward-notice-dialog button:disabled{opacity:.6;cursor:wait}
 
-.account-dialog.account-detail:has(.purchase-flow){height:min(780px,calc(100dvh - 40px));max-height:calc(100dvh - 40px)}
+.account-dialog.account-detail:has(.purchase-flow){height:min(780px,calc(100dvh - 80px));max-height:100%}
+.topup-dialog .compact-dialog-body{display:block;overflow-y:auto;scrollbar-width:thin}

@@ -156,13 +156,14 @@ test('Store unavailable automatically invokes real offline path rather than open
  assert.equal(directory,'C:/own/offline');assert.equal(website,0);assert.equal(states.at(-1).state,'INSTALLED');
 });
 
-test('no Store download progress triggers offline only after installer process exits',async()=>{
+test('no Store download progress triggers offline only after installer process exits',{timeout:3000},async()=>{
  const child=new Child(),order=[];child.kill=()=>{order.push('kill');setTimeout(()=>{child.exitCode=1;order.push('exit');child.emit('exit',1)},10);return true;};
+ const finished=Promise.withResolvers();
  const manager=new ChatGptManager(undefined,{spawnInstaller:()=>child,offlineDirectory:'C:/own/offline',storeStartTimeoutMs:10});
  manager.detect=async()=>({state:'NOT_INSTALLED',message:'missing'});
- manager.installOffline=async()=>{order.push('offline')};manager.install(()=>{},async()=>{});
+ manager.installOffline=async()=>{order.push('offline');finished.resolve()};manager.install(()=>{},async()=>{});
  child.stdout.emit('data',Buffer.from('Initializing Microsoft Store source'));
- await new Promise(resolve=>setTimeout(resolve,50));assert.deepEqual(order,['kill','exit','offline']);
+ await finished.promise;assert.deepEqual(order,['kill','exit','offline']);
 });
 
 test('active Store byte progress is not mistaken for a download that never began',async()=>{

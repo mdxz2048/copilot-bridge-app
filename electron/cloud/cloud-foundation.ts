@@ -645,7 +645,7 @@ export class CloudFoundation {
 function serviceStatusMessage(
   status: CloudServiceStatus["serviceStatus"],
 ): string | null {
-  if (status === "BALANCE_REQUIRED") return "余额不足，请联系管理员增加余额后继续使用。";
+  if (status === "BALANCE_REQUIRED") return "余额不足，请点击「充值」，到账后重试。";
   if (status === "MAINTENANCE") return "云服务正在维护，请稍后再试。";
   if (status === "UPDATE_REQUIRED") return "需要更新 Copilot Bridge 后才能继续使用云服务。";
   return null;

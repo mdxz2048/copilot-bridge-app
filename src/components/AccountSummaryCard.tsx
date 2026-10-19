@@ -5,12 +5,15 @@ import type {
 
 export function AccountSummaryCard({
   cloud,
+  busy,
+  onTopup,
   onLogin,
   onOpenDetails,
 }: {
   busy: boolean;
   cloud: CloudServiceStatus | null;
   service: AppSettings["backendMode"];
+  onTopup: () => void;
   onLogin: () => void;
   onOpenDetails: () => void;
   onRenew: () => void;
@@ -34,12 +37,7 @@ export function AccountSummaryCard({
   }
 
   return (
-    <button
-      className="account-status-bar account-status-button"
-      onClick={onOpenDetails}
-      title={cloud.account}
-      type="button"
-    >
+    <div className="account-status-bar" aria-label="账户摘要">
       <span className="account-summary-content">
         <span className="account-plan-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m4 7 4 4 4-7 4 7 4-4-2 11H6L4 7Z"/></svg></span>
         <strong className="account-plan-name">{cloud.plan ?? "云服务"}</strong>
@@ -49,8 +47,14 @@ export function AccountSummaryCard({
           {cloud.validUntil && <span>{formatShortDate(cloud.validUntil)}到期</span>}
         </span>
       </span>
-      <strong>账户 ›</strong>
-    </button>
+      <div className="account-summary-actions">
+        {cloud.authState === "AUTHENTICATED" && <>
+          <span className="account-login-state">已登录<span aria-hidden="true"> · </span></span>
+          <button className="account-topup-link" type="button" disabled={busy} onClick={onTopup}>充值</button>
+        </>}
+        <button className="account-details-action" title={cloud.account} onClick={onOpenDetails} type="button">账户 ›</button>
+      </div>
+    </div>
   );
 }
 

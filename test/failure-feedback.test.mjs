@@ -13,9 +13,40 @@ const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(check){for(let i=0;i<60;i++){if(await check())return;await wait(10);}throw Error('condition timeout');}
 const payload=(id='resp_fixture',output=[],status='completed')=>({id,object:'response',model:MODEL,status,output,usage:{input_tokens:1,output_tokens:1,total_tokens:2}});
 const sse=events=>({contentType:'text/event-stream',response:new Response(events.map(event=>`data: ${JSON.stringify(event)}\n\n`).join(''),{headers:{'X-Bridge-AI-Request-Id':randomUUID()}})});
+const parseEvents=text=>text.split(/\n\n/).flatMap(block=>{const line=block.split('\n').find(v=>v.startsWith('data: '));return line?[JSON.parse(line.slice(6))]:[];});
 async function setup(handler,owner=A){const reports=[],requests=[];const client={getMe:async()=>({id:A}),listModels:async()=>({data:[{id:MODEL,capabilities:{nativeResponses:true,responsesProfile:'deepseek'}}]}),createResponse:async(request,options)=>{requests.push(structuredClone(request));return handler(request,options,requests.length)}};const bridge=new RemoteBridgeServer(client,0,undefined,undefined,undefined,{getApiKey:async()=>'local-fixture',getModel:async()=>MODEL,failureFeedback:{appVersion:'0.3.6',ownerUserId:()=>owner,submit:report=>reports.push(report)}});const status=await bridge.start();return{bridge,reports,requests,post:(body,options={})=>fetch(`${status.endpoint}/v1/responses`,{method:'POST',headers:{authorization:'Bearer local-fixture','content-type':'application/json',session_id:'fixture-session'},body:JSON.stringify({model:MODEL,...body}),...options})};}
 function encryption(){const key=randomBytes(32);return{isEncryptionAvailable:()=>true,encryptString(value){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);const data=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),data]);},decryptString(value){const cipher=createDecipheriv('aes-256-gcm',key,value.subarray(0,12));cipher.setAuthTag(value.subarray(12,28));return Buffer.concat([cipher.update(value.subarray(28)),cipher.final()]).toString();}};}
 function report(marker='user excerpt',traceId=randomUUID()){const capture=new FailureCapture(A,'0.3.6',traceId);capture.request('desktop',{input:marker});return capture.failure('cloud_transport',{code:'SERVER_UNREACHABLE',message:'connection lost'});}
+
+test('wallet exhaustion preserves HTTP 402 with Chinese recharge reason and the same uploaded reason',async()=>{
+ const t=await setup(()=>{throw new CloudError('INSUFFICIENT_POINTS','old English quota message',{httpStatus:402,requestId:'wallet_request'})});
+ try{const res=await t.post({input:'fixture',stream:true});assert.equal(res.status,402);const body=await res.json();assert.equal(body.error.code,'INSUFFICIENT_POINTS');assert.equal(body.error.type,'insufficient_quota');assert.match(body.error.message,/余额不足.*充值.*到账/);assert.equal(body.error.requestId,'wallet_request');assert.equal(t.reports[0].error.message,body.error.message);assert.equal(t.reports[0].requestId,'wallet_request');}finally{await t.bridge.stop();}
+});
+
+test('empty custom input terminates with tool-specific Chinese failed event and diagnostic tool IDs',async()=>{
+ const call={type:'function_call',id:'bad_item',call_id:'bad_call',name:'functions__exec',arguments:'{}'};
+ const t=await setup(()=>sse([{type:'response.created',sequence_number:4,response:payload('bad_response')},{type:'response.output_item.added',sequence_number:5,output_index:0,item:{...call,arguments:''}},{type:'response.function_call_arguments.done',sequence_number:6,item_id:call.id,output_index:0,arguments:'{}'}]));
+ try{const res=await t.post({input:'fixture',stream:true,tools:[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]}]});const events=parseEvents(await res.text()),last=events.at(-1);assert.equal(last.type,'response.failed');assert.equal(last.sequence_number,7);assert.equal(last.response.id,'bad_response');assert.equal(last.response.status,'failed');assert.match(last.response.error.message,/functions.exec.*空参数.*input/);assert.equal(events.filter(e=>e.type==='response.failed').length,1);assert.ok(!events.some(e=>e.type==='response.completed'));assert.equal(t.reports.length,1);assert.equal(t.reports[0].error.message,last.response.error.message);const detail=JSON.stringify(t.reports[0]);assert.match(detail,/EMPTY_ARGUMENTS/);assert.match(detail,/bad_call/);}finally{await t.bridge.stop();}
+});
+
+test('unexpected EOF and upstream bare errors have a failed terminal instead of a silent disconnect',async()=>{
+ for(const last of [null,{type:'error',code:'rate_limit_exceeded',message:'upstream overloaded'}]) {
+  const events=[{type:'response.created',response:payload('lost_response')},{type:'response.output_text.delta',delta:'partial fixture'}];if(last)events.push(last);
+  const t=await setup(()=>sse(events));try{const result=parseEvents(await (await t.post({input:'fixture',stream:true})).text());assert.equal(result.at(-1).type,'response.failed');assert.equal(result.at(-1).response.id,'lost_response');assert.match(result.at(-1).response.error.message,last?/请求过多/:/连接已断开/);assert.ok(!result.some(e=>e.type==='response.completed'));assert.equal(t.reports.length,1);assert.equal(t.reports[0].error.message,result.at(-1).response.error.message);}finally{await t.bridge.stop();}
+ }
+});
+
+test('a contradictory completed event is rejected before any successful terminal reaches Desktop',async()=>{
+ const t=await setup(()=>sse([{type:'response.created',response:payload('contradictory')},{type:'response.completed',response:payload('contradictory',[],'failed')}]));
+ try{const events=parseEvents(await (await t.post({input:'fixture',stream:true})).text());assert.ok(!events.some(e=>e.type==='response.completed'));assert.equal(events.at(-1).type,'response.failed');assert.match(events.at(-1).response.error.message,/完成事件.*不一致/);assert.equal(t.reports.length,1);}finally{await t.bridge.stop();}
+});
+
+test('upstream failed/incomplete details are retained in platform diagnostics and localized on the wire',async()=>{
+ for(const status of ['failed','incomplete']) {
+  const terminal={...payload('upstream_response',[],status),...(status==='failed'?{error:{code:'server_error',message:'provider internal fixture'}}:{incomplete_details:{reason:'max_output_tokens'}})};
+  const t=await setup(()=>sse([{type:`response.${status}`,response:terminal}]));try{const events=parseEvents(await (await t.post({input:'fixture',stream:true})).text());assert.equal(events.at(-1).type,'response.failed');assert.equal(events.at(-1).response.status,'failed');assert.match(events.at(-1).response.error.message,status==='failed'?/内部错误/:/输出长度限制/);assert.equal(t.reports.length,1);assert.match(JSON.stringify(t.reports[0].reply),status==='failed'?/provider internal fixture/:/max_output_tokens/);assert.equal(t.reports[0].stage,status==='failed'?'stream_failed':'stream_incomplete');}finally{await t.bridge.stop();}
+ }
+});
 
 test('failure excerpts retain authorized text/tool arguments but remove nested credentials, URL queries and binary',()=>{
  const input={input:'user document text',tools:[{name:'read_document'}],arguments:JSON.stringify({command:'fixed read',password:'hidden-password',token:'hidden-token',key:'hidden-key'}),output:'tool result',authorization:'Bearer hidden-auth',image_url:'data:image/png;base64,HIDDEN_IMAGE',file_data:'HIDDEN_FILE',encrypted_content:'HIDDEN_OPAQUE',text:'sk-abcdefghijk Bearer hidden-bearer eyJabc.def.ghi https://example.test/a?q=HIDDEN_QUERY',cookie:'HIDDEN_COOKIE',delta:'"password":"HIDDEN_PARTIAL_JSON", OPENAI_API_KEY=HIDDEN_ENV_KEY'};

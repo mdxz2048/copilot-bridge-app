@@ -43,6 +43,25 @@ import { InputItemSchema, OutputItemSchema } from '../dist-electron/cloud/contra
 import {createDesktopEventTranslator,normalizeDesktopRequest} from '../dist-electron/cloud/desktop-protocol.js';
 import {desktopOutputItem} from '../dist-electron/cloud/desktop-protocol.js';
 
+test('code alias is limited to declared official code wrappers in JSON and split SSE',()=>{
+ const n=normalizeDesktopRequest({input:'fixture',tools:[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]},{type:'function',name:'python',parameters:{type:'object',properties:{code:{type:'string'}}}}]},true);
+ const code='text("中文😀\\n")',call={type:'function_call',id:'alias_item',call_id:'alias_call',name:'functions__exec',arguments:JSON.stringify({code})};
+ assert.equal(desktopOutputItem(call,n.customTools,n.toolBindings).input,code);
+ const translate=createDesktopEventTranslator(n.customTools,n.toolBindings),events=[];
+ events.push(...translate({type:'response.output_item.added',output_index:0,item:{...call,arguments:''}}));
+ for(const delta of call.arguments)events.push(...translate({type:'response.function_call_arguments.delta',item_id:call.id,output_index:0,delta}));
+ events.push(...translate({type:'response.function_call_arguments.done',item_id:call.id,output_index:0,arguments:call.arguments}));
+ events.push(...translate({type:'response.output_item.done',output_index:0,item:call}));
+ events.push(...translate({type:'response.completed',response:response('alias_response',[call])}));
+ assert.equal(events.filter(e=>e.type==='response.custom_tool_call_input.delta').map(e=>e.delta).join(''),code);
+ assert.equal(events.filter(e=>e.type==='response.custom_tool_call_input.done').length,1);
+ assert.equal(events.at(-1).response.output[0].input,code);
+ const fn={...call,name:'python'};assert.deepEqual(desktopOutputItem(fn,n.customTools,n.toolBindings),fn);
+ for(const arguments_ of ['{}','{"code":""}','{"code":1}','{"input":"a","code":"b"}','{"command":"pwd"}','null','[]','{"input":1}','{"input":"unfinished'])assert.throws(()=>desktopOutputItem({...call,arguments:arguments_},n.customTools,n.toolBindings),e=>e.code==='INVALID_SERVER_RESPONSE'&&/functions.exec/.test(e.message)&&e.responseBody.toolFailure.callId==='alias_call');
+ const arbitrary=normalizeDesktopRequest({input:'fixture',tools:[{type:'custom',name:'exec'},{type:'custom',name:'apply_patch'}]});
+ for(const name of ['exec','apply_patch'])assert.throws(()=>desktopOutputItem({...call,name},arbitrary.customTools,arbitrary.toolBindings));
+});
+
 test('alternate provider names restore only a unique advertised custom tool in JSON and SSE',()=>{
  const normalized=normalizeDesktopRequest({input:'fixture',tools:[{type:'namespace',name:'functions',tools:[{type:'custom',name:'exec'}]}]},true);
  for(const name of ['functions__exec','exec','functions::exec','functions::functions__exec','functions__functions__exec']) {
@@ -149,7 +168,7 @@ test('custom wrapper SSE handles empty added, split JSON escapes, complete termi
 });
 test('malformed final custom JSON becomes a clear SSE protocol error, not a disconnected socket',async()=>{
  const {bridge,post}=await setup(async()=>({contentType:'text/event-stream',response:splitStream([{type:'response.output_item.added',output_index:0,item:{type:'function_call',id:'bad',call_id:'bad_call',name:'exec',arguments:''}},{type:'response.function_call_arguments.done',item_id:'bad',output_index:0,arguments:'{"input":"private unfinished'}])}));
- try{const stream=await post({input:'safe',stream:true,tools:[{type:'custom',name:'exec'}]});const text=await stream.text();const events=sseEvents(text);assert.equal(events.at(-1).type,'error');assert.equal(events.at(-1).code,'INVALID_SERVER_RESPONSE');assert.doesNotMatch(text,/private unfinished|Unexpected end of JSON/);}finally{await bridge.stop()}
+ try{const stream=await post({input:'safe',stream:true,tools:[{type:'custom',name:'exec'}]});const text=await stream.text();const events=sseEvents(text);assert.equal(events.at(-1).type,'response.failed');assert.equal(events.at(-1).response.error.code,'INVALID_SERVER_RESPONSE');assert.match(events.at(-1).response.error.message,/工具「exec」.*JSON/);assert.doesNotMatch(text,/private unfinished|Unexpected end of JSON/);}finally{await bridge.stop()}
 });
 test('per-stream custom state cannot contaminate another stream and ordinary function deltas pass unchanged',()=>{
  const custom=new Set(['exec']),binding=new Map([['exec',{name:'exec',custom:true}]]),first=createDesktopEventTranslator(custom,binding),second=createDesktopEventTranslator(custom,binding);

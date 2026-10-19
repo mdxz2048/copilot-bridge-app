@@ -20,6 +20,7 @@ import { CloudError } from "./cloud-error.js";
 import { requestShape, modifiedRequestFields } from "./request-diagnostics.js";
 import { normalizeDesktopRequest, createDesktopEventTranslator, desktopOutputItem, resolveDesktopTool, type DesktopToolBinding, type ResponsesProfile } from "./desktop-protocol.js";
 import { FailureCapture, requestStats, type FailureFeedback } from "./failure-feedback.js";
+import { publicResponseError, upstreamResponseFailure } from "./response-errors.js";
 
 interface FailureContext {capture:FailureCapture;stage:FailureFeedback["stage"];userAborted:boolean}
 
@@ -55,6 +56,7 @@ interface StreamLifecycle {
   firstEvent: boolean;
   firstText: boolean;
   feedback?:FailureContext;
+  sequenceNumber?:number;
 }
 interface GatewayOptions {
   cache?: {load(accountId:string):RemoteConversation[];save(items:RemoteConversation[],accountId:string):void};
@@ -407,7 +409,7 @@ export class RemoteBridgeServer {
       providerConnectionId: await this.getProviderConnectionId?.(),
     });
     feedback?.capture.association({requestId:transport.response.headers.get("X-Bridge-AI-Request-Id")??transport.response.headers.get("X-Request-Id")});
-    if(!transport.response.ok){const errorBody=await transport.response.json().catch(()=>({}));feedback?.capture.http(errorBody);throw new CloudError("CLOUD_HTTP_ERROR","Cloud request failed.",{httpStatus:transport.response.status,requestId:transport.response.headers.get("X-Bridge-AI-Request-Id")??undefined});}
+    if(!transport.response.ok){const errorBody=await transport.response.json().catch(()=>({}));feedback?.capture.http(errorBody);const detail=errorBody?.error;throw new CloudError(typeof detail?.code==="string"?detail.code:"CLOUD_HTTP_ERROR",typeof detail?.message==="string"?detail.message:"Cloud request failed.",{httpStatus:transport.response.status,requestId:transport.response.headers.get("X-Bridge-AI-Request-Id")??undefined,responseBody:errorBody});}
     this.gatewayOptions?.trace?.write("cloud_headers",traceId,{cloudHeadersMs:Math.round(performance.now()-cloudStarted),status:transport.response.status,requestId:transport.response.headers.get("X-Request-Id"),aiRequestId:transport.response.headers.get("X-Bridge-AI-Request-Id"),instanceId:transport.response.headers.get("X-Bridge-Instance-Id"),protocolMode:transport.response.headers.get("X-Bridge-Protocol-Mode"),providerKind:transport.response.headers.get("X-Bridge-Provider-Kind")});
     if (transport.contentType.includes("text/event-stream")) {
       if(feedback)feedback.stage="stream_disconnected";
@@ -421,11 +423,16 @@ export class RemoteBridgeServer {
     if (!validated.success) throw new CloudError("INVALID_SERVER_RESPONSE", "Cloud returned malformed response.", { httpStatus: 502 });
     const result = validated.data;
     feedback?.capture.association({responseId:result.id,requestId:result.usage.request_id});
-    if(result.status==="failed"||result.status==="incomplete")this.reportFailure(feedback,result.status==="failed"?"stream_failed":"stream_incomplete",{code:result.status==="failed"?"RESPONSE_FAILED":"RESPONSE_INCOMPLETE",message:"Cloud response did not complete."});
+    let failure:ReturnType<typeof publicResponseError>|undefined;
+    if(result.status==="failed"||result.status==="incomplete") {
+      const error=upstreamResponseFailure({response:payload},`response.${result.status}`);
+      failure=publicResponseError(error);
+      this.reportFailure(feedback,result.status==="failed"?"stream_failed":"stream_incomplete",error);
+    }
     const translatedOutput=result.output.map(item => desktopOutputItem(item, conversation.customTools ?? new Set(), conversation.toolBindings));
     this.captureOutput(result.output, conversation);
     this.rememberResponse(result.id, conversation);
-    sendJson(outgoing, 200, { ...result, output: translatedOutput });
+    sendJson(outgoing, 200, { ...result, output: translatedOutput,...(failure?{status:"failed",error:{code:failure.code,message:failure.message}}:{}) });
     this.notifyResponseSettlement({
       responseId: result.id,
       requestId:
@@ -558,13 +565,16 @@ export class RemoteBridgeServer {
           desktopResponse,
         );
         if (desktopResponse.writableNeedDrain && !desktopResponse.destroyed) await new Promise<void>(resolve => { const finish = () => { desktopResponse.off("drain", finish); desktopResponse.off("close", finish); resolve(); }; desktopResponse.once("drain", finish); desktopResponse.once("close", finish); });
-        if (desktopResponse.destroyed) break;
+        if (desktopResponse.destroyed||lifecycle.completed) break;
       }
       eventBuffer += decoder.decode();
-      this.captureSseEvents(`${eventBuffer}\n\n`, conversation, lifecycle, desktopResponse);
+      if(!lifecycle.completed)this.captureSseEvents(`${eventBuffer}\n\n`, conversation, lifecycle, desktopResponse);
+      if(!lifecycle.completed&&!desktopResponse.destroyed)throw new CloudError("STREAM_DISCONNECTED","模型回复尚未完成，连接已断开，请检查网络后重试。",{httpStatus:502,requestId:lifecycle.requestId??undefined});
       desktopResponse.end();
-    } catch(error) {
-      this.reportFailure(feedback,"stream_failed",error);
+    } catch(cause) {
+      const error=cause instanceof CloudError?cause:new CloudError(cause instanceof ZodError?"INVALID_SERVER_RESPONSE":"STREAM_DISCONNECTED",cause instanceof ZodError?"模型返回的数据结构异常，无法继续处理回复。":"模型回复尚未完成，连接已断开，请检查网络后重试。",{httpStatus:502,requestId:lifecycle.requestId??undefined,cause,responseBody:{originalError:cause instanceof Error?cause.message:"Unknown stream error"}});
+      this.reportFailure(feedback,error.code==="STREAM_DISCONNECTED"?"stream_disconnected":"stream_failed",error);
+      sendCloudError(desktopResponse,error,lifecycle.responseId,lifecycle.sequenceNumber);
       throw error;
     } finally {
       if(!lifecycle.completed)this.reportFailure(feedback,"stream_disconnected",{code:"STREAM_DISCONNECTED",message:"Cloud stream ended before a terminal response.",requestId:lifecycle.requestId});
@@ -595,15 +605,45 @@ export class RemoteBridgeServer {
       if (!data) continue;
       if (data === "[DONE]") { desktopResponse?.write("data: [DONE]\n\n"); continue; }
       let payload:unknown;
-      try{payload=JSON.parse(data);}catch(error){lifecycle.feedback?.capture.event({type:"invalid_json_frame",data});throw error;}
+      try{payload=JSON.parse(data);}catch(cause){lifecycle.feedback?.capture.event({type:"invalid_json_frame",data});throw new CloudError("INVALID_SERVER_RESPONSE","模型返回了损坏的流式数据，无法继续读取回复。",{httpStatus:502,cause});}
       lifecycle.feedback?.capture.event(payload);
       const event = namedEvent ?? (payload && typeof payload === "object" && "type" in payload ? String(payload.type) : undefined);
+      lifecycle.responseId=responseIdFromEvent(payload)??lifecycle.responseId;
+      lifecycle.feedback?.capture.association({responseId:lifecycle.responseId,requestId:lifecycle.requestId});
+      if(payload&&typeof payload==="object"&&"sequence_number" in payload&&Number.isSafeInteger(payload.sequence_number))lifecycle.sequenceNumber=Math.max(lifecycle.sequenceNumber??0,Number(payload.sequence_number));
+      if(event==="response.failed"||event==="response.incomplete"||event==="error") {
+        const failure=upstreamResponseFailure(payload,event);
+        this.reportFailure(lifecycle.feedback,event==="response.incomplete"?"stream_incomplete":"stream_failed",failure);
+        const publicError=publicResponseError(failure);
+        if(event==="error") {
+          sendCloudError(desktopResponse!,failure,lifecycle.responseId,lifecycle.sequenceNumber);
+          lifecycle.completed=true;
+          this.notifyResponseSettlement({responseId:lifecycle.responseId,requestId:lifecycle.requestId,recovery:true});
+          break;
+        }
+        const original=payload as Record<string,unknown>;
+        // Desktop ignores error.message on response.incomplete and shows only its
+        // English reason enum. An unsuccessful terminal stays unsuccessful, but
+        // response.failed lets Desktop display the actionable Chinese reason.
+        // The unmodified upstream event has already been captured for diagnostics.
+        payload={...original,type:"response.failed",response:{...(original.response as Record<string,unknown>),status:"failed",error:{code:publicError.code,message:publicError.message}}};
+      }
       lifecycle.eventCount++;
       if(!lifecycle.firstEvent){lifecycle.firstEvent=true;this.gatewayOptions?.trace?.write("stream_first_event",conversation.traceId??conversation.threadId,{event,elapsedMs:Math.round(performance.now()-lifecycle.started)});}
       if(!lifecycle.firstText&&event==="response.output_text.delta"){lifecycle.firstText=true;this.gatewayOptions?.trace?.write("stream_first_text",conversation.traceId??conversation.threadId,{elapsedMs:Math.round(performance.now()-lifecycle.started)});}
       this.gatewayOptions?.trace?.write("cloud_event",conversation.traceId??conversation.threadId,{event,outputIndex:payload && typeof payload === "object" && "output_index" in payload ? payload.output_index : undefined,itemId:payload && typeof payload === "object" && "item_id" in payload ? payload.item_id : undefined},payload);
       if(payload&&typeof payload==="object"&&"item" in payload&&payload.item&&typeof payload.item==="object"&&"type" in payload.item&&payload.item.type==="function_call")this.matchTool(payload.item as Record<string,unknown>,conversation);
-      for(const translated of lifecycle.translate(payload)){
+      const translatedEvents=lifecycle.translate(payload);
+      // Validate and record outputs before forwarding a successful terminal.
+      // A call ownership/shape error must not appear after response.completed.
+      if(event==="response.completed"||event==="response.failed"||event==="response.incomplete"){
+        const terminal=responseFromEvent(payload);
+        if(event==="response.completed"&&(!terminal||terminal.status!=="completed"))throw new CloudError("INVALID_SERVER_RESPONSE","模型的完成事件与回复内容不一致，无法确认任务已完成。",{httpStatus:502});
+        if(terminal)this.captureOutput(terminal.output,conversation);
+      }else if(event==="response.output_item.done"&&payload&&typeof payload==="object"&&"item" in payload){
+        this.captureOutput([OutputItemSchema.parse(payload.item)],conversation);
+      }
+      for(const translated of translatedEvents){
         const translatedType=translated&&typeof translated==="object"&&"type" in translated?String(translated.type):namedEvent;
         const prefix=block.split(/\r?\n/).filter(line=>!line.startsWith("data:")&&!line.startsWith("event:")).join("\n");
         desktopResponse?.write(`${prefix}${translatedType?`\nevent: ${translatedType}`:""}\ndata: ${JSON.stringify(translated)}\n\n`);
@@ -616,16 +656,14 @@ export class RemoteBridgeServer {
       }
       if (event === "response.completed" || event === "response.incomplete" || event === "response.failed") {
         lifecycle.feedback?.capture.association({responseId:responseIdFromEvent(payload),requestId:lifecycle.requestId});
-        if(event!=="response.completed")this.reportFailure(lifecycle.feedback,event==="response.failed"?"stream_failed":"stream_incomplete",{code:event==="response.failed"?"RESPONSE_FAILED":"RESPONSE_INCOMPLETE",message:"Cloud response did not complete."});
+        lifecycle.completed=true;
         const result = responseFromEvent(payload);
-        if (!result) continue;
-        if(result.status==="failed"||result.status==="incomplete")this.reportFailure(lifecycle.feedback,result.status==="failed"?"stream_failed":"stream_incomplete",{code:result.status==="failed"?"RESPONSE_FAILED":"RESPONSE_INCOMPLETE",message:"Cloud response did not complete."});
+        if (!result) {this.notifyResponseSettlement({responseId:responseIdFromEvent(payload)??lifecycle.responseId,requestId:lifecycle.requestId,recovery:true});continue;}
         lifecycle.responseId = result.id;
         lifecycle.requestId =
           result.usage.request_id
           ?? lifecycle.requestId;
         lifecycle.completed = true;
-        this.captureOutput(result.output, conversation);
         this.rememberResponse(result.id, conversation);
         this.notifyResponseSettlement({
           responseId: lifecycle.responseId,
@@ -635,21 +673,17 @@ export class RemoteBridgeServer {
         continue;
       }
       if(event==="error")this.reportFailure(lifecycle.feedback,"stream_failed",payload);
-      if (event !== "response.output_item.done") continue;
-      if (
-        !payload
-        || typeof payload !== "object"
-        || !("item" in payload)
-      ) continue;
-      const item = OutputItemSchema.parse(payload.item);
-      this.captureOutput([item], conversation);
     }
     return remainder;
   }
 
   private reportFailure(context:FailureContext|undefined,stage:FailureFeedback["stage"],error:unknown):void {
     if(!context||context.userAborted)return;
-    try{const report=context.capture.failure(stage,error);if(report)this.gatewayOptions?.failureFeedback?.submit(report);}catch{/* Reporting must never change the model response. */}
+    try{
+      const display=publicResponseError(error);
+      context.capture.event({type:"bridge.failure",stage,error:display,diagnostic:error instanceof CloudError?error.responseBody:undefined,originalMessage:error instanceof Error?error.message:undefined});
+      const report=context.capture.failure(stage,{...display,httpStatus:error instanceof CloudError?error.httpStatus:undefined,responseBody:error instanceof CloudError?error.responseBody:undefined});if(report)this.gatewayOptions?.failureFeedback?.submit(report);
+    }catch{/* Reporting must never change the model response. */}
   }
 
   private notifyResponseSettlement(
@@ -791,35 +825,20 @@ function sendJson(
   response.end(JSON.stringify(payload));
 }
 
-function sendCloudError(response: ServerResponse, error: unknown): void {
-  if (response.writableEnded) return;
+function sendCloudError(response: ServerResponse, error: unknown,responseId?:string|null,sequenceNumber=0): void {
+  if (response.writableEnded||response.destroyed) return;
+  const detail=publicResponseError(error);
+  const requestId=detail.requestId??randomUUID();
   if (response.headersSent) {
-    const code=error instanceof CloudError?error.code:"INVALID_SERVER_RESPONSE";
-    const message=error instanceof CloudError?error.message:"Cloud returned an invalid response stream.";
-    response.end(`event: error\ndata: ${JSON.stringify({type:"error",code,message,requestId:error instanceof CloudError?error.requestId??randomUUID():randomUUID()})}\n\n`);
+    const failure={type:"response.failed",sequence_number:sequenceNumber+1,response:{id:responseId??`resp_bridge_${randomUUID()}`,object:"response",created_at:Math.floor(Date.now()/1000),status:"failed",output:[],error:{code:detail.code,message:detail.message},incomplete_details:null,usage:null},requestId};
+    response.end(`event: response.failed\ndata: ${JSON.stringify(failure)}\n\n`);
     return;
   }
-  if (error instanceof ZodError) { sendJson(response, 400, { error: { code: "INVALID_REQUEST", message: "Malformed Responses request.", requestId: randomUUID() } }); return; }
-  if (error instanceof CloudError) {
-    sendJson(response, error.httpStatus ?? statusForCode(error.code), {
-      error: {
-        code: error.code,
-        message: error.message,
-        requestId: error.requestId ?? randomUUID(),
-      },
-    });
-    return;
-  }
-  sendJson(response, 500, {
-    error: {
-      code: "INTERNAL_ERROR",
-      message: error instanceof Error ? error.message : "Internal error",
-      requestId: randomUUID(),
-    },
-  });
+  sendJson(response,error instanceof ZodError?400:error instanceof CloudError?error.httpStatus??statusForCode(error.code):500,{error:{...detail,requestId}});
 }
 
 function statusForCode(code: string): number {
+  if(code==="INSUFFICIENT_POINTS")return 402;
   if (code === "TOKEN_EXPIRED" || code === "UNAUTHORIZED") return 401;
   if (
     code === "DEVICE_REVOKED"

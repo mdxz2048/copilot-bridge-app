@@ -32,7 +32,7 @@ export function normalizeDesktopRequest(value: unknown, native = false, context?
       customTools.add(name);
       transformations.add("custom_function_wrapper");
       tools.push({ type: "function", name, description: `${tool.description ?? ""}\nSupply the tool's raw input in the input field.`,
-        parameters: { type: "object", properties: { input: { type: "string" } }, required: ["input"], additionalProperties: false } });
+        parameters: { type: "object", properties: { input: { type: "string", description: "The complete raw tool input. Always use input, never code, command or arguments. Do not return an empty object." } }, required: ["input"], additionalProperties: false } });
     }
     }
   };
@@ -107,14 +107,29 @@ export function desktopOutputItem(value: unknown, customTools: Set<string>, tool
   const binding = match?.[1];
   const restored = binding ? { ...item, name: binding.name, ...(binding.namespace ? { namespace: binding.namespace } : {}) } : item;
   if (!customTools.has(match?.[0] ?? String(item.name))) return restored;
-  const args = customArguments(item.arguments);
+  const args = customArguments(item.arguments, item, binding);
   const { arguments: _arguments, ...rest } = restored;
   return { ...rest, type: "custom_tool_call", input: args.input };
 }
 
-function customArguments(value: unknown): { input: string } {
-  try { const args=JSON.parse(String(value));if(args&&typeof args.input==="string")return args; } catch { /* Never expose partial arguments or provider text in errors. */ }
-  throw new CloudError("INVALID_SERVER_RESPONSE", "Cloud returned invalid custom tool arguments.", { httpStatus: 502 });
+function customArguments(value: unknown, item: Record<string,unknown>, binding?: DesktopToolBinding): { input: string } {
+  let args:unknown;
+  try { args=JSON.parse(String(value)); } catch { throw customToolError(item,binding,"INVALID_JSON","参数不是完整、有效的 JSON"); }
+  if(args&&typeof args==="object"&&!Array.isArray(args)) {
+    const fields=args as Record<string,unknown>;
+    if(typeof fields.input==="string"&&Object.keys(fields).length===1)return {input:fields.input};
+    // Only the official code-execution wrappers have an unambiguous code alias.
+    // Function tools (including Python's ordinary code schema) never enter here.
+    if(binding?.name==="exec"&&["functions","python"].includes(binding.namespace??"")&&Object.keys(fields).length===1&&typeof fields.code==="string"&&fields.code.trim())return {input:fields.code};
+    if(!Object.keys(fields).length)throw customToolError(item,binding,"EMPTY_ARGUMENTS","模型返回了空参数，缺少 input 字符串");
+    if(typeof fields.input==="string")throw customToolError(item,binding,"CONFLICTING_ARGUMENTS","参数含有声明之外的字段，无法确认工具输入");
+  }
+  throw customToolError(item,binding,"MISSING_INPUT","缺少有效的 input 字符串");
+}
+
+function customToolError(item:Record<string,unknown>,binding:DesktopToolBinding|undefined,reason:string,detail:string):CloudError {
+  const toolName=[binding?.namespace,binding?.name??String(item.name??"未知工具")].filter(Boolean).join(".").slice(0,160);
+  return new CloudError("INVALID_SERVER_RESPONSE",`工具「${toolName}」调用失败：${detail}。请重试本轮请求。`,{httpStatus:502,responseBody:{toolFailure:{toolName,callId:item.call_id,itemId:item.id,reason}}});
 }
 
 // Decode only complete characters from the wrapper's JSON string, retaining split
@@ -126,7 +141,7 @@ function partialCustomInput(buffer: string): string {
     const char=buffer[i];if(char==='"')break;
     if(char!=="\\"){result+=char;continue;}
     const count=buffer[i+1]==="u"?6:2;if(i+count>buffer.length)break;
-    try{result+=JSON.parse(`"${buffer.slice(i,i+count)}"`);}catch{throw new CloudError("INVALID_SERVER_RESPONSE","Cloud returned invalid custom tool arguments.",{httpStatus:502});}
+    try{result+=JSON.parse(`"${buffer.slice(i,i+count)}"`);}catch{break;/* Final validation reports the tool and reason without exposing raw code. */}
     i+=count-1;
   }
   // Hold a high surrogate until its low surrogate arrives in a later delta.
@@ -136,7 +151,7 @@ function partialCustomInput(buffer: string): string {
 
 /** One translator per SSE response: call IDs and argument buffers never cross streams. */
 export function createDesktopEventTranslator(customTools: Set<string>, toolBindings?: Map<string, DesktopToolBinding>): (value: unknown) => unknown[] {
-  type Pending={buffer:string;emitted:string;done:boolean};
+  type Pending={buffer:string;emitted:string;done:boolean;item:Record<string,unknown>;binding?:DesktopToolBinding};
   const calls=new Map<string,Pending>();
   return value=>{
     if(!value||typeof value!=="object")return [value];
@@ -146,14 +161,14 @@ export function createDesktopEventTranslator(customTools: Set<string>, toolBindi
     const keys=[event.item_id??item?.id].filter(v=>v!==undefined).map(v=>`id:${String(v)}`);
     if(event.output_index!==undefined)keys.push(`index:${String(event.output_index)}`);
     if(event.type==="response.output_item.added"&&item?.type==="function_call"&&isCustom){
-      const state={buffer:String(item.arguments??""),emitted:"",done:false};for(const key of keys)calls.set(key,state);
+      const state={buffer:String(item.arguments??""),emitted:"",done:false,item,binding:match?.[1]};for(const key of keys)calls.set(key,state);
       const binding=match?.[1];const {arguments:_arguments,...rest}=item;
       return [{...event,item:{...rest,type:"custom_tool_call",name:binding?.name??item.name,...(binding?.namespace?{namespace:binding.namespace}:{}),input:""}}];
     }
     const state=keys.map(key=>calls.get(key)).find(Boolean);
     if(state&&!state.done&&event.type==="response.output_item.done"&&item?.type==="function_call"&&isCustom){
-      const input=customArguments(item.arguments).input;
-      if(!input.startsWith(state.emitted))throw new CloudError("INVALID_SERVER_RESPONSE","Cloud changed streamed custom tool input.",{httpStatus:502});
+      const input=customArguments(item.arguments,item,state.binding).input;
+      if(!input.startsWith(state.emitted))throw customToolError(item,state.binding,"INPUT_CHANGED","模型修改了已返回的工具输入，无法安全执行");
       const delta=input.slice(state.emitted.length);state.emitted=input;state.done=true;
       const {item:_item,...rest}=event;
       return [...(delta?[{...rest,type:"response.custom_tool_call_input.delta",item_id:item.id,delta}]:[]),{...rest,type:"response.custom_tool_call_input.done",item_id:item.id,input},desktopEvent(value,customTools,toolBindings)];
@@ -161,8 +176,8 @@ export function createDesktopEventTranslator(customTools: Set<string>, toolBindi
     if(state&&(event.type==="response.function_call_arguments.delta"||event.type==="response.function_call_arguments.done")){
       const done=event.type.endsWith(".done");
       if(done)state.buffer=typeof event.arguments==="string"?event.arguments:state.buffer;else state.buffer+=String(event.delta??"");
-      const decoded=done?customArguments(state.buffer).input:partialCustomInput(state.buffer);
-      if(!decoded.startsWith(state.emitted))throw new CloudError("INVALID_SERVER_RESPONSE","Cloud changed streamed custom tool input.",{httpStatus:502});
+      const decoded=done?customArguments(state.buffer,state.item,state.binding).input:partialCustomInput(state.buffer);
+      if(!decoded.startsWith(state.emitted))throw customToolError(state.item,state.binding,"INPUT_CHANGED","模型修改了已返回的工具输入，无法安全执行");
       const delta=decoded.slice(state.emitted.length);state.emitted=decoded;
       const {arguments:_arguments,delta:_delta,...rest}=event;
       const result:unknown[]=delta?[{...rest,type:"response.custom_tool_call_input.delta",delta}]:[];

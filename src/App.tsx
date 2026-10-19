@@ -16,6 +16,7 @@ import { AppTitleBar } from "./components/AppTitleBar";
 import { AccountSummaryCard } from "./components/AccountSummaryCard";
 import { BridgeActivationBar } from "./components/BridgeActivationBar";
 import { Button } from "./components/Button";
+import { CloudTopupSheet } from "./components/CloudTopupSheet";
 import { CloudAccountSheet } from "./components/CloudAccountSheet";
 import { CurrentServiceCard } from "./components/CurrentServiceCard";
 import { Modal } from "./components/Modal";
@@ -53,6 +54,7 @@ export function App() {
   const [version, setVersion] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [topupOpen, setTopupOpen] = useState(false);
   const [cloudLoginIssue, setCloudLoginIssue] = useState<"SUBSCRIPTION_REQUIRED" | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
@@ -67,6 +69,10 @@ export function App() {
   const [restartDismissed, setRestartDismissed] = useState(false);
   const [restartingChatGpt, setRestartingChatGpt] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cloud?.authState !== "AUTHENTICATED") setTopupOpen(false);
+  }, [cloud?.authState]);
 
   useEffect(() => {
     if (settings.theme === "system") {
@@ -358,6 +364,7 @@ export function App() {
           confirmedMode.current = null;
           setCloudOpen(true);
         }}
+        onTopup={() => setTopupOpen(true)}
         onOpenDetails={() => {
           setCloudOpen(true);
           void refreshCloud();
@@ -436,6 +443,10 @@ export function App() {
           profile={profile}
           settings={settings}
         />
+      )}
+
+      {topupOpen && cloud?.authState === "AUTHENTICATED" && cloud.account && (
+        <CloudTopupSheet key={cloud.account} account={cloud.account} onClose={() => setTopupOpen(false)} onRefresh={() => void refreshCloud()} />
       )}
 
       {cloudOpen && (

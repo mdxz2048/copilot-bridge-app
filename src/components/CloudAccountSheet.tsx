@@ -1,6 +1,3 @@
-import {PurchaseTopup} from './PurchaseTopup';
-import type {PurchaseClient} from '../purchase-types';
-const purchaseClient:PurchaseClient={create:()=>window.copilotBridge.createPurchaseTicket(),list:(page,status)=>window.copilotBridge.listPurchaseClaims(page,status),status:id=>window.copilotBridge.getPurchaseTicketStatus(id)};
 import {InviteFriendControl} from "./InviteFriendControl";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type {
@@ -62,14 +59,14 @@ export function CloudAccountSheet({
     setPasswordVisible(visible => !visible);
   };
   const [view, setView] = useState<
-    "account" | "devices" | "referral" | "usage" | "topup"
+    "account" | "devices" | "referral" | "usage"
   >("account");
   useEffect(()=>setView("account"),[authenticated]);
   const state = accountState(status);
   const subscriptionRequired = !authenticated
     && (loginIssue === "SUBSCRIPTION_REQUIRED"
       || status?.authState === "SUBSCRIPTION_REQUIRED");
-  const title=view==="topup"?"充值":view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"充值与调整记录":"我的账户";
+  const title=view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"充值与调整记录":"我的账户";
   const money=Boolean(status?.billing),total=money?`¥${status!.billing!.balanceRmb.toFixed(4)}`:status?.remainingPoints==null?"—":`${formatPoints(status.remainingPoints)} 点`;
   const online=(status?.devices??[]).filter(d=>d.status==="ACTIVE"&&(d.current||(d.lastSeenAt&&Date.now()-Date.parse(d.lastSeenAt)<300000))).length;
   const loginLimit=status?.loginDeviceLimit?.email===email.trim().toLowerCase()?status.loginDeviceLimit:undefined;
@@ -78,8 +75,8 @@ export function CloudAccountSheet({
   const badge=balanceRequired?"余额不足":healthy?"账户正常":state.title;
   const back=()=>setView("account");
   const footer=authenticated?<><Button className="secondary compact" disabled={busy||!status?.accountManagementAvailable} onClick={onManageAccount}>账户管理</Button><Button className="compact text-action" disabled={busy} onClick={onLogout}>退出登录</Button></>:status?.authState==="SIGNED_OUT"||status?.authState==="AUTHENTICATING"?null:<AccountActions loggedIn={Boolean(status?.account)} busy={busy} onLogout={onLogout} onManageAccount={onManageAccount} onManageSubscription={onManageSubscription} onRefresh={onRefresh} onUseOriginal={onUseOriginal} state={status?.authState??"SIGNED_OUT"} accountAvailable={status?.accountManagementAvailable===true} subscriptionAvailable={status?.subscriptionManagementAvailable===true}/>;
-  return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={view==="topup"?undefined:footer}>
-    {view==="topup"?<div className="detail-view account-topup"><Button className="secondary compact" onClick={back}>‹ 返回账户</Button><PurchaseTopup client={purchaseClient} qrSource="./xianyu-profile.jpg" onCredited={onRefresh}/></div>:view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
+  return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={footer}>
+    {view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
     {(!status?.account)&&<div className={`compact-state state-panel-${state.tone}`} role="status"><strong>{subscriptionRequired?"Cloud 套餐未开通":state.title}</strong><p>{subscriptionRequired?(status?.accountManagementAvailable?"请联系管理员开通套餐后重试登录。":"当前环境未配置网站入口，请联系管理员开通后重试。"):state.message}</p>{subscriptionRequired&&status?.accountManagementAvailable&&<Button className="secondary compact" onClick={onManageAccount}>打开网站账户中心查看开通说明</Button>}</div>}
     {!authenticated&&(status?.authState==="SIGNED_OUT"||status?.authState==="SUBSCRIPTION_REQUIRED"||status?.authState==="DEVICE_REVOKED")&&(
         <div className="cloud-login-fields">
@@ -92,7 +89,7 @@ export function CloudAccountSheet({
             )}
           </div>
           {loginLimit&&<section className="device-limit-panel" role="alert"><strong>已达到登录设备上限（{loginLimit.maxDevices} 台）</strong><p>选择一台设备移除后，继续登录此电脑。被移除的设备需要重新登录。</p>{loginLimit.devices.map(d=><div className="device-row" key={d.id}><div><strong>{d.deviceName}</strong><p>{d.platform} · {d.lastSeenAt?new Date(d.lastSeenAt).toLocaleString('zh-CN'):'暂无活动记录'}</p></div><Button className="secondary compact" disabled={busy||!password} onClick={()=>{if(window.confirm(`移除 ${d.deviceName} 并登录此电脑？`))onLogin({email:email.trim(),password,replaceDeviceId:d.id});}}>移除此设备并登录</Button></div>)}<Button className="secondary compact" disabled={busy} onClick={onManageAccount}>去网站管理设备</Button></section>}
-          <p>新账号请先在网站完成验证注册。注册后可在账号页充值使用。</p>
+          <p>新账号请先在网站完成验证注册。登录后可在首页点击“充值”。</p>
           {!status?.accountManagementAvailable && <p>当前环境未配置网站注册地址，请联系管理员。</p>}
           <label>
             <span>{copy.email}</span>
@@ -143,7 +140,7 @@ export function CloudAccountSheet({
     {status?.account&&<>
       <section className="compact-wallet" aria-label="账户余额"><div className="compact-wallet-total"><span>{money?"可用总余额":"可用点数"}</span><strong>{total}</strong></div>{status.balanceBreakdown&&<div className="compact-wallet-parts"><span>正常余额 <b>¥{status.balanceBreakdown.regularRmb.toFixed(4)}</b></span><span>奖励余额 <b>¥{status.balanceBreakdown.rewardRmb.toFixed(4)}</b></span></div>}{status.balanceBreakdown?.rewardExpiresAt&&<p className="reward-expiry" title={new Date(status.balanceBreakdown.rewardExpiresAt).toLocaleString("zh-CN")}>其中 ¥{(status.balanceBreakdown.rewardExpiringRmb??0).toFixed(4)} 奖励于 {formatRewardDate(status.balanceBreakdown.rewardExpiresAt)} 到期</p>}</section>
       <div className="compact-plan"><div><strong>{status.plan?`Cloud ${status.plan}`:"Cloud 按量使用"}</strong><small>{status.accountNeverExpires?"长期有效":`有效期至 ${formatDate(status.validUntil)}`}</small></div><button type="button" className="text-action" disabled={busy||!status.subscriptionManagementAvailable} onClick={onManageSubscription}>管理套餐 ›</button></div>
-      <div className="compact-account-actions">{authenticated&&<Button className="small-action topup-action" onClick={()=>setView("topup")}>充值</Button>}<button type="button" className="small-action" onClick={()=>setView("devices")}><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="10" rx="2"/><path d="M1 17h18"/></svg>在线设备 {online}{status.billing?.maxDevices?` / ${status.billing.maxDevices}`:""}</button>{authenticated&&<InviteFriendControl small onHistory={()=>setView("referral")}/>}</div>
+      <div className="compact-account-actions"><button type="button" className="small-action" onClick={()=>setView("devices")}><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="10" rx="2"/><path d="M1 17h18"/></svg>在线设备 {online}{status.billing?.maxDevices?` / ${status.billing.maxDevices}`:""}</button>{authenticated&&<InviteFriendControl small onHistory={()=>setView("referral")}/>}</div>
       <button className="compact-record-entry" type="button" onClick={()=>setView("usage")}><span>充值与调整记录</span><span aria-hidden="true">›</span></button>
       <p className={`compact-account-note ${balanceRequired||!healthy?"attention":""}`} role="status">{balanceRequired?"余额不足，模型请求已暂停，请充值。":!healthy?state.message:"余额与权限自动同步；需要调整请联系管理员。"}</p>
     </>}

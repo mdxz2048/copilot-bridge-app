@@ -37,6 +37,7 @@ async function mountApp({
   initialSettings = {},
   initialCloudState = "SIGNED_OUT",
   cloudServiceStatus = "AVAILABLE",
+  billing = null,
   initialBridgeState = "stopped",
   cloudLoginError = null,
   delayCloudLogin = false,
@@ -84,6 +85,7 @@ async function mountApp({
   let bridge = { state: initialBridgeState, message: "", endpoint: "" };
   const cloud = {
     authState: initialCloudState,
+    billing,
     contractReady: true,
     account: initialCloudState === "AUTHENTICATED" ? "test@example.com" : null,
     accountManagementAvailable,
@@ -203,6 +205,7 @@ async function mountApp({
       };
     },
   };
+  dom.window.copilotBridge.listPurchaseClaims = async () => ({data: [], total: 0});
   await act(async () => root.render(React.createElement(App)));
 
   function button(text, last = false) {
@@ -382,13 +385,13 @@ test("confirmed OFF restores Original when Cloud is offline without switching tr
 });
 
 test("ordinary account login does not switch ChatGPT to Cloud", async () => {
-  const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('.account-status-bar');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
+  const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button.account-status-bar, .account-details-action');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
 });
 
 test('password visibility preserves credentials and selection without login, and reopening hides it',async()=>{
  const app=await mountApp({initialSettings:{onboardingCompleted:true}});
  try{
-  await app.clickSelector('.account-status-bar');await app.input('email','fixture@example.test');await app.input('password','FixturePasswordOnly');
+  await app.clickSelector('button.account-status-bar, .account-details-action');await app.input('email','fixture@example.test');await app.input('password','FixturePasswordOnly');
   const input=app.document.querySelector('input[type="password"]');input.setSelectionRange(2,7,'backward');
   assert.equal(app.document.querySelector('[aria-label="显示密码"]').getAttribute('aria-pressed'),'false');
   await app.clickSelector('[aria-label="显示密码"]');
@@ -396,14 +399,14 @@ test('password visibility preserves credentials and selection without login, and
   assert.deepEqual([input.selectionStart,input.selectionEnd,input.selectionDirection],[2,7,'backward']);
   assert.equal(app.document.querySelector('[aria-label="隐藏密码"]').getAttribute('aria-pressed'),'true');assert.deepEqual(app.events,[]);
   await app.clickSelector('[aria-label="隐藏密码"]');assert.equal(input.type,'password');assert.equal(input.value,'FixturePasswordOnly');
-  await app.clickSelector('[aria-label="显示密码"]');await app.click('关闭');await app.clickSelector('.account-status-bar');
+  await app.clickSelector('[aria-label="显示密码"]');await app.click('关闭');await app.clickSelector('button.account-status-bar, .account-details-action');
   assert.ok(app.document.querySelector('input[type="password"]'));assert.ok(app.document.querySelector('[aria-label="显示密码"]'));
   assert.equal(app.document.querySelector('input[type="password"]').value,'');assert.deepEqual(app.events,[]);
  }finally{await app.dispose();}
 });
 
 test("closing confirmed Cloud login clears intent so later account login cannot enable Cloud", async () => {
-  const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');await app.click('关闭');await app.clickSelector('.account-status-bar');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
+  const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.clickSelector('button[role="switch"]');await app.click('确认切换');await app.click('关闭');await app.clickSelector('button.account-status-bar, .account-details-action');await app.input('email','test@example.com');await app.input('password','example-password');await app.click('登录',true);assert.deepEqual(app.events,['loginCloud']);}finally{await app.dispose();}
 });
 
 test("closing the account sheet during an in-flight login cancels only the pending mode intent", async()=>{
@@ -514,7 +517,7 @@ test("website registration followed by subscription-required login keeps guidanc
     accountManagementAvailable: true,
   });
   try {
-    await app.clickSelector(".account-status-bar");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     await app.click("去网站注册");
     assert.deepEqual(app.events, ["openCloudRegistration"]);
     await app.input("email", "new@example.com");
@@ -525,7 +528,7 @@ test("website registration followed by subscription-required login keeps guidanc
     assert.doesNotMatch(app.text, /登录失败，请检查账号信息/);
     await app.click("打开网站账户中心查看开通说明");
     await app.click("关闭");
-    await app.clickSelector(".account-status-bar");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     assert.match(app.text, /Cloud 套餐未开通/);
     await app.input("email", "new@example.com");
     await app.input("password", "TwelveChars!");
@@ -550,7 +553,7 @@ test("website registration failure is visible and remains retryable", async () =
     cloudRegistrationOpenError: "No trusted registration URL",
   });
   try {
-    await app.clickSelector(".account-status-bar");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     await app.click("去网站注册");
     assert.match(app.text, /无法打开网站注册页面，请联系管理员/);
     app.setCloudRegistrationOpenError(null);
@@ -566,7 +569,7 @@ test("TEST Cloud with no trusted site explains why registration cannot open", as
     initialSettings: { onboardingCompleted: true },
   });
   try {
-    await app.clickSelector(".account-status-bar");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     assert.match(app.text, /当前环境未配置网站注册地址，请联系管理员/);
     assert.doesNotMatch(app.text, /去网站注册/);
     assert.deepEqual(app.events, []);
@@ -581,7 +584,7 @@ test("subscription-required login in TEST mode explains missing site URL and rem
     cloudLoginError: "SUBSCRIPTION_REQUIRED",
   });
   try {
-    await app.clickSelector(".account-status-bar");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     await app.input("email", "new@example.com");
     await app.input("password", "TwelveChars!");
     await app.click("登录", true);
@@ -601,7 +604,7 @@ test("referral code copy reports success and failure without implying immediate 
     referral: { code: "INVITE123", registered: 1, rewarded: 0, pointsEarned: 0 },
   });
   try {
-    await app.clickSelector(".account-status-bar");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     await app.click('邀请好友');
     await app.clickSelector('button[aria-label="查看邀请记录"]');
     assert.match(app.text, /新用户首次购买并审核到账后/);
@@ -629,7 +632,7 @@ test("copies the trusted registration link and reports clipboard failures", asyn
     referralRegistrationUrl: link,
   });
   try {
-    await app.clickSelector(".account-status-bar");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     await app.click('邀请好友');
     await app.clickSelector('button[aria-label="查看邀请记录"]');
     assert.match(app.text, /https:\/\/ai\.mddxz\.top\/register\?ref=INVITE123/);
@@ -652,8 +655,8 @@ test("Compact dialog traps Tab, closes on Escape and restores the account trigge
     initialSettings: { onboardingCompleted: true },
   });
   try {
-    const trigger = app.document.querySelector(".account-status-bar");
-    await app.clickSelector(".account-status-bar");
+    const trigger = app.document.querySelector("button.account-status-bar, .account-details-action");
+    await app.clickSelector("button.account-status-bar, .account-details-action");
     const sheet = app.document.querySelector(".compact-dialog");
     assert.equal(sheet.getAttribute("role"), "dialog");
     assert.equal(sheet.getAttribute("aria-modal"), "true");
@@ -872,5 +875,39 @@ test("authenticated account with failed listener offers recovery and can open Ch
 
 test('login timeout is visible in Chinese and the login button becomes usable again',async()=>{
  const app=await mountApp({cloudLoginError:"Error invoking remote method 'cloud:login': Error: 登录等待超时，网络或系统响应可能不稳定。操作结果可能已生效，请刷新状态确认后再试。"});
- try{await app.clickSelector('.account-status-bar');await app.input('email','fixture@example.test');await app.input('password','fixture-password');await app.click('登录',true);assert.match(app.text,/登录等待超时/);assert.match(app.text,/网络或系统响应可能不稳定/);assert.doesNotMatch(app.text,/Error invoking remote method/);assert.ok(app.button('登录',true));}finally{await app.dispose();}
+ try{await app.clickSelector('button.account-status-bar, .account-details-action');await app.input('email','fixture@example.test');await app.input('password','fixture-password');await app.click('登录',true);assert.match(app.text,/登录等待超时/);assert.match(app.text,/网络或系统响应可能不稳定/);assert.doesNotMatch(app.text,/Error invoking remote method/);assert.ok(app.button('登录',true));}finally{await app.dispose();}
+});
+
+
+test("signed-in summary recharge opens purchase directly and account no longer contains recharge", async () => {
+  const app = await mountApp({initialCloudState: "AUTHENTICATED"});
+  try {
+    const recharge = app.button("充值");
+    assert.ok(recharge.closest(".account-summary-actions"));
+    assert.match(recharge.parentElement.textContent, /已登录.*充值.*账户/);
+    await app.click("充值");
+    assert.equal(app.document.querySelector('[role="dialog"]').getAttribute("aria-label"), "充值");
+    assert.match(app.text, /已支付，提交订单号/);
+    assert.equal(app.document.querySelector('.compact-dialog .account-topup-link'), null);
+    await app.click("关闭");
+    assert.equal(app.document.activeElement, recharge);
+    await app.click("账户 ›");
+    assert.equal(app.document.querySelector('[role="dialog"]').getAttribute("aria-label"), "我的账户");
+    assert.equal([...app.document.querySelectorAll('[role="dialog"] button')].some(button => button.textContent.trim() === "充值"), false);
+  } finally { await app.dispose(); }
+});
+
+test("zero balance keeps recharge available", async () => {
+  const app = await mountApp({initialCloudState: "AUTHENTICATED", cloudServiceStatus: "BALANCE_REQUIRED", billing: {balanceRmb: 0, usedRmb: 1}});
+  try {
+    await app.click("充值");
+    assert.equal(app.document.querySelector('[role="dialog"]').getAttribute("aria-label"), "充值");
+    assert.match(app.text, /余额不足/);
+  } finally { await app.dispose(); }
+});
+
+test("signed-out summary does not expose recharge", async () => {
+  const app = await mountApp();
+  try { assert.equal(app.document.querySelector('.account-topup-link'), null); }
+  finally { await app.dispose(); }
 });
