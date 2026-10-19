@@ -303,7 +303,8 @@ export function App() {
     }
   };
   const currentModel = displayModel(settings.backendModel ?? models[0]?.id ?? "");
-  const serviceHealthy = bridge?.state === "ready" && cloud?.authState === "AUTHENTICATED";
+  const serviceHealthy = bridge?.state === "ready" && cloud?.authState === "AUTHENTICATED"
+    && cloud.serviceStatus === "AVAILABLE" && !cloud.lastError;
 
   const installChatGpt = () => {
     setInstallOpen(true);

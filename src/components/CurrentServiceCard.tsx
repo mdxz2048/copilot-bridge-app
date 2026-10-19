@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { CompactDialog } from "./CompactDialog";
 import type {
   AppSettings,
   BridgeModel,
@@ -50,6 +52,7 @@ export function CurrentServiceCard({
   onUpdateSettings,
 }: CurrentServiceCardProps) {
   const copy = zhCN.product;
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const cloudReady =
     cloud?.authState === "AUTHENTICATED"
     && cloud.serviceStatus === "AVAILABLE"
@@ -65,6 +68,8 @@ export function CurrentServiceCard({
   const reasoningMode = reasoningModes.includes(settings.reasoningMode ?? "auto")
     ? settings.reasoningMode ?? "auto" : reasoningModes.includes(selected?.defaultReasoningMode ?? "normal")
       ? selected?.defaultReasoningMode ?? "normal" : reasoningModes[0];
+  const modelNeedsAttention = serviceReady && ((selected?.availability && selected.availability !== "READY") || (!selected && Boolean(settings.backendModel)));
+  const detailMessage = modelNeedsAttention ? selected?.statusMessage ?? "当前模型已停用或权限已调整，请选择其他模型并新建会话。" : state.message;
   const modelOptions = models.filter(model=>!model.availability||model.availability==="READY").map((model) => ({
     value: model.id,
     label: displayModel(model.id)+(model.availability==="SETUP_REQUIRED"?" · 待开通":model.availability==="UNAVAILABLE"?" · 暂不可用":""),
@@ -72,8 +77,8 @@ export function CurrentServiceCard({
 
   if (!bridgeEnabled) {
     return (
-      <section aria-labelledby="current-service-heading">
-        <h2 id="current-service-heading">AI 服务</h2>
+      <section className="current-service-section" aria-labelledby="current-service-heading">
+        <h2 className="visually-hidden" id="current-service-heading">AI 服务</h2>
         <div className="card current-service-card bridge-disabled-card">
           <div className="service-card-header">
             <div className="service-identity"><ServiceMark original/><p className="service-name">ChatGPT 原账号</p></div>
@@ -82,6 +87,7 @@ export function CurrentServiceCard({
               {profilePending ? "需重启 ChatGPT" : "当前使用"}
             </span>
           </div>
+          <div className="service-footer">
           <p className="bridge-disabled-message">
             {profilePending
               ? "你自己的 ChatGPT 配置已恢复，重启 ChatGPT 后生效，无需重启或注销 Windows。"
@@ -100,14 +106,15 @@ export function CurrentServiceCard({
                   : copy.openChatGpt}
             </Button>
           </div>
+          </div>
         </div>
       </section>
     );
   }
 
   return (
-    <section aria-labelledby="current-service-heading">
-      <h2 id="current-service-heading">{copy.currentService}</h2>
+    <section className="current-service-section" aria-labelledby="current-service-heading">
+      <h2 className="visually-hidden" id="current-service-heading">{copy.currentService}</h2>
       <div className="card current-service-card" aria-live="polite">
         <div className="service-card-header">
           <div className="service-identity"><ServiceMark/><p className="service-name">
@@ -120,14 +127,6 @@ export function CurrentServiceCard({
             </span>
           </div>
         </div>
-        {profilePending && (
-          <p className="local-inline-note" role="status">
-            Cloud 配置已保存，重启 ChatGPT 后生效，无需重启或注销 Windows。
-          </p>
-        )}
-
-        {serviceReady && selected?.availability && selected.availability !== "READY" && <p className="local-inline-note" role="status">{selected.statusMessage ?? "模型暂不可用，请联系管理员。"} 选择其他可用模型可继续使用。</p>}
-        {serviceReady && !selected && settings.backendModel && <p className="local-inline-note" role="status">当前模型已停用或权限已调整，请选择其他模型并新建会话。</p>}
         {serviceReady && selectedModel
           ? (
             <div className="service-controls">
@@ -154,8 +153,9 @@ export function CurrentServiceCard({
           )
           : (
             <div className="service-message">
-              <p>{state.message}</p>
-              {cloud?.lastError?.requestId && <p className="local-inline-note">请求 ID：<code>{cloud.lastError.requestId}</code> · 联系管理员时请提供此编号。</p>}
+              <p title={state.message ?? undefined}>{state.message}</p>
+              <button className="service-detail-link" type="button" onClick={() => setDetailsOpen(true)}>查看详情</button>
+
               <Button
                 className="secondary compact"
                 disabled={busy}
@@ -170,7 +170,14 @@ export function CurrentServiceCard({
               </Button>
             </div>
           )}
-        {serviceReady && selectedModel && <p className="local-inline-note">Cloud 请求使用 {displayModel(selectedModel)}。切换模型后请新建会话。</p>}
+        <div className="service-footer">
+          <p className="service-footer-note" title={selected?.statusMessage ?? undefined}>
+            {profilePending ? "配置已保存，重启 ChatGPT 后生效。"
+              : serviceReady && selected?.availability && selected.availability !== "READY" ? "模型暂不可用，请选择其他模型。"
+              : serviceReady && !selected && settings.backendModel ? "当前模型已停用，请选择其他模型并新建会话。"
+              : serviceReady && selectedModel ? "切换模型后，请在 ChatGPT 中新建会话。" : "处理上方提示后，即可继续使用。"}
+          </p>
+          {modelNeedsAttention && <button className="service-detail-link" type="button" onClick={() => setDetailsOpen(true)}>查看详情</button>}
 
         <div className="service-actions">
           <Button
@@ -195,12 +202,17 @@ export function CurrentServiceCard({
                   : copy.enableInChatGpt}
           </Button>
         </div>
+        </div>
       </div>
+      {detailsOpen && <CompactDialog title={state.title} className="service-error-dialog" onClose={() => setDetailsOpen(false)}>
+        <p>{detailMessage}</p>{cloud?.lastError?.requestId && <p>请求 ID：<code>{cloud.lastError.requestId}</code></p>}
+      </CompactDialog>}
     </section>
   );
 }
 
 function cloudStatePresentation(cloud: CloudServiceStatus | null) {
+  if (cloud?.authState === "ACCOUNT_LOCKED") return { symbol: "●", title: "账号已锁定", message: "账号已被管理员锁定，请联系管理员解锁。", tone: "danger" } as const;
   if (cloud?.lastError) {
     return {
       symbol: "●",

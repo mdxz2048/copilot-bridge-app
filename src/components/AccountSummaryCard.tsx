@@ -38,22 +38,19 @@ export function AccountSummaryCard({
 
   return (
     <div className="account-status-bar" aria-label="账户摘要">
-      <span className="account-summary-content">
+      <div className="account-identity">
         <span className="account-plan-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m4 7 4 4 4-7 4 7 4-4-2 11H6L4 7Z"/></svg></span>
-        <strong className="account-plan-name">{cloud.plan ?? "云服务"}</strong>
-        <span className="account-summary-metrics">
-          {cloud.billing ? <><span>本周期已用 ¥{cloud.billing.usedRmb.toFixed(4)}</span><span>{cloud.billing.balanceRmb <= 0 ? "余额不足 · 需充值" : `余额 ¥${cloud.billing.balanceRmb.toFixed(4)}`}</span></> : cloud.usagePointsUsed == null
-            ? null : <span>本月已用 {formatPoints(cloud.usagePointsUsed)} 点</span>}
-          {cloud.validUntil && <span>{formatShortDate(cloud.validUntil)}到期</span>}
-        </span>
-      </span>
-      <div className="account-summary-actions">
-        {cloud.authState === "AUTHENTICATED" && <>
-          <span className="account-login-state">已登录<span aria-hidden="true"> · </span></span>
-          <button className="account-topup-link" type="button" disabled={busy} onClick={onTopup}>充值</button>
-        </>}
-        <button className="account-details-action" title={cloud.account} onClick={onOpenDetails} type="button">账户 ›</button>
+        <div><strong className="account-plan-name" title={cloud.plan ?? "云服务"}>{cloud.plan ?? "云服务"}</strong><span className="account-login-state">{cloud.authState === "AUTHENTICATED" ? "已登录" : "需重新登录"}</span></div>
       </div>
+      <div className="account-summary-metrics">
+        {cloud.billing ? <div className="account-metric"><span>本周期已用</span><strong>¥{cloud.billing.usedRmb.toFixed(4)}</strong></div>
+          : cloud.usagePointsUsed == null ? null : <div className="account-metric"><span>本月已用</span><strong>{formatPoints(cloud.usagePointsUsed)} 点</strong></div>}
+        <div className="account-wallet">
+          {cloud.billing && <div className="account-metric"><span>{cloud.billing.balanceRmb <= 0 ? "余额不足" : "账户余额"}</span><strong>¥{cloud.billing.balanceRmb.toFixed(4)}</strong></div>}
+          {cloud.authState === "AUTHENTICATED" && <button className="account-topup-link" type="button" disabled={busy} onClick={onTopup}>充值</button>}
+        </div>
+      </div>
+      <button className="account-details-action" title={cloud.account} onClick={onOpenDetails} type="button">账户 ›</button>
     </div>
   );
 }
@@ -62,11 +59,4 @@ function formatPoints(value: number): string {
   return new Intl.NumberFormat("zh-CN", {
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function formatShortDate(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-  }).format(new Date(value));
 }

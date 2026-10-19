@@ -30,13 +30,14 @@ test('downloads automatically, checks hash, coalesces opens and keeps installer 
   await assert.rejects(f.manager.installer(), /校验失败/);
   assert.equal((await f.manager.check()).state, 'READY'); assert.equal(f.downloads(), 2);
 });
-test('restores cached download after restart and removes older installers/partial files', async t => {
+test('restores cached download after restart and retains installed baseline while removing abandoned files', async t => {
   const f = await fixture(t);
   await writeFile(join(f.directory, 'CopilotBridge-0.2.6.exe'), bytes);
   await writeFile(join(f.directory, 'CopilotBridge-0.2.5.exe'), bytes);
+  await writeFile(join(f.directory, 'CopilotBridge-0.2.4.exe'), bytes);
   await writeFile(join(f.directory, 'CopilotBridge-0.2.6.exe.part'), 'partial');
   assert.equal((await f.manager.check()).state, 'READY'); assert.equal(f.downloads(), 0);
-  assert.deepEqual(await readdir(f.directory), ['CopilotBridge-0.2.6.exe']);
+  assert.deepEqual(await readdir(f.directory), ['CopilotBridge-0.2.5.exe', 'CopilotBridge-0.2.6.exe', 'CopilotBridge-0.2.6.exe.json']);
 });
 test('rejects corrupt and truncated downloads and cleans partial files', async t => {
   for (const response of [new Response('MZ corrupt'), new Response(bytes, {headers: {'content-length': '999'}}), new Response('invalid executable')]) {

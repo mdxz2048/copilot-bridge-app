@@ -104,6 +104,9 @@ const failureFeedback=new FailureFeedbackOutbox({
 const updater = new UpdateManager({
   currentVersion: app.getVersion(), baseUrl: cloudBaseUrl,
   directory: join(app.getPath('userData'), 'updates'),
+  // NSIS caches the installer even after a manual website installation.
+  installedInstaller: app.isPackaged && process.platform === 'win32' && process.env.LOCALAPPDATA
+    ? join(process.env.LOCALAPPDATA, 'copilot-bridge-app-updater', 'installer.exe') : undefined,
   latest: async () => (await cloudClient.getLatestRelease()).release,
   changed: status => broadcast('update:status', status),
 });

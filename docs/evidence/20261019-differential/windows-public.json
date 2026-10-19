@@ -1,0 +1,17 @@
+{
+  "version": "0.3.26",
+  "platform": "win32",
+  "transport": "actual public HTTPS on developer Windows using existing NSIS installer cache",
+  "state": "READY",
+  "rangeRequests": 8,
+  "differentialBytes": 1025887,
+  "mapBytes": 695803,
+  "fullRequests": 0,
+  "modes": [
+    "differential"
+  ],
+  "sha256": "ac5ba4cec184582208af8c66201a3e11e29035559385ee4b36478d2d58cc8fc5",
+  "elapsedMs": 12089,
+  "executedInstaller": false,
+  "userConfigurationChanged": false
+}

@@ -1,0 +1,90 @@
+[
+  {
+    "scale": "1",
+    "layouts": 32,
+    "layoutFailures": 0,
+    "interactionFailures": 0,
+    "viewports": [
+      [
+        720,
+        520
+      ],
+      [
+        900,
+        700
+      ]
+    ],
+    "hoverContrast": [
+      6.478533522842167,
+      7.781819311709375,
+      5.81685321267131,
+      7.781819311709375
+    ]
+  },
+  {
+    "scale": "1.25",
+    "layouts": 32,
+    "layoutFailures": 0,
+    "interactionFailures": 0,
+    "viewports": [
+      [
+        720,
+        520
+      ],
+      [
+        900,
+        700
+      ]
+    ],
+    "hoverContrast": [
+      5.81685321267131,
+      7.781819311709375,
+      5.81685321267131,
+      7.781819311709375
+    ]
+  },
+  {
+    "scale": "1.5",
+    "layouts": 32,
+    "layoutFailures": 0,
+    "interactionFailures": 0,
+    "viewports": [
+      [
+        722,
+        522
+      ],
+      [
+        902,
+        702
+      ]
+    ],
+    "hoverContrast": [
+      5.81685321267131,
+      8.714707782186471,
+      5.81685321267131,
+      7.781819311709375
+    ]
+  },
+  {
+    "scale": "2",
+    "layouts": 32,
+    "layoutFailures": 0,
+    "interactionFailures": 0,
+    "viewports": [
+      [
+        901,
+        701
+      ],
+      [
+        721,
+        521
+      ]
+    ],
+    "hoverContrast": [
+      5.81685321267131,
+      7.781819311709375,
+      6.478533522842167,
+      8.714707782186471
+    ]
+  }
+]

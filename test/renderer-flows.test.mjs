@@ -36,6 +36,7 @@ const settingsTemplate = {
 async function mountApp({
   initialSettings = {},
   initialCloudState = "SIGNED_OUT",
+  initialCloudError = null,
   cloudServiceStatus = "AVAILABLE",
   billing = null,
   initialBridgeState = "stopped",
@@ -100,7 +101,7 @@ async function mountApp({
     referralHistory: [],
     serviceStatus: cloudServiceStatus,
     updateState: "CURRENT",
-    lastError: null,
+    lastError: initialCloudError,
   };
   const events = [];
   let nextCloudLoginError = cloudLoginError;
@@ -883,8 +884,9 @@ test("signed-in summary recharge opens purchase directly and account no longer c
   const app = await mountApp({initialCloudState: "AUTHENTICATED"});
   try {
     const recharge = app.button("充值");
-    assert.ok(recharge.closest(".account-summary-actions"));
-    assert.match(recharge.parentElement.textContent, /已登录.*充值.*账户/);
+    assert.ok(recharge.closest(".account-wallet"));
+    assert.match(app.document.querySelector(".account-identity").textContent, /已登录/);
+    assert.equal(recharge.parentElement.contains(app.button("账户 ›")), false);
     await app.click("充值");
     assert.equal(app.document.querySelector('[role="dialog"]').getAttribute("aria-label"), "充值");
     assert.match(app.text, /已支付，提交订单号/);
@@ -910,4 +912,21 @@ test("signed-out summary does not expose recharge", async () => {
   const app = await mountApp();
   try { assert.equal(app.document.querySelector('.account-topup-link'), null); }
   finally { await app.dispose(); }
+});
+
+test("long Cloud error is available in a focused detail dialog with request ID", async () => {
+  const message = "连接失败，请重试。".repeat(120);
+  const app = await mountApp({activeProfile:"bridge",initialCloudState:"AUTHENTICATED",initialBridgeState:"ready",initialCloudError:{message,action:"RETRY",retryable:true,requestId:"request-layout-test"}});
+  try {
+    const trigger=app.button("查看详情");
+    await app.click("查看详情");
+    const dialog=app.document.querySelector('[role="dialog"]');
+    assert.ok(dialog.textContent.includes(message));
+    assert.match(dialog.textContent,/request-layout-test/);
+    assert.ok(dialog.contains(app.document.activeElement));
+    await app.key("Escape");
+    assert.equal(app.document.querySelector('[role="dialog"]'),null);
+    assert.equal(app.document.activeElement,trigger);
+    assert.ok(app.button("重试"));
+  } finally { await app.dispose(); }
 });
