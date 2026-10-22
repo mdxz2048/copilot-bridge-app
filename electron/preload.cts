@@ -40,6 +40,7 @@ function invoke(channel:string,...args:unknown[]):Promise<any> {
 }
 
 contextBridge.exposeInMainWorld("copilotBridge", {
+  composeSupportMail:(issue?:{message:string;occurredAt:string;code?:string}):Promise<void>=>invoke('support:compose',issue),
   getRewardNotices:()=>invoke('reward:list'),
   acknowledgeReward:(id:string)=>invoke('reward:ack',id),
   createPurchaseTicket:()=>invoke('purchase:create'),

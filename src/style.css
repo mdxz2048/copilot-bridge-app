@@ -1164,6 +1164,8 @@ code {
   animation: toast-in 180ms var(--curve);
 }
 
+.support-contact{font-size:11px;line-height:1.5;overflow-wrap:anywhere;min-width:0}.support-contact a{color:var(--accent);text-decoration:none}.support-contact a:hover{text-decoration:underline}.support-contact a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}.support-contact small{display:block;color:var(--text-secondary)}.toast .support-contact{display:block;margin-top:5px}.compact-dialog-footer:has(.support-contact){flex-wrap:wrap}
+
 .toast button {
   width: 24px;
   min-height: 24px;

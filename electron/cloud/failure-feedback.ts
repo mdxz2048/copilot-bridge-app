@@ -88,6 +88,7 @@ export class FailureCapture {
   event(value:unknown){try{const safe=sanitizeFailure(value,8*1024);const events=this.report.reply.events!;events.push(safe.value);this.report.truncated ||= safe.truncated;while(events.length>32||Buffer.byteLength(JSON.stringify(events))>28*1024){events.shift();this.report.truncated=true;}}catch{this.report.truncated=true;}}
   failure(stage:FailureFeedback["stage"],error:unknown):FailureFeedback|null {
     if(this.emitted)return null;this.emitted=true;
+    this.report.occurredAt=new Date().toISOString();
     try{
     const data=error&&typeof error==="object"?error as {code?:unknown;message?:unknown;httpStatus?:number;requestId?:string;responseBody?:unknown}:{};
     this.association({requestId:data.requestId});if(data.responseBody!==undefined)this.http(data.responseBody);

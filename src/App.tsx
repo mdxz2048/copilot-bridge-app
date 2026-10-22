@@ -19,6 +19,7 @@ import { Button } from "./components/Button";
 import { CloudTopupSheet } from "./components/CloudTopupSheet";
 import { CloudAccountSheet } from "./components/CloudAccountSheet";
 import { CurrentServiceCard } from "./components/CurrentServiceCard";
+import {SupportContact} from './components/SupportContact';
 import { Modal } from "./components/Modal";
 import { ProductSettingsSheet } from "./components/ProductSettingsSheet";
 import { zhCN } from "./locales/zh-CN";
@@ -51,6 +52,8 @@ export function App() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [supportIssue,setSupportIssue]=useState<{message:string;occurredAt:string;code?:string}>();
+  useEffect(()=>{setSupportIssue(undefined);},[cloud?.account]);
   const [version, setVersion] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
@@ -620,6 +623,7 @@ export function App() {
       {notice && (
         <div className="toast" role="status">
           {notice}
+          {supportIssue&&<SupportContact issue={supportIssue}/>}
           <button aria-label="关闭提示" onClick={() => setNotice(null)} type="button">
             ×
           </button>
@@ -629,7 +633,8 @@ export function App() {
   );
 
   function showError(error: unknown, fallback: string) {
-    setNotice(friendlyError(error, fallback));
+    const message=friendlyError(error,fallback);
+    setSupportIssue({message,occurredAt:new Date().toISOString()});setNotice(message);
   }
 }
 

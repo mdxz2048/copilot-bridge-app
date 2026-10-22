@@ -128,6 +128,7 @@ async function mountApp({
   let failNextSave = failSave;
   let failNextSwitch = failSwitch;
   dom.window.copilotBridge = {
+    composeSupportMail:async()=>{events.push('composeSupportMail');},
     getProfileStatus: async () => ({
       activeProfile,
       restartRequired: profileRestartRequired,
@@ -674,12 +675,13 @@ test("Compact dialog traps Tab, closes on Escape and restores the account trigge
     assert.equal(sheet.getAttribute("role"), "dialog");
     assert.equal(sheet.getAttribute("aria-modal"), "true");
     const first = sheet.querySelector(".compact-dialog-header button");
-    const last = sheet.querySelector('.remember-login input');
+    const last = sheet.querySelector('a[href="mailto:zhipeng2048@gmail.com"]');
     assert.ok(app.document.activeElement === first);
     await app.key("Tab", { shiftKey: true });
     assert.ok(app.document.activeElement === last);
     await app.key("Tab");
     assert.ok(app.document.activeElement === first);
+    await app.act(async()=>last.click());assert.ok(app.events.includes('composeSupportMail'));
     await app.key("Escape");
     assert.equal(app.document.querySelector(".compact-dialog"), null);
     assert.ok(app.document.activeElement === trigger);

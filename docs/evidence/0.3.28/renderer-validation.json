@@ -1,0 +1,25 @@
+{
+  "renderer": "actual React/CSS with synthetic IPC",
+  "results": [
+    {
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "emailVisible": true,
+      "clickInvokesDraftOnly": true,
+      "keyboardFocus": true,
+      "dialogFits": true
+    },
+    {
+      "theme": "dark",
+      "width": 720,
+      "height": 520,
+      "emailVisible": true,
+      "clickInvokesDraftOnly": true,
+      "keyboardFocus": true,
+      "dialogFits": true
+    }
+  ],
+  "realMailClientLaunched": false,
+  "mailSent": false
+}

@@ -283,6 +283,7 @@ export interface ServiceSwitchResult {
 declare global {
   interface Window {
     copilotBridge: {
+      composeSupportMail(issue?:{message:string;occurredAt:string;code?:string}):Promise<void>;
       getRewardNotices():ReturnType<import('./components/RewardNoticeDialog').RewardClient['list']>;
       acknowledgeReward(id:string):Promise<unknown>;
 

@@ -8,6 +8,7 @@ import { Button } from "./Button";
 import { Select } from "./Select";
 import { CompactDialog } from "./CompactDialog";
 import { Toggle } from "./Toggle";
+import {SupportContact} from './SupportContact';
 
 interface ProductSettingsSheetProps {
   bridge: BridgeStatus | null;
@@ -42,5 +43,6 @@ export function ProductSettingsSheet({
     </div></section>
     <div className="compact-setting-box"><div className="compact-setting-row"><span>{copy.theme}</span><Select label={copy.theme} value={settings.theme} options={[{value:"system",label:copy.systemTheme},{value:"light",label:copy.lightTheme},{value:"dark",label:copy.darkTheme}]} onChange={theme=>onUpdate({...settings,theme})}/></div></div>
     <section className="compact-setting-group"><h3>高级</h3><div className="compact-setting-box"><div className="compact-setting-row"><span>Bridge <small>· {bridge?.state==="ready"?"已运行":bridge?.state==="starting"?"启动中":bridge?.state==="failed"?"需要关注":"未运行"}</small></span><div><button type="button" className="text-action" onClick={onRestartBridge}>{bridge?.state==="ready"?"重新启动":"尝试启动"}</button><button type="button" className="text-action" onClick={()=>{onClose();onDiagnostics();}}>诊断 ›</button></div></div></div></section>
+    <SupportContact/>
   </CompactDialog>;
 }

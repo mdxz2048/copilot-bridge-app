@@ -24,6 +24,7 @@ import { DeviceIdentityStore } from "./cloud/device-identity.js";
 import { DeviceKeyStore } from "./cloud/device-proof.js";
 import { CloudFoundation } from "./cloud/cloud-foundation.js";
 import { SavedLogins } from "./cloud/saved-logins.js";
+import {SupportMail} from './cloud/support-mail.js';
 import { createFocusRefresh } from "./cloud/focus-refresh.js";
 import { HttpCloudClient } from "./cloud/http-cloud-client.js";
 import {
@@ -99,6 +100,7 @@ const cloudClient = new HttpCloudClient({
     cloudDeviceKeyTarget(cloudBaseUrl, app.getPath("userData")),
   ),
 });
+const supportMail=new SupportMail();
 const failureFeedback=new FailureFeedbackOutbox({
   path:join(app.getPath("userData"),"diagnostics","failure-outbox.enc"),encryption:safeStorage,
   owner:()=>cloudClient.getCachedUserId(),upload:report=>cloudClient.submitFailureFeedback(report),
@@ -167,7 +169,7 @@ const remoteBridge = new RemoteBridgeServer(
     getApiKey: async () => localGatewayKey,
     getModel: async () => (await settingsStore.read()).backendModel,
     getReasoning: async () => (await settingsStore.read()).reasoningMode ?? "auto",
-    failureFeedback:{appVersion:app.getVersion(),ownerUserId:()=>cloudClient.getCachedUserId(),submit:report=>failureFeedback.enqueue(report)},
+    failureFeedback:{appVersion:app.getVersion(),ownerUserId:()=>cloudClient.getCachedUserId(),submit:report=>{supportMail.record(report);failureFeedback.enqueue(report);}},
   },
 );
 const bridgeManager = new BridgeManager(
@@ -609,6 +611,10 @@ ipcMain.handle('update:status', () => updater.status);
       throw new Error("当前环境未配置账号管理页面。");
     }
     await shell.openExternal(configuration.accountManagementUrl);
+  });
+  ipcMain.handle('support:compose',async(_event,issue?:unknown)=>{
+    const url=supportMail.draft(cloudClient.getCachedUserId(),app.getVersion(),issue);
+    try{await shell.openExternal(url);}catch{throw new Error('无法打开默认邮件应用，请复制邮箱 zhipeng2048@gmail.com 联系管理员。');}
   });
   ipcMain.handle("cloud:open-registration", async () => {
     const url = cloudRegistrationUrl(await cloudConfiguration.get());

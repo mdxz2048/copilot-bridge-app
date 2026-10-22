@@ -6,6 +6,7 @@ const messages:Record<string,string>={
   INSUFFICIENT_POINTS:"余额不足，请打开 Copilot Bridge，点击「充值」，到账后重试。",
   AUTH_REQUIRED:"尚未登录，请先在 Copilot Bridge 登录。",UNAUTHORIZED:"登录已失效，请在 Copilot Bridge 重新登录。",TOKEN_EXPIRED:"登录已过期，请在 Copilot Bridge 重新登录。",
   DEVICE_REVOKED:"当前设备已被移除，请重新登录。",ACCOUNT_DISABLED:"账号已被停用，请联系管理员。",
+  DEVICE_PROOF_INVALID:"设备请求校验未通过，请重试；若持续出现，请发邮件至 zhipeng2048@gmail.com 联系管理员。",
   GATEWAY_TIMEOUT:"模型服务响应超时，本次请求已中断，请稍后重试。",SERVER_UNREACHABLE:"网络连接不稳定，无法连接平台，请检查网络后重试。",
   STREAM_DISCONNECTED:"模型回复尚未完成，连接已断开，请检查网络后重试。",
   PROVIDER_RATE_LIMITED:"模型服务请求过多，暂时无法响应，请稍后重试。",RATE_LIMITED:"请求过于频繁，请稍后重试。",
@@ -26,7 +27,8 @@ export function publicResponseError(error:unknown):{code:string;message:string;t
   const data=error&&typeof error==="object"?error as {code?:unknown;message?:unknown;requestId?:string}:{};
   const code=error instanceof ZodError?"INVALID_REQUEST":typeof data.code==="string"?data.code:"INTERNAL_ERROR";
   const chinese=typeof data.message==="string"&&/[\u3400-\u9fff]/.test(data.message)?String(sanitizeFailure(data.message,2048).value).slice(0,700):undefined;
-  return {code,message:messages[code]&&code!=="INVALID_SERVER_RESPONSE"&&code!=="PAYLOAD_TOO_LARGE"&&code!=="VALIDATION_ERROR"?messages[code]:chinese??messages[code]??`本次请求失败（${code.replace(/[^\w.-]/g,"").slice(0,80)}），请重试；若持续出现，请联系管理员。`,type:code==="INSUFFICIENT_POINTS"?"insufficient_quota":error instanceof CloudError&&(error.httpStatus??500)<500?"invalid_request_error":"server_error",requestId:data.requestId};
+  const message=messages[code]&&code!=="INVALID_SERVER_RESPONSE"&&code!=="PAYLOAD_TOO_LARGE"&&code!=="VALIDATION_ERROR"?messages[code]:chinese??messages[code]??`本次请求失败（${code.replace(/[^\w.-]/g,"").slice(0,80)}），请重试；若持续出现，请联系管理员。`;
+  return {code,message:message.includes('联系管理员')&&!message.includes('zhipeng2048@gmail.com')?message+' 管理员邮箱：zhipeng2048@gmail.com。':message,type:code==="INSUFFICIENT_POINTS"?"insufficient_quota":error instanceof CloudError&&(error.httpStatus??500)<500?"invalid_request_error":"server_error",requestId:data.requestId};
 }
 
 export function upstreamResponseFailure(payload:unknown,kind:string):CloudError {
