@@ -1272,3 +1272,36 @@ test("expired cached login refreshes before migrating the hardware binding witho
   await client.resume({device:hardware,legacyDeviceId:oldId});assert.equal(tokens.getAccessToken(),'migrated-access');assert.equal(calls.filter(c=>c.url==='/api/v1/auth/refresh').length,1);assert.equal(new Set(calls.filter(c=>c.url.endsWith('/resume')).map(c=>c.body.sessionId)).size,1);assert.equal(client.getCachedUserId(),user.id);
  }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+test('offline startup keeps retrying platform resume and loads the full account when connectivity returns',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'bridge-resume-offline-'));try{
+ const client=configuredAccountClient(productMe());let online=false,resumes=0;client.resume=async()=>{resumes++;if(!online)throw new CloudError('SERVER_UNREACHABLE','synthetic offline');};
+ const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(dir,'device.json'),'0.3.27'));
+ assert.equal((await foundation.getStatus()).authState,'SERVER_UNREACHABLE');assert.equal((await foundation.syncPolicy()).authState,'SERVER_UNREACHABLE');assert.equal(resumes,2);
+ online=true;const [a,b]=await Promise.all([foundation.syncPolicy(),foundation.syncPolicy()]);assert.equal(a.authState,'AUTHENTICATED');assert.equal(b.authState,'AUTHENTICATED');assert.ok(a.account);assert.equal(resumes,3);assert.equal(client.calls.some(c=>c.method==='login'),false);
+ await foundation.logout();assert.equal((await foundation.getStatus()).authState,'SIGNED_OUT');await foundation.syncPolicy();await foundation.refresh();assert.equal(resumes,3);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('a delayed automatic resume cannot restore the account after the user signs out',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'bridge-resume-race-'));try{
+ const client=configuredAccountClient(productMe());let release,entered;const started=new Promise(r=>entered=r);client.resume=()=>new Promise(r=>{release=r;entered();});
+ const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),new DeviceIdentityStore(join(dir,'device.json'),'0.3.27'));
+ const restoring=foundation.getStatus();await started;await foundation.logout();release();assert.equal((await restoring).authState,'SIGNED_OUT');assert.equal((await foundation.getStatus()).account,null);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('online recovery clears only transient token backoff and completes real HTTP startup validation without a password',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'bridge-http-online-'));try{
+ const devices=new DeviceIdentityStore(join(dir,'device.json'),'0.3.27'),hardware=await devices.get(),manager=new MemoryCredentialManager(),store=new WindowsCredentialManagerTokenStore(manager);await store.writeRefreshToken('synthetic-refresh-token-1234567890');const tokens=new CloudTokenSession(store);
+ const user={id:'33333333-3333-4333-8333-333333333333',email:'fixture@example.test',role:'USER',status:'ACTIVE'},record={...hardware,id:'22222222-2222-4222-8222-222222222222',userId:user.id,status:'ACTIVE',activatedAt:new Date().toISOString(),lastSeenAt:new Date().toISOString()};let online=false;const paths=[];
+ const http=new HttpCloudClient({baseUrl:'https://cloud.example.test',tokens,devices,deviceKeys:new DeviceKeyStore(manager,'online-key'),fetch:async(input,init)=>{const path=new URL(input).pathname;paths.push(path);assert.equal('password' in JSON.parse(init.body),false);if(!online)throw new TypeError('synthetic offline');if(path==='/api/v1/auth/refresh')return Response.json({accessToken:'fixture-access',refreshToken:'fixture-refresh-1234567890',expiresIn:1800,device:record});if(path==='/api/v1/devices/register')return Response.json({device:record});assert.equal(path,'/api/v1/auth/resume');return Response.json({accessToken:'resumed-access',refreshToken:'resumed-refresh-1234567890',expiresIn:1800,user,device:record});}});
+ const client=configuredAccountClient(productMe());client.resume=http.resume.bind(http);const foundation=new CloudFoundation(client,new ReadyCloudConfigurationProvider(),devices);
+ assert.equal((await foundation.getStatus()).authState,'SERVER_UNREACHABLE');const attempts=paths.length;online=true;await foundation.syncPolicy();assert.equal(paths.length,attempts);http.retryConnection();assert.equal((await foundation.syncPolicy()).authState,'AUTHENTICATED');assert.ok(paths.includes('/api/v1/auth/resume'));assert.equal(tokens.getAccessToken(),'resumed-access');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('offline logout removes local tokens and an online event cannot bypass an explicit sign-out',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'bridge-http-logout-'));try{
+ const manager=new MemoryCredentialManager(),tokens=new CloudTokenSession(new WindowsCredentialManagerTokenStore(manager));await tokens.rotate({accessToken:'synthetic-access',refreshToken:'synthetic-refresh-1234567890'});const devices=new DeviceIdentityStore(join(dir,'device.json'),'0.3.27');
+ const client=new HttpCloudClient({baseUrl:'https://cloud.example.test',tokens,devices,deviceKeys:new DeviceKeyStore(manager,'logout-key'),fetch:async()=>{throw new TypeError('synthetic offline');}});await assert.rejects(client.logout());assert.equal(await tokens.readRefreshToken(),null);assert.equal(tokens.getAccessToken(),null);client.retryConnection();await assert.rejects(client.resume({device:await devices.get()}),error=>error.code==='UNAUTHORIZED');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

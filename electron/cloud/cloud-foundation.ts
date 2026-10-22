@@ -115,11 +115,15 @@ export interface CloudLoginCredentials {
 }
 
 export class CloudFoundation {
+  private authEpoch=0;
+  private manualAuthInFlight=false;
+  private restoreAllowed=true;
   private startupValidated=false;
   private startupValidation:Promise<void>|null=null;
   private async validateStartup(device:Awaited<ReturnType<DeviceIdentityStore["get"]>>){
     if(this.startupValidated)return;
-    this.startupValidation??=this.client.resume({device,legacyDeviceId:device.legacyDeviceId}).then(()=>{this.startupValidated=true;}).finally(()=>{this.startupValidation=null;});
+    const epoch=this.authEpoch;
+    this.startupValidation??=this.client.resume({device,legacyDeviceId:device.legacyDeviceId}).then(()=>{if(epoch!==this.authEpoch)throw new CloudError('UNAUTHORIZED','登录状态已变化。');this.startupValidated=true;}).finally(()=>{this.startupValidation=null;});
     await this.startupValidation;
   }
   private loginDeviceLimit: CloudServiceStatus["loginDeviceLimit"];
@@ -166,19 +170,22 @@ export class CloudFoundation {
       return this.toStatus(configuration, device.deviceId, device.deviceName);
     }
     await this.refreshServiceConfiguration();
-    if (this.auth.state === "SIGNED_OUT") {
+    if (this.auth.state === "SIGNED_OUT" && this.restoreAllowed && !this.manualAuthInFlight) {
+      const epoch=this.authEpoch;
       try {
         await this.validateStartup(device);
         await this.loadAccount();
         this.auth.transition("AUTHENTICATING");
         this.auth.transition("AUTHENTICATED");
       } catch (error) {
+        if(epoch!==this.authEpoch)return this.toStatus(configuration,device.deviceId,device.deviceName);
         if (
           error
           && typeof error === "object"
           && "code" in error
           && (error.code === "UNAUTHORIZED" || error.code === "TOKEN_EXPIRED")
         ) {
+          this.restoreAllowed=false;
           return this.toStatus(
             configuration,
             device.deviceId,
@@ -196,6 +203,10 @@ export class CloudFoundation {
   ): Promise<CloudServiceStatus> {
     const configuration = await this.requireContract();
     const device = await this.devices.get();
+    ++this.authEpoch;
+    this.manualAuthInFlight=true;
+    this.restoreAllowed=false;
+    this.startupValidated=false;
     this.loginDeviceLimit=undefined;
     this.moveToAuthenticating();
     try {
@@ -208,6 +219,7 @@ export class CloudFoundation {
       };
       await this.client.login(request);
       this.startupValidated=true;
+      this.restoreAllowed=true;
       await this.client.registerDevice(device);
       this.transitionFromAny("AUTHENTICATED");
       await this.loadAccount();
@@ -220,7 +232,7 @@ export class CloudFoundation {
       }
       this.applyErrorState(error);
       throw error;
-    }
+    } finally { this.manualAuthInFlight=false; }
     return this.toStatus(configuration, device.deviceId, device.deviceName);
   }
 
@@ -230,6 +242,8 @@ export class CloudFoundation {
   }
 
   async logout(): Promise<CloudServiceStatus> {
+    ++this.authEpoch;
+    this.restoreAllowed=false;
     this.startupValidated=false;
     const configuration = await this.requireContract();
     try {
@@ -244,6 +258,7 @@ export class CloudFoundation {
   }
 
   async refresh(): Promise<CloudServiceStatus> {
+    if (!this.restoreAllowed && !this.startupValidated) return this.getStatus();
     this.refreshInFlight ??= this.performRefresh().finally(() => {
       this.refreshInFlight = null;
     });
@@ -336,38 +351,47 @@ export class CloudFoundation {
     return this.policyInFlight;
   }
   private async performPolicySync(): Promise<CloudServiceStatus | null> {
+    const epoch=this.authEpoch;
     if(this.refreshInFlight)await this.refreshInFlight.catch(()=>undefined);
+    if (this.manualAuthInFlight || epoch!==this.authEpoch) return this.getStatus();
     try {
+      // A failed startup resume must be retried, not replaced by account GETs.
+      // In particular it must finish device/session validation after networking returns.
+      if (!this.startupValidated) return await this.refresh();
       const [account,usage,devices]=await Promise.all([this.client.getMeV2(),this.client.getUsageV2(),this.client.listDevicesV2()]);
+      if(epoch!==this.authEpoch)return this.getStatus();
       this.account = account;
       this.usageV2 = usage;
       this.devicesV2 = devices;
       this.lastError = null;
       if (this.auth.state !== "AUTHENTICATED") this.transitionFromAny("AUTHENTICATED");
     } catch (error) {
-      this.applyErrorState(error);
+      if(epoch===this.authEpoch)this.applyErrorState(error);
     }
     return this.getStatus();
   }
   private async performRefresh(): Promise<CloudServiceStatus> {
+    const epoch=this.authEpoch;
     const configuration = await this.requireContract();
     const device = await this.devices.get();
     try {
       await this.validateStartup(device);
       await this.loadAccount();
       await this.refreshServiceConfiguration();
+      if(epoch!==this.authEpoch)return this.toStatus(configuration,device.deviceId,device.deviceName);
       if (this.auth.state !== "AUTHENTICATED") {
         this.moveToAuthenticating();
         this.auth.transition("AUTHENTICATED");
       }
     } catch (error) {
-      this.applyErrorState(error);
+      if(epoch===this.authEpoch)this.applyErrorState(error);
       throw error;
     }
     return this.toStatus(configuration, device.deviceId, device.deviceName);
   }
 
   private async loadAccount(): Promise<void> {
+    const epoch=this.authEpoch;
     const [
       account,
       devices,
@@ -389,6 +413,8 @@ export class CloudFoundation {
       this.client.listProviderConnections(),
       this.client.listProviders(),
     ]);
+    const resolvedProviders=await Promise.all(providers.map(async provider=>({...provider,models:await this.client.listProviderModels(provider.id)})));
+    if(epoch!==this.authEpoch)throw new CloudError('UNAUTHORIZED','登录状态已变化。');
     this.account = account;
     this.devicesV2 = devices;
     this.walletTransactions = walletTransactions;
@@ -397,13 +423,7 @@ export class CloudFoundation {
     this.referral = referral;
     this.referralHistory = referralHistory;
     this.providerConnections = providerConnections;
-    this.providers = [];
-    for (const provider of providers) {
-      this.providers.push({
-        ...provider,
-        models: await this.client.listProviderModels(provider.id),
-      });
-    }
+    this.providers = resolvedProviders;
     this.lastError = null;
   }
 

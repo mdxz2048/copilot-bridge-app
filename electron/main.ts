@@ -23,6 +23,7 @@ import {
 import { DeviceIdentityStore } from "./cloud/device-identity.js";
 import { DeviceKeyStore } from "./cloud/device-proof.js";
 import { CloudFoundation } from "./cloud/cloud-foundation.js";
+import { SavedLogins } from "./cloud/saved-logins.js";
 import { createFocusRefresh } from "./cloud/focus-refresh.js";
 import { HttpCloudClient } from "./cloud/http-cloud-client.js";
 import {
@@ -88,6 +89,7 @@ const cloudTokens = new CloudTokenSession(
     cloudCredentialTarget(cloudBaseUrl, app.getPath("userData")),
   ),
 );
+const savedLogins = new SavedLogins(join(app.getPath('userData'), 'cloud-saved-logins.enc'), new URL(cloudBaseUrl).origin, safeStorage);
 const cloudClient = new HttpCloudClient({
   baseUrl: cloudBaseUrl,
   tokens: cloudTokens,
@@ -568,9 +570,15 @@ ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle("cloud:status", () => cloudFoundation.getStatus());
   ipcMain.handle("cloud:login", async (
     _event,
-    credentials: { email: string; password: string; replaceDeviceId?: string },
+    credentials: { email: string; password: string; replaceDeviceId?: string; remember?: boolean },
   ) => {
     const status = await cloudFoundation.login(credentials);
+    if (status.authState === 'AUTHENTICATED') {
+      try {
+        if (credentials.remember !== false) await savedLogins.save(credentials.email, credentials.password);
+        else await savedLogins.forget(credentials.email);
+      } catch { broadcast('cloud:credential-warning', '登录成功，但此电脑未能保存密码，请下次手动输入。'); }
+    }
     broadcast("cloud:status", status);
     if(status.loginDeviceLimit)return status;
     const settings = await settingsStore.read();
@@ -582,12 +590,16 @@ ipcMain.handle('update:status', () => updater.status);
     }
     return status;
   });
+  ipcMain.handle('cloud:saved-logins', () => savedLogins.list());
+  ipcMain.handle('cloud:saved-login', (_event, email: string) => savedLogins.get(email));
+  ipcMain.handle('cloud:forget-login', (_event, email: string) => savedLogins.forget(email));
   ipcMain.handle("cloud:logout", async () => {
     const status = await cloudFoundation.logout();
     broadcast("cloud:status", status);
     return status;
   });
   ipcMain.handle("cloud:refresh", async () => {
+    cloudClient.retryConnection();
     await refreshCloudStatus();
     return cloudFoundation.getStatus();
   });

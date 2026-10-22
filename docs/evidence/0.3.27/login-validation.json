@@ -1,0 +1,23 @@
+{
+  "testsPassed": 291,
+  "testsFailed": 0,
+  "testsSkipped": 0,
+  "build": "PASS",
+  "windowsEncryption": {
+    "windowsSafeStorage": "PASS",
+    "ciphertextHasNoPlaintext": true,
+    "reopenAndForget": "PASS",
+    "usedRealCredentials": false
+  },
+  "ui": {
+    "renderer": "real browser with synthetic IPC",
+    "light1280x720": "PASS",
+    "dark720x520": "PASS",
+    "longAccountSwitch": "PASS",
+    "smallWindowLoginButtonFixed": "PASS"
+  },
+  "automaticRecovery": "synthetic offline startup and real HttpCloudClient with controlled responses; online, deduplication, logout race and explicit sign-out tested",
+  "actualWindowsReboot": "NOT_RUN",
+  "officialClientRestarted": false,
+  "realUserCredentialsUsed": false
+}

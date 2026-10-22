@@ -79,9 +79,17 @@ contextBridge.exposeInMainWorld("copilotBridge", {
   openCloudRegistration: (): Promise<void> =>
     invoke("cloud:open-registration"),
   loginCloud: (
-    credentials: { email: string; password: string; replaceDeviceId?: string },
+    credentials: { email: string; password: string; replaceDeviceId?: string; remember?: boolean },
   ): Promise<CloudServiceStatus> =>
     invoke("cloud:login", credentials),
+  listSavedLogins: (): Promise<Array<{ email: string; lastUsedAt: number }>> => invoke('cloud:saved-logins'),
+  getSavedLogin: (email: string): Promise<{ email: string; password: string } | null> => invoke('cloud:saved-login', email),
+  forgetSavedLogin: (email: string): Promise<void> => invoke('cloud:forget-login', email),
+  onCredentialWarning: (handler: (message: string) => void): (() => void) => {
+    const listener = (_event: unknown, message: string) => handler(message);
+    ipcRenderer.on('cloud:credential-warning', listener);
+    return () => ipcRenderer.removeListener('cloud:credential-warning', listener);
+  },
   logoutCloud: (): Promise<CloudServiceStatus> =>
     invoke("cloud:logout"),
   refreshCloud: (): Promise<CloudServiceStatus> =>

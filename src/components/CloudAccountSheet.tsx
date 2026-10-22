@@ -13,7 +13,7 @@ interface CloudAccountSheetProps {
   loginIssue: "SUBSCRIPTION_REQUIRED" | null;
   status: CloudServiceStatus | null;
   onClose: () => void;
-  onLogin: (credentials: { email: string; password: string; replaceDeviceId?: string }) => void;
+  onLogin: (credentials: { email: string; password: string; replaceDeviceId?: string; remember?: boolean }) => void;
   onOpenRegistration: () => void;
   onLogout: () => void;
   onManageAccount: () => void;
@@ -41,6 +41,46 @@ export function CloudAccountSheet({
   const authenticated = status?.authState === "AUTHENTICATED";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
+  const [savedLogins, setSavedLogins] = useState<Array<{email:string;lastUsedAt:number}>>([]);
+  const [selectedLogin, setSelectedLogin] = useState('');
+  const [loadingLogin, setLoadingLogin] = useState(false);
+  const [savedLoginError, setSavedLoginError] = useState('');
+  const selectionVersion = useRef(0);
+  const loginEdited = useRef(false);
+  const selectSavedLogin = async (selected: string) => {
+    const version = ++selectionVersion.current;
+    setSelectedLogin(selected); setPassword(''); setPasswordVisible(false); setSavedLoginError(''); setEmail(selected);
+    if (!selected) { setLoadingLogin(false); return; }
+    setLoadingLogin(true);
+    try {
+      const saved = await window.copilotBridge.getSavedLogin(selected);
+      if (selectionVersion.current !== version) return;
+      if (saved?.email === selected) { setPassword(saved.password); setRemember(true); }
+      else setSavedLoginError('此账号的密码已移除，请重新输入。');
+    } catch { if (selectionVersion.current === version) setSavedLoginError('无法读取保存的密码，请手动输入。'); }
+    finally { if (selectionVersion.current === version) setLoadingLogin(false); }
+  };
+  useEffect(() => {
+    let active = true;
+    if (authenticated) { ++selectionVersion.current; setPassword(''); setLoadingLogin(false); return; }
+    void window.copilotBridge.listSavedLogins?.().then(accounts => {
+      if (!active) return;
+      setSavedLogins(accounts);
+      if (accounts[0] && !loginEdited.current) void selectSavedLogin(accounts[0].email);
+    }).catch(() => { if (active) setSavedLoginError('无法读取本机账号，请手动输入账号和密码。'); });
+    return () => { active = false; ++selectionVersion.current; };
+  }, [authenticated]);
+  const forgetSavedLogin = async () => {
+    const selected = selectedLogin;
+    const version = ++selectionVersion.current; loginEdited.current = true; setLoadingLogin(true); setSavedLoginError(''); setPassword(''); setPasswordVisible(false);
+    try {
+      await window.copilotBridge.forgetSavedLogin(selected);
+      setSavedLogins(accounts => accounts.filter(a => a.email !== selected));
+      if (selectionVersion.current === version) setSelectedLogin('');
+    } catch { if (selectionVersion.current === version) setSavedLoginError('未能移除此账号，请重试。'); }
+    finally { if (selectionVersion.current === version) setLoadingLogin(false); }
+  };
   const [passwordVisible, setPasswordVisible] = useState(false);
   const passwordInputId = useId();
   const passwordInput = useRef<HTMLInputElement>(null);
@@ -74,10 +114,11 @@ export function CloudAccountSheet({
   const healthy=authenticated&&status?.serviceStatus==="AVAILABLE"&&!balanceRequired;
   const badge=balanceRequired?"余额不足":healthy?"账户正常":state.title;
   const back=()=>setView("account");
-  const footer=authenticated?<><Button className="secondary compact" disabled={busy||!status?.accountManagementAvailable} onClick={onManageAccount}>账户管理</Button><Button className="compact text-action" disabled={busy} onClick={onLogout}>退出登录</Button></>:status?.authState==="SIGNED_OUT"||status?.authState==="AUTHENTICATING"?null:<AccountActions loggedIn={Boolean(status?.account)} busy={busy} onLogout={onLogout} onManageAccount={onManageAccount} onManageSubscription={onManageSubscription} onRefresh={onRefresh} onUseOriginal={onUseOriginal} state={status?.authState??"SIGNED_OUT"} accountAvailable={status?.accountManagementAvailable===true} subscriptionAvailable={status?.subscriptionManagementAvailable===true}/>;
+  const signInForm=!authenticated && ["SIGNED_OUT","SUBSCRIPTION_REQUIRED","DEVICE_REVOKED"].includes(status?.authState??"SIGNED_OUT");
+  const footer=authenticated?<><Button className="secondary compact" disabled={busy||!status?.accountManagementAvailable} onClick={onManageAccount}>账户管理</Button><Button className="compact text-action" disabled={busy} onClick={onLogout}>退出登录</Button></>:signInForm?<Button className="login-submit" disabled={busy || loadingLogin || !email || !password} onClick={() => onLogin({ email: email.trim(), password, remember })} type="button">{copy.login}</Button>:status?.authState==="SIGNED_OUT"||status?.authState==="AUTHENTICATING"?null:<AccountActions loggedIn={Boolean(status?.account)} busy={busy} onLogout={onLogout} onManageAccount={onManageAccount} onManageSubscription={onManageSubscription} onRefresh={onRefresh} onUseOriginal={onUseOriginal} state={status?.authState??"SIGNED_OUT"} accountAvailable={status?.accountManagementAvailable===true} subscriptionAvailable={status?.subscriptionManagementAvailable===true}/>;
   return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={footer}>
     {view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
-    {(!status?.account)&&<div className={`compact-state state-panel-${state.tone}`} role="status"><strong>{subscriptionRequired?"Cloud 套餐未开通":state.title}</strong><p>{subscriptionRequired?(status?.accountManagementAvailable?"请联系管理员开通套餐后重试登录。":"当前环境未配置网站入口，请联系管理员开通后重试。"):state.message}</p>{subscriptionRequired&&status?.accountManagementAvailable&&<Button className="secondary compact" onClick={onManageAccount}>打开网站账户中心查看开通说明</Button>}</div>}
+    {(!status?.account)&&(status?.authState!=="SIGNED_OUT"||subscriptionRequired)&&<div className={`compact-state state-panel-${state.tone}`} role="status"><strong>{subscriptionRequired?"Cloud 套餐未开通":state.title}</strong><p>{subscriptionRequired?(status?.accountManagementAvailable?"请联系管理员开通套餐后重试登录。":"当前环境未配置网站入口，请联系管理员开通后重试。"):state.message}</p>{subscriptionRequired&&status?.accountManagementAvailable&&<Button className="secondary compact" onClick={onManageAccount}>打开网站账户中心查看开通说明</Button>}</div>}
     {!authenticated&&(status?.authState==="SIGNED_OUT"||status?.authState==="SUBSCRIPTION_REQUIRED"||status?.authState==="DEVICE_REVOKED")&&(
         <div className="cloud-login-fields">
           <div className="cloud-auth-mode">
@@ -88,14 +129,21 @@ export function CloudAccountSheet({
               </Button>
             )}
           </div>
-          {loginLimit&&<section className="device-limit-panel" role="alert"><strong>已达到登录设备上限（{loginLimit.maxDevices} 台）</strong><p>选择一台设备移除后，继续登录此电脑。被移除的设备需要重新登录。</p>{loginLimit.devices.map(d=><div className="device-row" key={d.id}><div><strong>{d.deviceName}</strong><p>{d.platform} · {d.lastSeenAt?new Date(d.lastSeenAt).toLocaleString('zh-CN'):'暂无活动记录'}</p></div><Button className="secondary compact" disabled={busy||!password} onClick={()=>{if(window.confirm(`移除 ${d.deviceName} 并登录此电脑？`))onLogin({email:email.trim(),password,replaceDeviceId:d.id});}}>移除此设备并登录</Button></div>)}<Button className="secondary compact" disabled={busy} onClick={onManageAccount}>去网站管理设备</Button></section>}
+          {loginLimit&&<section className="device-limit-panel" role="alert"><strong>已达到登录设备上限（{loginLimit.maxDevices} 台）</strong><p>选择一台设备移除后，继续登录此电脑。被移除的设备需要重新登录。</p>{loginLimit.devices.map(d=><div className="device-row" key={d.id}><div><strong>{d.deviceName}</strong><p>{d.platform} · {d.lastSeenAt?new Date(d.lastSeenAt).toLocaleString('zh-CN'):'暂无活动记录'}</p></div><Button className="secondary compact" disabled={busy||!password} onClick={()=>{if(window.confirm(`移除 ${d.deviceName} 并登录此电脑？`))onLogin({email:email.trim(),password,replaceDeviceId:d.id,remember});}}>移除此设备并登录</Button></div>)}<Button className="secondary compact" disabled={busy} onClick={onManageAccount}>去网站管理设备</Button></section>}
           <p>新账号请先在网站完成验证注册。登录后可在首页点击“充值”。</p>
           {!status?.accountManagementAvailable && <p>当前环境未配置网站注册地址，请联系管理员。</p>}
+            {savedLogins.length > 0 && <div className="saved-login-picker">
+              <span>此电脑保存的账号</span>
+              <span className="saved-login-controls"><select aria-label="此电脑保存的账号" value={selectedLogin} disabled={busy} onChange={event => { loginEdited.current = true; void selectSavedLogin(event.target.value); }}>
+                <option value="">输入其他账号</option>
+                {savedLogins.map(account => <option key={account.email} value={account.email}>{account.email}</option>)}
+              </select><button className="text-action" type="button" disabled={busy || loadingLogin || !selectedLogin} onClick={() => void forgetSavedLogin()}>忘记</button></span>
+            </div>}
           <label>
             <span>{copy.email}</span>
             <input
               autoComplete="username"
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => { loginEdited.current = true; ++selectionVersion.current; setLoadingLogin(false); setSelectedLogin(''); setPassword(''); setPasswordVisible(false); setEmail(event.target.value); }}
               type="email"
               value={email}
             />
@@ -106,7 +154,7 @@ export function CloudAccountSheet({
             <input
               autoComplete="current-password"
               id={passwordInputId}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => { loginEdited.current = true; ++selectionVersion.current; setLoadingLogin(false); setPassword(event.target.value); }}
               ref={passwordInput}
               type={passwordVisible ? "text" : "password"}
               value={password}
@@ -129,13 +177,8 @@ export function CloudAccountSheet({
             </button>
             </div>
           </div>
-          <Button
-            disabled={busy || !email || !password}
-            onClick={() => onLogin({ email: email.trim(), password })}
-            type="button"
-          >
-            {copy.login}
-          </Button>
+          <label className="remember-login" title="密码使用系统安全存储加密，仅保存在这台电脑。"><input type="checkbox" checked={remember} disabled={busy} onChange={event => setRemember(event.target.checked)}/><span>在此电脑保存账号和密码</span></label>
+          {(savedLoginError || loadingLogin) && <p role="status">{loadingLogin ? '正在读取保存的密码…' : savedLoginError}</p>}
         </div>)}
     {status?.account&&<>
       <section className="compact-wallet" aria-label="账户余额"><div className="compact-wallet-total"><span>{money?"可用总余额":"可用点数"}</span><strong>{total}</strong></div>{status.balanceBreakdown&&<div className="compact-wallet-parts"><span>正常余额 <b>¥{status.balanceBreakdown.regularRmb.toFixed(4)}</b></span><span>奖励余额 <b>¥{status.balanceBreakdown.rewardRmb.toFixed(4)}</b></span></div>}{status.balanceBreakdown?.rewardExpiresAt&&<p className="reward-expiry" title={new Date(status.balanceBreakdown.rewardExpiresAt).toLocaleString("zh-CN")}>其中 ¥{(status.balanceBreakdown.rewardExpiringRmb??0).toFixed(4)} 奖励于 {formatRewardDate(status.balanceBreakdown.rewardExpiresAt)} 到期</p>}</section>

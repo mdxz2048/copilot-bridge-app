@@ -316,10 +316,15 @@ declare global {
       getCloudStatus(): Promise<CloudServiceStatus>;
       openCloudRegistration(): Promise<void>;
       loginCloud(credentials: {
+        remember?: boolean;
         replaceDeviceId?: string;
         email: string;
         password: string;
       }): Promise<CloudServiceStatus>;
+      listSavedLogins(): Promise<Array<{ email: string; lastUsedAt: number }>>;
+      getSavedLogin(email: string): Promise<{ email: string; password: string } | null>;
+      forgetSavedLogin(email: string): Promise<void>;
+      onCredentialWarning(handler: (message: string) => void): () => void;
       logoutCloud(): Promise<CloudServiceStatus>;
       refreshCloud(): Promise<CloudServiceStatus>;
       manageCloudAccount(): Promise<void>;

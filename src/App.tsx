@@ -150,12 +150,17 @@ export function App() {
       if (newlyInstalled) void refreshApp();
     });
     const removeCloud = window.copilotBridge.onCloudStatus(setCloud);
+    const removeCredentialWarning = window.copilotBridge.onCredentialWarning?.(message => showError(new Error(message), message));
+    const online = () => { void window.copilotBridge.refreshCloud().then(setCloud).catch(() => undefined); };
+    window.addEventListener('online', online);
     const removeModels = window.copilotBridge.onModels?.(setModels);
     return () => {
       removeBridge();
       removeProfile();
       removeChatGpt();
       removeCloud();
+      removeCredentialWarning?.();
+      window.removeEventListener('online', online);
       removeModels?.();
     };
   }, []);
@@ -275,7 +280,7 @@ export function App() {
     }
   };
 
-  const loginCloud = async (credentials: { email: string; password: string; replaceDeviceId?: string }) => {
+  const loginCloud = async (credentials: { email: string; password: string; replaceDeviceId?: string; remember?: boolean }) => {
     setCloudLoginIssue(null);
     setBusy(true);
     setNotice(null);

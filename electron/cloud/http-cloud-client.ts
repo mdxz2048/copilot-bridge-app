@@ -133,12 +133,15 @@ export class HttpCloudClient implements CloudClient {
   }
 
   async resume(request:{device:DeviceInfo;legacyDeviceId?:string}):Promise<void>{
-    await withSingleTokenRefreshRetry(()=>this.resumeWithCurrentToken(request),()=>this.refresh());
+    const epoch=this.identityEpoch;
+    await withSingleTokenRefreshRetry(()=>this.resumeWithCurrentToken(request,epoch),()=>this.refresh());
   }
-  private async resumeWithCurrentToken(request:{device:DeviceInfo;legacyDeviceId?:string}):Promise<void>{
+  private async resumeWithCurrentToken(request:{device:DeviceInfo;legacyDeviceId?:string},epoch=this.identityEpoch):Promise<void>{
+    if(epoch!==this.identityEpoch)throw new CloudError('UNAUTHORIZED','登录状态已变化，请重新登录。');
     const device=RegisterDeviceRequestV2Schema.parse({...request.device,publicKeyJwk:(await this.deviceKeys.get()).publicKeyJwk});
     const verified=await this.controlRequest('/api/v1/auth/resume',{method:'POST'},async signal=>{const response=await this.authenticatedFetch('/api/v1/auth/resume',{method:'POST',body:JSON.stringify({device,legacyDeviceId:request.legacyDeviceId,sessionId:this.startupSessionId}),signal});return parseResponse(response,LoginResponseSchema);});
     if(verified.device.deviceId!==device.deviceId)throw new CloudError('INVALID_SERVER_RESPONSE','恢复登录返回了不一致的设备号。');
+    if(epoch!==this.identityEpoch)throw new CloudError('UNAUTHORIZED','登录状态已变化，请重新登录。');
     await this.tokens.rotate(verified);this.cachedUserId=verified.user.id;
   }
   async login(request: LoginRequest): Promise<LoginResponse> {
@@ -181,6 +184,9 @@ export class HttpCloudClient implements CloudClient {
     return this.refreshInFlight;
   }
 
+  /** A real online signal/manual refresh may retry a transient network backoff. */
+  retryConnection(): void { this.refreshRetryAt=0; }
+
   private async performRefresh(epoch:number): Promise<void> {
     const refreshToken = await this.tokens.readRefreshToken();
     if (!refreshToken) {
@@ -221,27 +227,31 @@ export class HttpCloudClient implements CloudClient {
   async logout(): Promise<void> {
     this.identityEpoch++;
     this.cachedUserId=null;
-    if (!(await this.tokens.readRefreshToken())) {
+    try {
+      if (!(await this.tokens.readRefreshToken())) {
+        await this.tokens.clear();
+        return;
+      }
+      await withSingleTokenRefreshRetry(
+        async () => {
+          const refreshToken = await this.tokens.readRefreshToken();
+          if (!refreshToken) {
+            throw new CloudError(
+              "UNAUTHORIZED",
+              "No Cloud refresh token is stored.",
+            );
+          }
+          await this.controlRequest('/api/v1/auth/logout',{method:'POST'},async signal=>{
+            const response=await this.authenticatedFetch('/api/v1/auth/logout',{method:'POST',body:JSON.stringify({refreshToken}),signal});
+            return parseResponse(response,LogoutResponseSchema);
+          });
+        },
+        () => this.refresh(),
+      );
+    } finally {
       await this.tokens.clear();
-      return;
+      this.refreshBlocked=new CloudError('UNAUTHORIZED','已退出登录，请重新登录。');
     }
-    await withSingleTokenRefreshRetry(
-      async () => {
-        const refreshToken = await this.tokens.readRefreshToken();
-        if (!refreshToken) {
-          throw new CloudError(
-            "UNAUTHORIZED",
-            "No Cloud refresh token is stored.",
-          );
-        }
-        await this.controlRequest('/api/v1/auth/logout',{method:'POST'},async signal=>{
-          const response=await this.authenticatedFetch('/api/v1/auth/logout',{method:'POST',body:JSON.stringify({refreshToken}),signal});
-          return parseResponse(response,LogoutResponseSchema);
-        });
-      },
-      () => this.refresh(),
-    );
-    await this.tokens.clear();
   }
 
   async getMe(): Promise<User> {

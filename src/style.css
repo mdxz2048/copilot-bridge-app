@@ -1078,6 +1078,13 @@ code {
   gap: 5px;
 }
 
+.compact-dialog-footer .login-submit { width: 100%; }
+.saved-login-picker { display: grid; gap: 5px; color: var(--text-secondary); font-size: 12px; }
+.saved-login-controls { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.saved-login-controls select { flex: 1; min-width: 0; height: 36px; border: 1px solid var(--border-control); border-radius: 10px; padding: 0 10px; background: var(--surface-secondary); color: var(--text-primary); text-overflow: ellipsis; }
+.cloud-login-fields .remember-login { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.cloud-login-fields .remember-login input { width: 15px; height: 15px; padding: 0; accent-color: var(--accent); }
+
 .password-input-control {
   position: relative;
 }

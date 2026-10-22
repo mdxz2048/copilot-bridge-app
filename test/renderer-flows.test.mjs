@@ -57,6 +57,8 @@ async function mountApp({
   chatGptState = "INSTALLED",
   failInstallChatGpt = false,
   initialModels = [{ id: "test-model", supportsReasoningEffort: false }],
+  savedLogins = [],
+  delaySavedLogin = false,
 } = {}) {
   const dom = new JSDOM("<div id='app'></div>", {
     url: "http://localhost/",
@@ -119,6 +121,7 @@ async function mountApp({
     },
   });
   let loginStatus;
+  const savedReads = new Map();
   let chatGptStatusListener;
   let delaySettings = false;
   let resolveSettings;
@@ -146,6 +149,12 @@ async function mountApp({
     launchChatGpt: async () => { events.push('launchChatGpt'); },
     getModels: async () => initialModels,
     getCloudStatus: async () => cloud,
+    listSavedLogins: async () => savedLogins.map(({email},i)=>({email,lastUsedAt:100-i})),
+    getSavedLogin: async email => {
+      if(delaySavedLogin)await new Promise(resolve=>savedReads.set(email,resolve));
+      return savedLogins.find(a=>a.email===email)??null;
+    },
+    forgetSavedLogin: async email => {savedLogins=savedLogins.filter(a=>a.email!==email);},
     refreshCloud: async () => { events.push("refreshCloud"); bridge = { state: "ready", message: "Cloud Bridge 正常", endpoint: "" }; return cloud; },
     getAppVersion: async () => "0.1.0",
     restartChatGpt: async () => {
@@ -255,6 +264,9 @@ async function mountApp({
     clickSelector,
     key,
     input,
+    async selectSaved(email) {await act(async()=>{const select=dom.window.document.querySelector('[aria-label="此电脑保存的账号"]');select.value=email;select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));});},
+    async finishSaved(email) {await act(async()=>savedReads.get(email)?.());},
+    async networkOnline() {await act(async()=>dom.window.dispatchEvent(new dom.window.Event('online')));},
     button,
     events,
     copiedCodes,
@@ -535,7 +547,7 @@ test("website registration followed by subscription-required login keeps guidanc
     await app.input("password", "TwelveChars!");
     assert.deepEqual(app.events, ["openCloudRegistration", "loginCloud", "manageCloudAccount"]);
     app.setCloudLoginError(null);
-    await app.clickSelector(".cloud-login-fields > button");
+    await app.clickSelector(".compact-dialog-footer .login-submit");
     assert.doesNotMatch(app.text, /网站二维码仅为测试占位/);
     assert.equal(app.settings.backendMode, "REMOTE");
     assert.deepEqual(app.events, [
@@ -590,7 +602,7 @@ test("subscription-required login in TEST mode explains missing site URL and rem
     await app.input("password", "TwelveChars!");
     await app.click("登录", true);
     assert.match(app.text, /当前环境未配置网站入口，请联系管理员开通后重试/);
-    await app.clickSelector(".cloud-login-fields > button");
+    await app.clickSelector(".compact-dialog-footer .login-submit");
     assert.deepEqual(app.events, ["loginCloud", "loginCloud"]);
     assert.doesNotMatch(app.text, /打开网站账户中心查看开通说明/);
   } finally {
@@ -662,7 +674,7 @@ test("Compact dialog traps Tab, closes on Escape and restores the account trigge
     assert.equal(sheet.getAttribute("role"), "dialog");
     assert.equal(sheet.getAttribute("aria-modal"), "true");
     const first = sheet.querySelector(".compact-dialog-header button");
-    const last = sheet.querySelector('[aria-label="显示密码"]');
+    const last = sheet.querySelector('.remember-login input');
     assert.ok(app.document.activeElement === first);
     await app.key("Tab", { shiftKey: true });
     assert.ok(app.document.activeElement === last);
@@ -929,4 +941,22 @@ test("long Cloud error is available in a focused detail dialog with request ID",
     assert.equal(app.document.activeElement,trigger);
     assert.ok(app.button("重试"));
   } finally { await app.dispose(); }
+});
+
+test('login selects a local account and password, clears password for a different typed email and supports forgetting',async()=>{
+ const app=await mountApp({initialSettings:{onboardingCompleted:true},savedLogins:[{email:'first@example.test',password:'fixture-first'},{email:'second@example.test',password:'fixture-second'}]});try{
+ await app.clickSelector('button.account-status-bar, .account-details-action');assert.equal(app.document.querySelector('input[type="email"]').value,'first@example.test');assert.equal(app.document.querySelector('input[type="password"]').value,'fixture-first');
+ await app.selectSaved('second@example.test');assert.equal(app.document.querySelector('input[type="password"]').value,'fixture-second');
+ await app.input('email','other@example.test');assert.equal(app.document.querySelector('input[type="password"]').value,'');
+ await app.selectSaved('first@example.test');await app.click('忘记',true);assert.equal(app.document.querySelector('input[type="password"]').value,'');assert.equal([...app.document.querySelectorAll('option')].some(o=>o.value==='first@example.test'),false);
+ }finally{await app.dispose();}
+});
+test('late saved password never overwrites another selected account or a manually entered password',async()=>{
+ const app=await mountApp({initialSettings:{onboardingCompleted:true},delaySavedLogin:true,savedLogins:[{email:'first@example.test',password:'fixture-first'},{email:'second@example.test',password:'fixture-second'}]});try{
+ await app.clickSelector('button.account-status-bar, .account-details-action');await app.selectSaved('second@example.test');await app.finishSaved('first@example.test');assert.equal(app.document.querySelector('input[type="email"]').value,'second@example.test');assert.equal(app.document.querySelector('input[type="password"]').value,'');
+ await app.input('password','typed-fixture');await app.finishSaved('second@example.test');assert.equal(app.document.querySelector('input[type="password"]').value,'typed-fixture');
+ }finally{await app.dispose();}
+});
+test('online notification refreshes cloud automatically without switching profiles',async()=>{
+ const app=await mountApp({initialSettings:{onboardingCompleted:true}});try{await app.networkOnline();assert.deepEqual(app.events,['refreshCloud']);}finally{await app.dispose();}
 });
