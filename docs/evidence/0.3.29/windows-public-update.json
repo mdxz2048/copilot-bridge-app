@@ -1,0 +1,17 @@
+{
+  "version": "0.3.29",
+  "platform": "win32",
+  "transport": "actual public HTTPS on developer Windows using the verified previous official installer as baseline",
+  "state": "READY",
+  "rangeRequests": 11,
+  "differentialBytes": 24564181,
+  "mapBytes": 696099,
+  "fullRequests": 0,
+  "modes": [
+    "differential"
+  ],
+  "sha256": "ed5720dc37593c423bcd2a2b23b3051c24c43ae52dd0446188d3ca8a2bc69425",
+  "elapsedMs": 12871,
+  "executedInstaller": false,
+  "userConfigurationChanged": false
+}

@@ -1,7 +1,7 @@
 {
   "name": "copilot-bridge-app",
   "private": true,
-  "version": "0.3.28",
+  "version": "0.3.29",
   "description": "Desktop profile switcher for ChatGPT Desktop and GitHub Copilot Bridge.",
   "author": "Copilot Bridge",
   "license": "UNLICENSED",
@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.renderer.json && tsc -p tsconfig.electron.json",
-    "test": "npm run build && node --test test/support-mail.test.mjs test/saved-logins.test.mjs test/purchases.test.mjs test/preload-deadline.test.mjs test/profile-store.test.mjs test/gateway-profile-store.test.mjs test/desktop-gateway.test.mjs test/cloud-foundation.test.mjs test/device-proof.test.mjs test/service-switcher.test.mjs test/repository.test.mjs test/remote-bridge-server.test.mjs test/renderer-flows.test.mjs test/cloud-history-recovery.test.mjs test/responses-compatibility.test.mjs test/responses-profile.test.mjs test/chatgpt-restart.test.mjs test/update-manager.test.mjs test/differential-update.test.mjs test/update-control.test.mjs test/cloud-transport-timeout.test.mjs test/chatgpt-manager.test.mjs test/official-client-installer.test.mjs test/failure-feedback.test.mjs",
+    "test": "npm run build && node --test test/purchase-notice.test.mjs test/support-mail.test.mjs test/saved-logins.test.mjs test/purchases.test.mjs test/preload-deadline.test.mjs test/profile-store.test.mjs test/gateway-profile-store.test.mjs test/desktop-gateway.test.mjs test/cloud-foundation.test.mjs test/device-proof.test.mjs test/service-switcher.test.mjs test/repository.test.mjs test/remote-bridge-server.test.mjs test/renderer-flows.test.mjs test/cloud-history-recovery.test.mjs test/responses-compatibility.test.mjs test/responses-profile.test.mjs test/chatgpt-restart.test.mjs test/update-manager.test.mjs test/differential-update.test.mjs test/update-control.test.mjs test/cloud-transport-timeout.test.mjs test/chatgpt-manager.test.mjs test/official-client-installer.test.mjs test/failure-feedback.test.mjs",
     "test:official-runtime": "node scripts/official-runtime-probe.mjs",
     "test:proxy": "npm --prefix vendor/copilot-sdk-proxy test",
     "test:cloud-e2e": "npm run build && node scripts/cloud-e2e-harness.mjs",

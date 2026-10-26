@@ -1,4 +1,6 @@
 import {RewardNoticeDialog,type RewardClient} from './components/RewardNoticeDialog';
+import {PurchaseNotice,type PurchaseNoticeClient} from './components/PurchaseNotice';
+const purchaseNoticeClient:PurchaseNoticeClient={list:()=>window.copilotBridge.getPurchaseNotices(),ack:(id,attempt)=>window.copilotBridge.acknowledgePurchaseNotice(id,attempt)};
 const rewardClient:RewardClient={list:()=>window.copilotBridge.getRewardNotices(),ack:id=>window.copilotBridge.acknowledgeReward(id)};
 import {BroadcastNotice} from "./components/BroadcastNotice";
 import {InviteFriendControl} from "./components/InviteFriendControl";
@@ -414,6 +416,7 @@ export function App() {
       />
 
       </div>
+        {cloud?.authState==='AUTHENTICATED'&&<PurchaseNotice key={cloud.account} client={purchaseNoticeClient} onReviewed={()=>{void window.copilotBridge.refreshCloud().then(next=>{if(next.account===cloud.account)setCloud(next);}).catch(()=>undefined);}}/>}
       <footer className="status-bar">
         <span aria-hidden="true">{serviceHealthy ? "●" : "○"}</span>
         {profile?.activeProfile !== "bridge"

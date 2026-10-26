@@ -658,6 +658,8 @@ ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle('purchase:create',async()=>{await purchaseAuth();return cloudClient.createPurchaseTicket();});
   ipcMain.handle('purchase:list',async(_event,page:number,status:string)=>{await purchaseAuth();return cloudClient.listPurchaseClaims(page,status);});
   ipcMain.handle('purchase:status',async(_event,id:string)=>{await purchaseAuth();return cloudClient.getPurchaseTicketStatus(id);});
+  ipcMain.handle('purchase:notices',async()=>{await purchaseAuth();return cloudClient.getPurchaseNotices();});
+  ipcMain.handle('purchase:ack',async(_event,id:string,attempt:number)=>{await purchaseAuth();return cloudClient.acknowledgePurchaseNotice(id,attempt);});
   ipcMain.handle("cloud:usage-settlement", (_event, responseId: string) =>
     cloudFoundation.getUsageSettlement(responseId));
   const unsupportedProvider = () => { throw new Error("Bridge 仅支持 Cloud，不再提供独立 API 连接选择。"); };

@@ -1,4 +1,4 @@
-import {PurchaseTicketSchema,PurchaseClaimsSchema,PurchaseTicketStatusSchema} from './purchase-contract.js';
+import {PurchaseClaimSchema,PurchaseTicketSchema,PurchaseClaimsSchema,PurchaseTicketStatusSchema} from './purchase-contract.js';
 import { networkDeadline, NetworkTimeoutError } from '../network-deadline.js';
 import { z } from "zod";
 import {randomUUID} from "node:crypto";
@@ -497,6 +497,8 @@ export class HttpCloudClient implements CloudClient {
   async createPurchaseTicket(){return this.authenticatedJson('/api/v1/me/purchase-tickets',PurchaseTicketSchema,{method:'POST',body:JSON.stringify({})},true);}
   async listPurchaseClaims(page:number,status:string){return this.authenticatedJson(`/api/v1/me/purchase-claims?page=${page}&status=${encodeURIComponent(status)}`,PurchaseClaimsSchema,{},true);}
   async getPurchaseTicketStatus(id:string){return this.authenticatedJson(`/api/v1/me/purchase-tickets/${encodeURIComponent(id)}`,PurchaseTicketStatusSchema,{},true);}
+  async getPurchaseNotices(){return this.authenticatedJson('/api/v1/me/purchase-notices',z.object({data:z.array(PurchaseClaimSchema)}),{},true);}
+  async acknowledgePurchaseNotice(id:string,attempt:number){return this.authenticatedJson(`/api/v1/me/purchase-notices/${encodeURIComponent(id)}/ack`,z.object({ok:z.literal(true)}),{method:'POST',body:JSON.stringify({attempt})},true);}
   async listModels(): Promise<ModelList> {
     return this.authenticatedJson("/v1/models", ModelListSchema, {}, true);
   }

@@ -1544,3 +1544,11 @@ main { max-width:none; margin:0; padding:0; }
 .service-error-dialog { height:auto; max-height:calc(100dvh - 100px); }
 .service-error-dialog .compact-dialog-body { overflow:auto; max-height:calc(100dvh - 190px); }
 .service-error-dialog p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.7; color:var(--text-secondary); }
+
+.purchase-result-notice { position:fixed; z-index:40; left:24px; right:24px; bottom:52px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 18px; margin:0; border:1px solid var(--border-control); border-radius:14px; background:var(--surface-primary); color:var(--text-primary); }
+.purchase-result-notice > div { min-width:0; }
+.purchase-result-notice strong { font-size:13px; }
+.purchase-result-notice p { margin:5px 0 0; font-size:12px; color:var(--text-secondary); overflow-wrap:anywhere; }
+.purchase-result-notice button { flex-shrink:0; border:1px solid var(--border-control); border-radius:8px; padding:7px 12px; background:var(--surface-secondary); color:var(--text-primary); cursor:pointer; }
+.purchase-result-notice button:disabled { opacity:.6; cursor:default; }
+.purchase-result-notice button:focus-visible { outline:3px solid var(--focus-ring); outline-offset:2px; }

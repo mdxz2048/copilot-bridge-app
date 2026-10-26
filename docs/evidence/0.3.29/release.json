@@ -1,0 +1,20 @@
+{
+  "release": {
+    "id": "b42c9934-ad93-4b69-bf1e-6941dba5e32d",
+    "version": "0.3.29",
+    "channel": "stable",
+    "platform": "windows",
+    "arch": "x64",
+    "downloadUrl": "https://ai.mddxz.top/api/v1/releases/files/b42c9934-ad93-4b69-bf1e-6941dba5e32d",
+    "sha256": "ed5720dc37593c423bcd2a2b23b3051c24c43ae52dd0446188d3ca8a2bc69425",
+    "releaseNotes": "订单审核通知更新：\n1. 提交订单后通知管理员，点击邮件链接登录后台审核。\n2. 审核后发送管理员回执与用户结果邮件。\n3. App 显示待确认的审核结果并同步余额，离线后再次登录仍可查看。\n4. 兼容 0.3.28，更新后台下载，点击安装后才退出 Bridge。",
+    "published": true,
+    "createdAt": "2026-10-26T08:49:29.904Z"
+  },
+  "blockmap": {
+    "size": 348460,
+    "sha256": "cbe2db4c84f412ec73a3f8f8fb96c649d9cba04e34df3cd0a4d0850871ee2806",
+    "blocks": 16349,
+    "installerSize": 343590971
+  }
+}

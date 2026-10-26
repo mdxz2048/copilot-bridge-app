@@ -290,6 +290,8 @@ declare global {
       createPurchaseTicket():Promise<import('./purchase-types').PurchaseTicket>;
       listPurchaseClaims(page:number,status:string):Promise<import('./purchase-types').PurchaseList>;
       getPurchaseTicketStatus(id:string):ReturnType<import('./purchase-types').PurchaseClient['status']>;
+      getPurchaseNotices():ReturnType<import('./components/PurchaseNotice').PurchaseNoticeClient['list']>;
+      acknowledgePurchaseNotice(id:string,attempt:number):Promise<unknown>;
 
       getInviteMessage(): Promise<{message:string;downloadUrl:string;referralUrl?:string}>;
       getStartupWarning?(): Promise<string|null>;
