@@ -1,7 +1,7 @@
 {
   "name": "copilot-bridge-app",
   "private": true,
-  "version": "0.3.29",
+  "version": "0.3.30",
   "description": "Desktop profile switcher for ChatGPT Desktop and GitHub Copilot Bridge.",
   "author": "Copilot Bridge",
   "license": "UNLICENSED",

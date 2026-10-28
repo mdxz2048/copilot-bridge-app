@@ -14,13 +14,15 @@ async function mount(initial={state:'CURRENT'},{read,install}={}){
  let handler,checks=0,installs=0,unsubscribed=false;
  window.copilotBridge={getUpdateStatus:read??(async()=>initial),onUpdateStatus:callback=>{handler=callback;return()=>{unsubscribed=true;};},checkForUpdates:async()=>{checks++;},installUpdate:async()=>{installs++;if(install)await install();}};
  const React=await import('react'),{createRoot}=await import('react-dom/client');const root=createRoot(document.getElementById('app'));
- await React.act(async()=>root.render(React.createElement(UpdateControl)));
+ await React.act(async()=>root.render(React.createElement(UpdateControl,{currentVersion:"0.3.29"})));
  return {get button(){return document.querySelector('button');},get checks(){return checks;},get installs(){return installs;},get document(){return dom.window.document;},async emit(next){await React.act(async()=>handler(next));},async click(){await React.act(async()=>document.querySelector('button').click());},async act(fn){await React.act(fn);},async dispose(){await React.act(async()=>root.unmount());assert.equal(unsubscribed,true);dom.window.close();Object.assign(globalThis,prior);}};
 }
 test('corner update opens release notes before installing; missing notes and CURRENT state remain usable',async()=>{
  const app=await mount();try{
   assert.equal(app.button.textContent,'');assert.match(app.button.getAttribute('aria-label'),/检查升级/);
   await app.click();assert.equal(app.checks,1);
+  assert.match(app.document.querySelector(".update-version-row").textContent,/当前版本v0\.3\.29/);
+  assert.ok(app.document.querySelector(".update-summary-icon"));
   await app.emit({state:'READY',version:'0.3.1',releaseNotes:'新增功能\n邀请好友\n问题修复\n修复切换',publishedAt:'2026-10-14T00:00:00Z'});assert.match(app.button.title,/查看更新说明/);
   assert.equal(app.installs,0);
   assert.match(app.document.querySelector('[role="dialog"]').textContent,/新增功能\n邀请好友/);

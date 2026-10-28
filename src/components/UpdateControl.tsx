@@ -5,7 +5,7 @@ import {Button} from './Button';
 
 type UpdateStatus = Awaited<ReturnType<typeof window.copilotBridge.getUpdateStatus>>;
 
-export function UpdateControl() {
+export function UpdateControl({currentVersion}:{currentVersion?:string}={}) {
   const [status,setStatus]=useState<UpdateStatus>({state:'CURRENT'});
   const [installing,setInstalling]=useState(false);
   const [checkingAction,setCheckingAction]=useState(false);
@@ -28,7 +28,7 @@ export function UpdateControl() {
   const version=status.version?` ${status.version}`:'';
   const published=status.publishedAt?new Date(status.publishedAt):null;
   const publishedLabel=published&&!Number.isNaN(published.getTime())?published.toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'}):null;
-  const label=installing?'正在启动安装程序…':status.state==='CHECKING'?'正在检查升级…':downloading
+  const label=installing?'正在启动安装程序…':status.state==='CHECKING'||checkingAction?'正在检查升级…':downloading
     ?`正在下载${version}${percent!==undefined?` · ${Math.floor(percent)}%`:typeof downloaded==='number'&&downloaded>=0?` · ${(downloaded/1048576).toFixed(1)} MB`:''}`
     :status.state==='READY'?`新版本${version}已下载 · 查看更新说明`
     :status.state==='ERROR'?`升级失败，点击重试${status.message?`：${status.message}`:''}`:'检查升级 · 打开软件时自动检查';
@@ -51,7 +51,7 @@ export function UpdateControl() {
     finally{setInstalling(false);actionPending.current=false;}
   }
   return <div className="update-control">
-    <button type="button" className={`title-tool-button update-icon-button update-${status.state.toLowerCase()}`} disabled={installing}
+    <button type="button" className={`title-tool-button update-icon-button update-${status.state.toLowerCase()} ${checkingAction?'update-checking':''}`} disabled={installing}
       title={label} aria-label={label} onClick={()=>void activate()}>
       <svg className="update-progress-ring" viewBox="0 0 36 36" aria-hidden="true">
         {downloading&&<circle className="update-ring-track" cx="18" cy="18" r="16"/>}
@@ -68,14 +68,16 @@ export function UpdateControl() {
     {downloading&&<span className="visually-hidden" role="progressbar" aria-label="安装包下载进度" aria-valuemin={percent!==undefined?0:undefined}
       aria-valuemax={percent!==undefined?100:undefined} aria-valuenow={percent!==undefined?Math.floor(percent):undefined} aria-valuetext={label}/>}
     <span className="visually-hidden" role="status" aria-live="polite">{status.state==='READY'?`新版本${version}已下载，点击右上角升级图标查看更新说明后安装。`:status.state==='ERROR'?label:''}</span>
-    {showDetails&&createPortal(<Modal title={status.version?`新版本 ${status.version}`:'软件更新'} onClose={installing?undefined:()=>setShowDetails(false)}>
+    {showDetails&&createPortal(<Modal className="update-dialog" title={status.version?`新版本 ${status.version}`:'软件更新'} onClose={installing?undefined:()=>setShowDetails(false)}>
       <div className="update-details">
+        <div className="update-summary"><span className="update-summary-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M19 7a8 8 0 0 0-13-1L3 9m0-5v5h5M5 17a8 8 0 0 0 13 1l3-3m0 5v-5h-5"/></svg></span><h3>软件更新</h3><p className="dialog-status" role="status">{status.state==='CURRENT'&&!checkingAction?'当前已是最新版本。':label}</p></div>
+        <div className="update-version-row"><span>当前版本</span><strong>{currentVersion ? `v${currentVersion}` : '正在读取版本…'}</strong></div>
+        {status.version&&<div className="update-version-row"><span>{status.state==='CURRENT'?'最新版本':'新版本'}</span><strong>v{status.version}</strong></div>}
         {publishedLabel&&<p className="dialog-caption">发布于 {publishedLabel}</p>}
         {status.version&&<>
           <h3>更新内容</h3>
           <p className="update-release-notes">{status.releaseNotes?.trim()||'平台暂未提供本次更新说明。'}</p>
         </>}
-        <p className="dialog-status" role="status">{status.state==='CURRENT'?'当前已是最新版本。':label}</p>
         {downloading&&<div className="dialog-download-track" aria-hidden="true"><span className={determinate?'':'indeterminate'} style={determinate?{width:`${percent}%`}:undefined}/></div>}
         {downloading&&<p>安装包在后台下载，关闭此窗口不会中断下载。</p>}
         {status.state==='READY'&&<p className="dialog-caption">安装时将关闭 Bridge 并启动安装程序，请先完成当前任务。</p>}

@@ -37,7 +37,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoBridgeStart: true,
   backendMode: "REMOTE",
   providerConnectionId: null,
-  theme: "system",
+  theme: "light",
   onboardingCompleted: false,
 };
 
@@ -81,7 +81,7 @@ export function App() {
 
   useEffect(() => {
     if (settings.theme === "system") {
-      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.dataset.theme = "light";
     } else {
       document.documentElement.dataset.theme = settings.theme;
     }
@@ -331,7 +331,7 @@ export function App() {
 
   return (
     <main>
-      <AppTitleBar onSettings={() => setSettingsOpen(true)} />
+      <AppTitleBar version={version} onSettings={() => setSettingsOpen(true)} />
       <div className="app-content">
       {cloud && cloud.updateState !== "CURRENT" && (
         <div className="product-alert" role="status">
@@ -418,7 +418,7 @@ export function App() {
       </div>
         {cloud?.authState==='AUTHENTICATED'&&<PurchaseNotice key={cloud.account} client={purchaseNoticeClient} onReviewed={()=>{void window.copilotBridge.refreshCloud().then(next=>{if(next.account===cloud.account)setCloud(next);}).catch(()=>undefined);}}/>}
       <footer className="status-bar">
-        <span aria-hidden="true">{serviceHealthy ? "●" : "○"}</span>
+        <span className={`status-indicator ${profile?.activeProfile === "bridge" && !serviceHealthy ? "attention" : ""}`} aria-hidden="true">{serviceHealthy ? "●" : "○"}</span>
         {profile?.activeProfile !== "bridge"
           ? zhCN.product.ready
           : serviceHealthy
@@ -445,6 +445,8 @@ export function App() {
       {settingsOpen && (
         <ProductSettingsSheet
           version={version}
+          cloud={cloud}
+          onAccount={() => { setSettingsOpen(false); confirmedMode.current = null; setCloudOpen(true); }}
           bridge={bridge}
           onClose={() => setSettingsOpen(false)}
           onDiagnostics={() => void openDiagnostics()}

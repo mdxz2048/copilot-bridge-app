@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoBridgeStart: true,
   backendMode: "REMOTE",
   providerConnectionId: null,
-  theme: "system",
+  theme: "light",
   onboardingCompleted: false,
 };
 
@@ -54,7 +54,7 @@ export class SettingsStore {
           typeof parsed.providerConnectionId === "string"
             ? parsed.providerConnectionId
             : null,
-        theme: parsed.theme === "light" || parsed.theme === "dark" ? parsed.theme : "system",
+        theme: parsed.theme === "dark" ? "dark" : "light",
         onboardingCompleted: parsed.onboardingCompleted !== false,
       };
     } catch (error: unknown) {

@@ -374,8 +374,8 @@ function refreshTray(): void {
 
 function titleBarOverlayColors() {
   return nativeTheme.shouldUseDarkColors
-    ? { color: "#202633", symbolColor: "#F5F5F7", height: 48 }
-    : { color: "#F4F7FC", symbolColor: "#142033", height: 48 };
+    ? { color: "#1D2938", symbolColor: "#F5F8FE", height: 48 }
+    : { color: "#FFFFFF", symbolColor: "#152234", height: 48 };
 }
 
 function updateTitleBarOverlay(): void {
@@ -385,7 +385,7 @@ function updateTitleBarOverlay(): void {
 }
 
 function applyTheme(theme: AppSettings["theme"]): void {
-  nativeTheme.themeSource = theme;
+  nativeTheme.themeSource = theme === "dark" ? "dark" : "light";
   updateTitleBarOverlay();
 }
 

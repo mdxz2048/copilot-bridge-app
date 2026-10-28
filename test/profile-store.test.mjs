@@ -65,10 +65,12 @@ test("keeps the selected theme across settings store restarts", async () => {
   try {
     const path = join(directory, "settings.json");
     const store = new SettingsStore(path);
-    assert.equal((await store.read()).theme, "system");
+    assert.equal((await store.read()).theme, "light");
     await store.write({ ...await store.read(), theme: "dark" });
     assert.equal((await new SettingsStore(path).read()).theme, "dark");
     await store.write({ ...await store.read(), theme: "light" });
+    assert.equal((await new SettingsStore(path).read()).theme, "light");
+    await store.write({ ...await store.read(), theme: "system" });
     assert.equal((await new SettingsStore(path).read()).theme, "light");
   } finally {
     await rm(directory, { recursive: true, force: true });

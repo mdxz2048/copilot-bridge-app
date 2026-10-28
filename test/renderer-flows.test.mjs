@@ -709,24 +709,22 @@ test("an escapable Modal restores focus to its still-mounted trigger", async () 
   }
 });
 
-test("theme changes apply immediately, follow system and restore persisted choice", async () => {
+test("theme offers only light and dark, maps legacy system to light and restores persisted choice", async () => {
   const app = await mountApp({
     initialSettings: { onboardingCompleted: true },
   });
   let persisted;
   try {
-    assert.equal(app.theme, null);
+    assert.equal(app.theme, "light");
     await app.clickSelector(".settings-button");
     await app.clickSelector('button[aria-label="主题"]');
+    assert.deepEqual([...app.document.querySelectorAll('[role="option"]')].map(option => option.textContent.replace("✓", "").trim()), ["浅色", "深色"]);
     await app.click("深色");
     assert.equal(app.theme, "dark");
     assert.equal(app.settings.theme, "dark");
     await app.clickSelector('button[aria-label="主题"]');
     await app.click("浅色");
     assert.equal(app.theme, "light");
-    await app.clickSelector('button[aria-label="主题"]');
-    await app.click("跟随系统");
-    assert.equal(app.theme, null);
     await app.clickSelector('button[aria-label="主题"]');
     await app.click("深色");
     persisted = { ...app.settings };
@@ -756,6 +754,58 @@ test("a failed theme save keeps the current appearance", async () => {
   } finally {
     await app.dispose();
   }
+});
+
+test("settings navigation exposes real account and about actions without administrator permissions", async () => {
+  const app = await mountApp({ initialSettings: { onboardingCompleted: true } });
+  try {
+    await app.clickSelector('.settings-button');
+    assert.equal(app.document.querySelector('.settings-nav [aria-current="page"]').textContent, '基础设置');
+    assert.equal(app.document.querySelectorAll('.settings-content [role="switch"]').length, 3);
+    await app.click('关于', true);
+    assert.match(app.document.querySelector('.settings-content').textContent, /v0\.1\.0/);
+    assert.ok(app.button('查看诊断 ›', true));
+    assert.doesNotMatch(app.document.querySelector('.settings-content').textContent, /管理后台/);
+    await app.click('账户', true);
+    await app.click('登录 Cloud ›', true);
+    assert.equal(app.document.querySelector('[role="dialog"]').getAttribute('aria-label'), '我的账户');
+    assert.equal(app.document.querySelector('.settings-dialog'), null);
+    assert.deepEqual(app.events, []);
+  } finally { await app.dispose(); }
+});
+
+test("theme select supports arrow navigation and Escape closes only its menu", async () => {
+  const app = await mountApp({ initialSettings: { onboardingCompleted: true } });
+  try {
+    await app.clickSelector('.settings-button');
+    const trigger = app.document.querySelector('[aria-label="主题"]');
+    trigger.focus();
+    await app.key('ArrowDown');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(app.document.activeElement.getAttribute('role'), 'option');
+    await app.key('End');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(app.document.activeElement.textContent.trim(), '深色');
+    await app.key('Escape');
+    assert.equal(app.document.querySelector('[role="listbox"]'), null);
+    assert.ok(app.document.querySelector('.settings-dialog'));
+    assert.equal(app.document.activeElement, trigger);
+  } finally { await app.dispose(); }
+});
+
+test("Cloud login remembers credentials by default and users can opt out without a rerender resetting it", async () => {
+  const app = await mountApp({ initialSettings: { onboardingCompleted: true } });
+  try {
+    await app.clickSelector('button.account-status-bar, .account-details-action');
+    const checkbox = app.document.querySelector('.remember-login input');
+    assert.equal(checkbox.checked, true);
+    await app.act(async () => checkbox.click());
+    await app.input('email', 'fixture@example.test');
+    await app.input('password', 'FixturePasswordOnly');
+    await app.clickSelector('[aria-label="显示密码"]');
+    assert.equal(app.document.querySelector('.remember-login input').checked, false);
+    assert.deepEqual(app.events, []);
+  } finally { await app.dispose(); }
 });
 
 
