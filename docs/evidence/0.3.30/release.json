@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-28",
+  "sourceCommit": "ea8ccfd",
+  "release": {
+    "id": "8963a458-843a-4d83-a717-1afc4a78b185",
+    "version": "0.3.30",
+    "channel": "stable",
+    "platform": "windows",
+    "arch": "x64",
+    "downloadUrl": "https://ai.mddxz.top/api/v1/releases/files/8963a458-843a-4d83-a717-1afc4a78b185",
+    "sha256": "dbb30359815c0b909675515481f7f4c23d48e1aba2b79e241a01945ba082a3f4",
+    "releaseNotes": "UI更新",
+    "published": true,
+    "createdAt": "2026-10-28T07:19:30.229Z"
+  },
+  "artifact": {
+    "version": "0.3.30",
+    "size": 343674737,
+    "sha256": "dbb30359815c0b909675515481f7f4c23d48e1aba2b79e241a01945ba082a3f4",
+    "blockmapSha256": "3f159191c1923e3c51e48ef56ea1ac1c6d697e17c292cc56f213085f558789cc"
+  },
+  "blockmap": {
+    "size": 349084,
+    "sha256": "3f159191c1923e3c51e48ef56ea1ac1c6d697e17c292cc56f213085f558789cc",
+    "blocks": 16374,
+    "installerSize": 343674737
+  },
+  "compatibility": {
+    "apiSha256": "5211fa69931663fd1b957be7817fe0d483fd1192d4ce750ffb86bd27d6382269",
+    "minimum": "0.3.28",
+    "matrix": [
+      {
+        "version": "0.3.27",
+        "status": 426
+      },
+      {
+        "version": "0.3.28",
+        "status": 200
+      },
+      {
+        "version": "0.3.29",
+        "status": 200
+      },
+      {
+        "version": "0.3.30",
+        "status": 200
+      }
+    ],
+    "scope": "isolated execution of the deployed version gate; not a full login or generation test"
+  },
+  "clientConfig": {
+    "minimumVersion": "0.3.28",
+    "latestVersion": "0.3.30"
+  },
+  "temporaryAdminSessionRemoved": true,
+  "packaged": {
+    "version": "0.3.30",
+    "verifiedFiles": 56,
+    "archiveSha256": "efc9ddb6c073da65266de9ca1d454cbdbde129640520c3133556a1518e3feaa8"
+  },
+  "tests": {
+    "passed": 298,
+    "failed": 0,
+    "buildAndTypecheck": true
+  },
+  "publicUpdater": {
+    "passed": true,
+    "version": "0.3.30",
+    "releaseNotes": "UI更新",
+    "updateState": "READY",
+    "size": 343674737,
+    "sha256": "dbb30359815c0b909675515481f7f4c23d48e1aba2b79e241a01945ba082a3f4",
+    "minimumVersion": "0.3.28",
+    "latestVersion": "0.3.30",
+    "transitions": [
+      {
+        "state": "CHECKING"
+      },
+      {
+        "state": "DOWNLOADING",
+        "version": "0.3.30"
+      },
+      {
+        "state": "READY",
+        "version": "0.3.30"
+      }
+    ],
+    "executedInstaller": false,
+    "realAccountLoginTested": false,
+    "officialClientRestarted": false
+  },
+  "scope": "UI-only App release; no API deployment or forced compatible-client upgrade; no production payment/model-generation/official-client-restart acceptance claimed"
+}
