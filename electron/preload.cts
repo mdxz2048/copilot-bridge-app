@@ -25,8 +25,8 @@ const operationBudgets: Record<string, [string, number]> = {
   'chatgpt:download':['安装官方客户端',20*60000], 'update:check':['检查与下载更新',16*60000],
   'update:install':['启动更新安装程序',30000], 'bridge:models':['获取模型列表',25000],
 };
-const operationLabels:Record<string,string>={'reward:list':'读取奖励通知','reward:ack':'确认奖励到账','purchase:create':'生成提交二维码','purchase:list':'读取订单记录','purchase:status':'查询提交状态','cloud:status':'读取账号状态','cloud:logout':'退出登录','settings:update':'保存设置','cloud:device-revoke':'移除设备','cloud:device-rename':'重命名设备','cloud:referral-apply':'应用邀请码','profile:activate':'切换连接配置','cloud:manage-account':'打开账户网页','cloud:manage-subscription':'打开充值网页','cloud:open-registration':'打开注册网页','cloud:open-release':'打开下载网页','invite:message':'获取邀请信息'};
-const readOnly = new Set(['purchase:notices','reward:list','purchase:list','purchase:status','app:version','app:startup-warning','profile:status','bridge:status','bridge:models','cloud:status','settings:get','chatgpt:status','diagnostics:get','update:status','cloud:usage-settlement','invite:message']);
+const operationLabels:Record<string,string>={'account:consumption':'读取消费记录','account:consumption-detail':'读取消费明细','account:bills':'读取扣费记录','account:feedback-list':'读取我的反馈','account:feedback-submit':'提交反馈','reward:list':'读取奖励通知','reward:ack':'确认奖励到账','purchase:create':'生成提交二维码','purchase:list':'读取订单记录','purchase:status':'查询提交状态','cloud:status':'读取账号状态','cloud:logout':'退出登录','settings:update':'保存设置','cloud:device-revoke':'移除设备','cloud:device-rename':'重命名设备','cloud:referral-apply':'应用邀请码','profile:activate':'切换连接配置','cloud:manage-account':'打开账户网页','cloud:manage-subscription':'打开充值网页','cloud:open-registration':'打开注册网页','cloud:open-release':'打开下载网页','invite:message':'获取邀请信息'};
+const readOnly = new Set(['account:consumption','account:consumption-detail','account:bills','account:feedback-list','purchase:notices','reward:list','purchase:list','purchase:status','app:version','app:startup-warning','profile:status','bridge:status','bridge:models','cloud:status','settings:get','chatgpt:status','diagnostics:get','update:status','cloud:usage-settlement','invite:message']);
 const activeWrites = new Set<string>();
 function invoke(channel:string,...args:unknown[]):Promise<any> {
   const [label,budget]=operationBudgets[channel]??[operationLabels[channel]??'读取应用状态',30000];
@@ -40,6 +40,11 @@ function invoke(channel:string,...args:unknown[]):Promise<any> {
 }
 
 contextBridge.exposeInMainWorld("copilotBridge", {
+  listBills:(page:number,kind:string)=>invoke('account:bills',page,kind),
+  listConsumption:(range:string,deviceId?:string,page?:number)=>invoke('account:consumption',range,deviceId,page),
+  getConsumption:(id:string)=>invoke('account:consumption-detail',id),
+  listFeedback:(page:number)=>invoke('account:feedback-list',page),
+  submitFeedback:(input:import('./cloud/account-features.js').FeedbackInput)=>invoke('account:feedback-submit',input),
   composeSupportMail:(issue?:{message:string;occurredAt:string;code?:string}):Promise<void>=>invoke('support:compose',issue),
   getRewardNotices:()=>invoke('reward:list'),
   acknowledgeReward:(id:string)=>invoke('reward:ack',id),

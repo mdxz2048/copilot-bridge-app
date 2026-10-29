@@ -73,6 +73,8 @@ import type { DeviceIdentityStore } from "./device-identity.js";
 import type { DeviceKeyStore } from "./device-proof.js";
 import { withSingleTokenRefreshRetry } from "./retry.js";
 import { FailureFeedbackSchema, FailureFeedbackResultSchema, sanitizeFailure, type FailureFeedback } from "./failure-feedback.js";
+import {BillsSchema, FeedbackInputSchema, FeedbackListSchema, FeedbackSchema, type FeedbackInput} from './account-features.js';
+import {ConsumptionSchema,ConsumptionDetailSchema,ConsumptionQuerySchema} from './consumption.js';
 import type { CloudTokenSession } from "./token-store.js";
 
 export interface HttpCloudClientOptions {
@@ -343,6 +345,26 @@ export class HttpCloudClient implements CloudClient {
 
   getUsageV2(): Promise<UsageSummaryV2> {
     return this.authenticatedJson("/api/v1/me/usage", UsageSummaryV2Schema);
+  }
+
+  listBills(page:number,kind:string){
+    const query=z.object({page:z.number().int().min(1).max(100000),kind:z.enum(['all','recharge','consumption'])}).parse({page,kind});
+    return this.authenticatedJson(`/api/v1/me/bills?page=${query.page}&kind=${query.kind}&pageSize=20`,BillsSchema,{},true);
+  }
+  listConsumption(range:string,deviceId?:string,page=1){
+    const q=ConsumptionQuerySchema.parse({range,deviceId,page});
+    return this.authenticatedJson(`/api/v1/me/consumption?range=${q.range}&page=${q.page}${q.deviceId?`&deviceId=${q.deviceId}`:''}`,ConsumptionSchema,{},true);
+  }
+  getConsumption(id:string){
+    const value=z.string().regex(/^(history:)?[0-9a-f-]{36}$/i).parse(id);
+    return this.authenticatedJson(`/api/v1/me/consumption/${encodeURIComponent(value)}`,ConsumptionDetailSchema,{},true);
+  }
+  listFeedback(page:number){
+    const value=z.number().int().min(1).max(100000).parse(page);
+    return this.authenticatedJson(`/api/v1/me/feedback?page=${value}`,FeedbackListSchema,{},true);
+  }
+  submitFeedback(input:FeedbackInput){
+    return this.authenticatedJson('/api/v1/me/feedback',z.object({feedback:FeedbackSchema}),{method:'POST',body:JSON.stringify(FeedbackInputSchema.parse(input))},true);
   }
 
   getUsageByResponse(responseId: string): Promise<UsageSettlementV2> {

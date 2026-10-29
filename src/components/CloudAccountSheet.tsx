@@ -1,3 +1,5 @@
+import {AccountBills} from "./AccountBills";
+import {AccountFeedback} from "./AccountFeedback";
 import {InviteFriendControl} from "./InviteFriendControl";
 import {SupportContact} from './SupportContact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
@@ -100,14 +102,14 @@ export function CloudAccountSheet({
     setPasswordVisible(visible => !visible);
   };
   const [view, setView] = useState<
-    "account" | "devices" | "referral" | "usage"
+    "account" | "devices" | "referral" | "usage" | "feedback" | "balance"
   >("account");
   useEffect(()=>setView("account"),[authenticated]);
   const state = accountState(status);
   const subscriptionRequired = !authenticated
     && (loginIssue === "SUBSCRIPTION_REQUIRED"
       || status?.authState === "SUBSCRIPTION_REQUIRED");
-  const title=view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"充值与调整记录":"我的账户";
+  const title=view==="balance"?"余额记录":view==="devices"?"我的设备":view==="referral"?"邀请记录":view==="usage"?"消费记录":view==="feedback"?"意见反馈":"我的账户";
   const money=Boolean(status?.billing),total=money?`¥${status!.billing!.balanceRmb.toFixed(4)}`:status?.remainingPoints==null?"—":`${formatPoints(status.remainingPoints)} 点`;
   const online=(status?.devices??[]).filter(d=>d.status==="ACTIVE"&&(d.current||(d.lastSeenAt&&Date.now()-Date.parse(d.lastSeenAt)<300000))).length;
   const loginLimit=status?.loginDeviceLimit?.email===email.trim().toLowerCase()?status.loginDeviceLimit:undefined;
@@ -118,7 +120,7 @@ export function CloudAccountSheet({
   const signInForm=!authenticated && ["SIGNED_OUT","SUBSCRIPTION_REQUIRED","DEVICE_REVOKED"].includes(status?.authState??"SIGNED_OUT");
   const footer=authenticated?<><Button className="secondary compact" disabled={busy||!status?.accountManagementAvailable} onClick={onManageAccount}>账户管理</Button><Button className="compact text-action" disabled={busy} onClick={onLogout}>退出登录</Button></>:signInForm?<Button className="login-submit" disabled={busy || loadingLogin || !email || !password} onClick={() => onLogin({ email: email.trim(), password, remember })} type="button">{copy.login}</Button>:status?.authState==="SIGNED_OUT"||status?.authState==="AUTHENTICATING"?null:<AccountActions loggedIn={Boolean(status?.account)} busy={busy} onLogout={onLogout} onManageAccount={onManageAccount} onManageSubscription={onManageSubscription} onRefresh={onRefresh} onUseOriginal={onUseOriginal} state={status?.authState??"SIGNED_OUT"} accountAvailable={status?.accountManagementAvailable===true} subscriptionAvailable={status?.subscriptionManagementAvailable===true}/>;
   return <CompactDialog onClose={onClose} title={title} className={`account-dialog ${view==="account"?"account-overview":"account-detail"}`} subtitle={status?.account&&<div className="compact-identity"><span title={status.account}>{status.account}</span><span className={`account-badge ${healthy?"good":"attention"}`}>{badge}</span></div>} footer={<>{footer}<SupportContact/></>}>
-    {view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="usage"?<BalanceRecords transactions={status?.walletTransactions??[]} onBack={back} total={total} money={money}/>:<>
+    {view==="devices"?<DeviceList currentDeviceId={status?.currentDeviceId??null} devices={status?.devices??[]} onBack={back} onRevoke={onRevokeDevice}/>:view==="referral"?<ReferralDetail history={status?.referralHistory??[]} onBack={back} referral={status?.referral??null} registrationUrl={status?.referralRegistrationUrl??null}/>:view==="balance"?<BalanceRecords rows={status?.walletTransactions??[]} onBack={back}/>:view==="usage"?<AccountBills onBack={back} currentDeviceId={status?.devices.find(d=>d.current)?.id}/>:view==="feedback"?<AccountFeedback onBack={back}/>:<>
     {(!status?.account)&&(status?.authState!=="SIGNED_OUT"||subscriptionRequired)&&<div className={`compact-state state-panel-${state.tone}`} role="status"><strong>{subscriptionRequired?"Cloud 套餐未开通":state.title}</strong><p>{subscriptionRequired?(status?.accountManagementAvailable?"请联系管理员开通套餐后重试登录。":"当前环境未配置网站入口，请联系管理员开通后重试。"):state.message}</p>{subscriptionRequired&&status?.accountManagementAvailable&&<Button className="secondary compact" onClick={onManageAccount}>打开网站账户中心查看开通说明</Button>}</div>}
     {!authenticated&&(status?.authState==="SIGNED_OUT"||status?.authState==="SUBSCRIPTION_REQUIRED"||status?.authState==="DEVICE_REVOKED")&&(
         <div className="cloud-login-fields">
@@ -185,13 +187,19 @@ export function CloudAccountSheet({
       <section className="compact-wallet" aria-label="账户余额"><div className="compact-wallet-total"><span>{money?"可用总余额":"可用点数"}</span><strong>{total}</strong></div>{status.balanceBreakdown&&<div className="compact-wallet-parts"><span>正常余额 <b>¥{status.balanceBreakdown.regularRmb.toFixed(4)}</b></span><span>奖励余额 <b>¥{status.balanceBreakdown.rewardRmb.toFixed(4)}</b></span></div>}{status.balanceBreakdown?.rewardExpiresAt&&<p className="reward-expiry" title={new Date(status.balanceBreakdown.rewardExpiresAt).toLocaleString("zh-CN")}>其中 ¥{(status.balanceBreakdown.rewardExpiringRmb??0).toFixed(4)} 奖励于 {formatRewardDate(status.balanceBreakdown.rewardExpiresAt)} 到期</p>}</section>
       <div className="compact-plan"><div><strong>{status.plan?`Cloud ${status.plan}`:"Cloud 按量使用"}</strong><small>{status.accountNeverExpires?"长期有效":`有效期至 ${formatDate(status.validUntil)}`}</small></div><button type="button" className="text-action" disabled={busy||!status.subscriptionManagementAvailable} onClick={onManageSubscription}>管理套餐 ›</button></div>
       <div className="compact-account-actions"><button type="button" className="small-action" onClick={()=>setView("devices")}><svg aria-hidden="true" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="10" rx="2"/><path d="M1 17h18"/></svg>在线设备 {online}{status.billing?.maxDevices?` / ${status.billing.maxDevices}`:""}</button>{authenticated&&<InviteFriendControl small onHistory={()=>setView("referral")}/>}</div>
-      <button className="compact-record-entry" type="button" onClick={()=>setView("usage")}><span>充值与调整记录</span><span aria-hidden="true">›</span></button>
+      <button className="compact-record-entry" type="button" onClick={()=>setView("usage")}><span>消费记录</span><span aria-hidden="true">›</span></button>
+      <button className="compact-record-entry" type="button" onClick={()=>setView("balance")}><span>余额记录</span><span aria-hidden="true">›</span></button>
+      {authenticated&&<button className="compact-record-entry" type="button" onClick={()=>setView("feedback")}><span>意见反馈</span><span aria-hidden="true">›</span></button>}
       <p className={`compact-account-note ${balanceRequired||!healthy?"attention":""}`} role="status">{balanceRequired?"余额不足，模型请求已暂停，请充值。":!healthy?state.message:"余额与权限自动同步；需要调整请联系管理员。"}</p>
     </>}
     </>}
   </CompactDialog>;
 }
 
+function BalanceRecords({rows,onBack}:{rows:CloudServiceStatus['walletTransactions'];onBack:()=>void}){
+  const labels:Record<string,string>={PURCHASE:'充值入账',ADMIN_ADJUSTMENT:'管理员调整',REFERRAL_REWARD:'邀请奖励',EXPIRATION:'余额到期',SUBSCRIPTION_GRANT:'套餐赠送',REFUND:'退款入账'};
+  return <div className="detail-view account-bills"><button className="text-action" onClick={onBack}>‹ 返回账户</button><div className="consumption-scroll"><p className="consumption-caption">最近的余额变动。模型消费请查看「消费记录」。</p>{rows.filter(r=>r.type!=='USAGE').map(row=><div className="consumption-call" key={row.id}><span className="consumption-row-copy"><b>{labels[row.type]??'余额变动'}</b><small>{new Date(row.createdAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})} · 变动后 ¥{(row.balanceAfter/10000).toFixed(4)}</small></span><span className="consumption-row-amount">{row.points>=0?'+':'−'}¥{(Math.abs(row.points)/10000).toFixed(4)}</span></div>)}{!rows.some(r=>r.type!=='USAGE')&&<p className="empty-detail">暂无余额变动记录。</p>}</div></div>;
+}
 function formatRewardDate(value:string){return new Intl.DateTimeFormat("zh-CN",{month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(value));}
 
 function DeviceList({
@@ -333,11 +341,6 @@ function ReferralDetail({
   );
 }
 
-function BalanceRecords({onBack,transactions,total,money}:{onBack:()=>void;transactions:CloudServiceStatus["walletTransactions"];total:string;money:boolean}){
- const records=transactions.filter(t=>['PURCHASE','ADMIN_ADJUSTMENT'].includes(t.type));
- const amount=(points:number)=>money?`¥${(Math.abs(points)/10000).toFixed(4)}`:`${formatPoints(Math.abs(points))} 点`;
- return <div className="detail-view balance-records"><Button className="secondary compact" onClick={onBack}>‹ 返回账户</Button><div className="compact-wallet-total"><span>当前余额</span><strong>{total}</strong></div><p className="detail-caption">仅展示最近的充值与管理员调整，不包含逐次模型扣费。</p><div className="compact-record-list">{records.length===0?<p className="empty-detail">暂无充值或管理员调整记录。</p>:records.map(t=><div className="history-row" key={t.id}><div><strong>{t.type==='PURCHASE'?'账户充值':t.points>0?'管理员增加余额':'管理员减少余额'}</strong><span>{new Date(t.createdAt).toLocaleString('zh-CN')}</span></div><div><strong className={t.points>0?'positive':''}>{t.points>0?'+':'−'} {amount(t.points)}</strong><span>变动后 {money?`¥${(t.balanceAfter/10000).toFixed(4)}`:`${formatPoints(t.balanceAfter)} 点`}</span></div></div>)}</div></div>;
-}
 
 function AccountActions({
   loggedIn,

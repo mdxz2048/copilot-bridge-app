@@ -468,7 +468,7 @@ function focusMainWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  if(process.platform === "win32") app.setAppUserModelId("com.copilotbridge.desktop");
+  if(process.platform === "win32") app.setAppUserModelId(app.getName()==='Copilot Bridge Preview'?'com.copilotbridge.desktop.preview':'com.copilotbridge.desktop');
   if (!hasSingleInstanceLock) return;
   Menu.setApplicationMenu(null);
   nativeTheme.on("updated", updateTitleBarOverlay);
@@ -616,6 +616,11 @@ ipcMain.handle('update:status', () => updater.status);
     const url=supportMail.draft(cloudClient.getCachedUserId(),app.getVersion(),issue);
     try{await shell.openExternal(url);}catch{throw new Error('无法打开默认邮件应用，请复制邮箱 zhipeng2048@gmail.com 联系管理员。');}
   });
+  ipcMain.handle('account:bills',(_event,page:number,kind:string)=>cloudClient.listBills(page,kind));
+  ipcMain.handle('account:consumption',(_event,range:string,deviceId?:string,page?:number)=>cloudClient.listConsumption(range,deviceId,page));
+  ipcMain.handle('account:consumption-detail',(_event,id:string)=>cloudClient.getConsumption(id));
+  ipcMain.handle('account:feedback-list',(_event,page:number)=>cloudClient.listFeedback(page));
+  ipcMain.handle('account:feedback-submit',(_event,input:import('./cloud/account-features.js').FeedbackInput)=>cloudClient.submitFeedback(input));
   ipcMain.handle("cloud:open-registration", async () => {
     const url = cloudRegistrationUrl(await cloudConfiguration.get());
     if (!url) throw new Error("当前环境未配置可信的网站注册地址。");

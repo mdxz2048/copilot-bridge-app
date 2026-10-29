@@ -284,6 +284,11 @@ declare global {
   interface Window {
     copilotBridge: {
       composeSupportMail(issue?:{message:string;occurredAt:string;code?:string}):Promise<void>;
+      listBills(page:number,kind:string):Promise<import('../electron/cloud/account-features').Bills>;
+      listConsumption(range:string,deviceId?:string,page?:number):Promise<import('../electron/cloud/consumption').Consumption>;
+      getConsumption(id:string):Promise<import('../electron/cloud/consumption').ConsumptionDetail>;
+      listFeedback(page:number):Promise<import('../electron/cloud/account-features').FeedbackList>;
+      submitFeedback(input:import('../electron/cloud/account-features').FeedbackInput):Promise<{feedback:import('../electron/cloud/account-features').FeedbackList['data'][number]}>;
       getRewardNotices():ReturnType<import('./components/RewardNoticeDialog').RewardClient['list']>;
       acknowledgeReward(id:string):Promise<unknown>;
 
