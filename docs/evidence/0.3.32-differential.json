@@ -1,0 +1,41 @@
+{
+  "oldVersion": "0.3.31",
+  "newVersion": "0.3.32",
+  "transport": "real loopback HTTP; trusted HTTPS URL mapped to isolated server",
+  "executedInstaller": false,
+  "results": [
+    {
+      "scenario": "normal",
+      "state": "READY",
+      "sha256": "03fb7c90adf22f89d75a139b1d4cf2b06a02e8464c695132ef6786d1da7dc7ed",
+      "expectedSha256": "03fb7c90adf22f89d75a139b1d4cf2b06a02e8464c695132ef6786d1da7dc7ed",
+      "size": 343599719,
+      "rangeRequests": 17,
+      "differentialBytes": 4137996,
+      "mapBytes": 697404,
+      "fullRequests": 0,
+      "fullBytes": 0,
+      "modes": [
+        "differential"
+      ],
+      "elapsedMs": 4679
+    },
+    {
+      "scenario": "corrupt",
+      "state": "READY",
+      "sha256": "03fb7c90adf22f89d75a139b1d4cf2b06a02e8464c695132ef6786d1da7dc7ed",
+      "expectedSha256": "03fb7c90adf22f89d75a139b1d4cf2b06a02e8464c695132ef6786d1da7dc7ed",
+      "size": 343599719,
+      "rangeRequests": 17,
+      "differentialBytes": 4137996,
+      "mapBytes": 697404,
+      "fullRequests": 1,
+      "fullBytes": 343599719,
+      "modes": [
+        "differential",
+        "full"
+      ],
+      "elapsedMs": 10791
+    }
+  ]
+}
