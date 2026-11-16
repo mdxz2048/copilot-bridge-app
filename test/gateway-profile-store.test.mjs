@@ -153,7 +153,7 @@ test("reuses a custom provider ID so existing custom-provider conversations can 
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test("re-enabling Bridge tolerates ordinary settings but rejects a changed gateway", async () => {
+test("re-enabling Bridge repairs a changed gateway and preserves unrelated settings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bridge-gateway-settings-"));
   try {
     const store = new GatewayProfileStore(directory, join(directory, "switch.json"), "node", ["helper"]);
@@ -166,7 +166,10 @@ test("re-enabling Bridge tolerates ordinary settings but rejects a changed gatew
     assert.equal((await store.activate("bridge")).activeProfile, "bridge");
     edited.model_providers.copilot_bridge_desktop.base_url = "https://changed.test/v1";
     await writeFile(file, stringify(edited));
-    await assert.rejects(store.activate("bridge"), /模型连接配置/);
+    const repaired = await store.activate("bridge");
+    assert.equal(repaired.activeProfile, "bridge");
+    assert.equal(repaired.restartRequired, true);
+    assert.equal(parse(await readFile(file, "utf8")).model_providers.copilot_bridge_desktop.base_url, "http://127.0.0.1:8787/v1");
     await store.activate("original");
     const restored = parse(await readFile(file, "utf8"));
     assert.equal(restored.model_reasoning_effort, "high");
@@ -214,6 +217,34 @@ test("accepts a model change made by the ChatGPT picker without losing the Bridg
     const config = parse(await readFile(file, "utf8"));
     assert.equal(config.model, "bailian/kimi-k3.1-pro");
     assert.equal(config.model_provider, "copilot_bridge_desktop");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("upgrading an already active Bridge config adds the per-user catalog path", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-catalog-upgrade-"));
+  try {
+    const file = join(directory, "config.toml"), state = join(directory, "switch.json");
+    const catalog = join(directory, "bridge", "model-catalog.json");
+    await writeFile(file, 'model = "gpt-6.1-sol"\n[features]\nfoo = true\n');
+    const store = new GatewayProfileStore(directory, state, "node", ["helper"], "http://127.0.0.1:8787/v1", catalog);
+    await store.activate("bridge", "bailian/qwen4-max");
+    await store.acknowledgeRestart();
+    // Simulate the 0.3.31 config: Bridge provider present, catalog path absent.
+    const oldConfig = parse(await readFile(file, "utf8"));
+    delete oldConfig.model_catalog_json;
+    oldConfig.model = "gpt-6.1-sol";
+    const oldText = `${stringify(oldConfig)}\n`;
+    await writeFile(file, oldText);
+    const snapshot = JSON.parse(await readFile(state, "utf8"));
+    snapshot.appliedHash = createHash("sha256").update(oldText).digest("hex");
+    await writeFile(state, JSON.stringify(snapshot));
+    const upgraded = await store.reconcile("bailian/qwen4-max");
+    assert.equal(upgraded.changed, true);
+    const config = parse(await readFile(file, "utf8"));
+    assert.equal(config.model_catalog_json, catalog);
+    assert.equal(config.model, "bailian/qwen4-max");
+    assert.equal(config.model_provider, "copilot_bridge_desktop");
+    assert.equal(config.features.foo, true);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

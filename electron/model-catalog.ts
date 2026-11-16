@@ -22,7 +22,7 @@ const fallbackContextWindow = (id: string) => id.startsWith("bailian/") ? 1_000_
   : id.startsWith("deepseek/") ? 128_000
   : 272_000;
 
-const effectivePercent = (id: string) => id.startsWith("bailian/") ? 75 : 95;
+const effectivePercent = (id: string) => id.startsWith("bailian/") ? 100 : 95;
 
 type CatalogModel = Record<string, unknown> & { slug: string };
 export type ModelCatalog = { models: CatalogModel[] };

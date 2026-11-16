@@ -739,6 +739,11 @@ ipcMain.handle('update:status', () => updater.status);
     void bridgeManager.models().then(async models=>{
       if(bridgeManager.getStatus().state==="ready")broadcast("bridge:models",models);
       const synced=await syncModelCatalog(modelCatalogPath,models);
+      const ready=models.filter(model=>!model.availability||model.availability==="READY");
+      const current=await settingsStore.read();
+      const selected=current.backendModel&&ready.some(model=>model.id===current.backendModel)?current.backendModel:ready[0]?.id??null;
+      const ensured=await profileStore.reconcile(selected);
+      if(ensured.changed)broadcast("profile:status",ensured.status);
       if(synced.changed&&(await profileStore.getStatus()).activeProfile==="bridge"){
         broadcast("profile:status",await profileStore.markRestartRequired());
         broadcast("catalog:updated",{restartRequired:true,count:synced.count});

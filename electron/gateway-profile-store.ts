@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parse, stringify } from "smol-toml";
 import type { ProfileId, ProfileStatus } from "./profile-store.js";
+import { catalogModelIds } from "./model-catalog.js";
 
 type Snapshot = { original: string; existed: boolean; appliedHash: string; active: boolean; pending: ProfileId | null; providerId?: string };
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -155,17 +156,7 @@ export class GatewayProfileStore {
       return this.getStatus();
     }
     if (previous?.active) {
-      this.checkConflict(previous, current.text);
-      const selected = previous.providerId;
-      const parsed = parse(current.text);
-      const provider = selected ? (parsed.model_providers as Record<string, Record<string, unknown>> | undefined)?.[selected] : undefined;
-      if (selected && provider && (provider.request_max_retries !== 0 || provider.stream_max_retries !== 0 || provider.stream_idle_timeout_ms !== 300000)) {
-        const original = this.restoreConfiguration(previous, current.text);
-        const applied = bridgeConfiguration(original, selected, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath, selectedModel);
-        await this.save({ ...previous, original, appliedHash: hash(applied), pending: "bridge" });
-        try { await this.writeConfiguration(applied); }
-        catch (error) { await this.save(previous); throw error; }
-      }
+      await this.reconcileActive(previous, current.text, selectedModel);
       return this.getStatus();
     }
     const parsed = parse(current.text);
@@ -201,6 +192,38 @@ export class GatewayProfileStore {
     });
   }
 
+  /**
+   * Bridge owns the provider block, retry policy, catalog path and default
+   * model. Rebuild those fields from the saved original while preserving
+   * unrelated user edits, then require one restart if anything changed.
+   */
+  reconcile(selectedModel?: string | null): Promise<{ status: ProfileStatus; changed: boolean }> {
+    return this.serialize(async () => {
+      const snapshot = await this.snapshot();
+      if (!snapshot?.active) return { status: await this.getStatus(), changed: false };
+      const current = await this.configuration();
+      const result = await this.reconcileActive(snapshot, current.text, selectedModel);
+      return { status: await this.getStatus(), changed: result.changed };
+    });
+  }
+
+  private async reconcileActive(snapshot: Snapshot, text: string, selectedModel?: string | null): Promise<{ text: string; changed: boolean }> {
+    if (!snapshot.providerId) return { text, changed: false };
+    const original = this.restoreConfiguration(snapshot, text);
+    const current = parse(text);
+    const currentModel = typeof current.model === "string" ? current.model : undefined;
+    const catalogIds = this.catalogPath ? await catalogModelIds(this.catalogPath) : [];
+    const model = currentModel && catalogIds.includes(currentModel) ? currentModel : selectedModel ?? currentModel;
+    const applied = bridgeConfiguration(original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath, model);
+    if (isDeepStrictEqual(current, parse(applied))) {
+      if (snapshot.appliedHash !== hash(text)) await this.save({ ...snapshot, appliedHash: hash(text) });
+      return { text, changed: false };
+    }
+    await this.save({ ...snapshot, original, appliedHash: hash(applied), pending: "bridge" });
+    await this.writeConfiguration(applied);
+    return { text: applied, changed: true };
+  }
+
   acknowledgeRestart(): Promise<ProfileStatus> {
     return this.serialize(() => this.performAcknowledgeRestart());
   }
@@ -228,27 +251,6 @@ export class GatewayProfileStore {
     if (isDeepStrictEqual(current, expected)) return snapshot.original;
     const merged = mergeConfigurationChanges(original, expected, current, snapshot.providerId);
     return `${stringify(merged)}\n`;
-  }
-  private checkConflict(snapshot: Snapshot, text: string) {
-    if (hash(text) === snapshot.appliedHash) return;
-    if (snapshot.providerId) {
-    const expected = bridgeConfiguration(snapshot.original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath);
-      const current = parse(text);
-      const applied = parse(expected);
-      const currentProviders = current.model_providers as Record<string, unknown> | undefined;
-      const appliedProviders = applied.model_providers as Record<string, unknown> | undefined;
-      const expectedProvider = { ...(appliedProviders?.[snapshot.providerId] as Record<string, unknown> | undefined) };
-      const currentProvider = currentProviders?.[snapshot.providerId] as Record<string, unknown> | undefined;
-      // Older Bridge versions did not write these owned retry fields.
-      for (const key of ["request_max_retries", "stream_max_retries", "stream_idle_timeout_ms"]) {
-        if (currentProvider?.[key] === undefined) delete expectedProvider[key];
-      }
-      // The ChatGPT model picker may legitimately change `model` while Bridge
-      // owns the provider block; only provider fields must stay untouched.
-      if (typeof current.model === "string" && current.model_provider === applied.model_provider
-        && isDeepStrictEqual({ ...currentProvider }, expectedProvider)) return;
-    }
-    throw new Error("Bridge 模型连接配置在切换后被修改，已保留现有内容。请先恢复原账号再重新启用 Bridge。");
   }
   private async configuration() {
     try { return { text: await readFile(join(this.codexHome, "config.toml"), "utf8"), existed: true }; }
