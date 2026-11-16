@@ -221,6 +221,10 @@ export const ModelSchema = z.object({
   statusMessage: z.string().optional(),
   object: z.literal("model"),
   owned_by: z.string(),
+  display_name: z.string().optional(),
+  context_window: z.number().int().positive().nullable().optional(),
+  max_output_tokens: z.number().int().positive().nullable().optional(),
+  effective_context_window_percent: z.number().int().min(1).max(100).optional(),
   capabilities: z.object({
     tools: z.boolean(),
     vision: z.boolean(),

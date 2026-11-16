@@ -9,9 +9,7 @@ import type {
   ProfileStatus,
 } from "../bridge-api";
 import { zhCN } from "../locales/zh-CN";
-import { displayModel } from "../model-display";
 import { Button } from "./Button";
-import { Select, SelectRow } from "./Select";
 import {ServiceMark,ServiceActionIcon} from './ServiceMark';
 
 interface CurrentServiceCardProps {
@@ -30,7 +28,6 @@ interface CurrentServiceCardProps {
   onRestartChatGpt: () => void;
   onOpenRelease: () => void;
   onRetryCloud: () => void;
-  onUpdateSettings: (settings: AppSettings) => void;
 }
 
 export function CurrentServiceCard({
@@ -49,7 +46,6 @@ export function CurrentServiceCard({
   onRestartChatGpt,
   onOpenRelease,
   onRetryCloud,
-  onUpdateSettings,
 }: CurrentServiceCardProps) {
   const copy = zhCN.product;
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -64,16 +60,8 @@ export function CurrentServiceCard({
   const state = connectionPending ? {symbol:'●',title:'本地连接未就绪',message:bridge?.message || '平台账号已连接，本地转发尚未启动，请重试连接。',tone:'warning'} : cloudStatePresentation(cloud);
   const selectedModel = settings.backendModel ?? models[0]?.id ?? "";
   const selected = models.find((model) => model.id === selectedModel);
-  const reasoningModes = selected?.reasoningModes?.length ? selected.reasoningModes : ["normal"];
-  const reasoningMode = reasoningModes.includes(settings.reasoningMode ?? "auto")
-    ? settings.reasoningMode ?? "auto" : reasoningModes.includes(selected?.defaultReasoningMode ?? "normal")
-      ? selected?.defaultReasoningMode ?? "normal" : reasoningModes[0];
   const modelNeedsAttention = serviceReady && ((selected?.availability && selected.availability !== "READY") || (!selected && Boolean(settings.backendModel)));
   const detailMessage = modelNeedsAttention ? selected?.statusMessage ?? "当前模型已停用或权限已调整，请选择其他模型并新建会话。" : state.message;
-  const modelOptions = models.filter(model=>!model.availability||model.availability==="READY").map((model) => ({
-    value: model.id,
-    label: displayModel(model.id)+(model.availability==="SETUP_REQUIRED"?" · 待开通":model.availability==="UNAVAILABLE"?" · 暂不可用":""),
-  }));
 
   if (!bridgeEnabled) {
     return (
@@ -129,26 +117,9 @@ export function CurrentServiceCard({
         </div>
         {serviceReady && selectedModel
           ? (
-            <div className="service-controls">
-              <SelectRow label="Cloud 实际模型">
-                <Select
-                  label="模型"
-                  onChange={(backendModel) => {
-                    const nextModel = models.find(model => model.id === backendModel);
-                    const modes = nextModel?.reasoningModes?.length ? nextModel.reasoningModes : ["normal"];
-                    const mode = modes.includes(settings.reasoningMode ?? "auto") ? settings.reasoningMode ?? "auto"
-                      : modes.includes(nextModel?.defaultReasoningMode ?? "normal") ? nextModel?.defaultReasoningMode ?? "normal" : modes[0];
-                    onUpdateSettings({ ...settings, backendModel, reasoningMode: mode as AppSettings["reasoningMode"], reasoningEffort: null });
-                  }}
-                  options={modelOptions}
-                  value={selectedModel}
-                />
-              </SelectRow>
-              <SelectRow label="思考模式">
-                  <Select label="思考模式" value={reasoningMode}
-                    options={reasoningModes.map(value => ({ value, label: value === "thinking" ? "思考" : value === "auto" ? "自动" : "普通" }))}
-                    onChange={value => onUpdateSettings({ ...settings, reasoningMode: value as AppSettings["reasoningMode"], reasoningEffort: null })}/>
-              </SelectRow>
+            <div className="service-controls service-controls-note">
+              <p className="service-static-value">模型与思考难度请在 ChatGPT 中选择</p>
+              <p className="service-hint">模型列表由 Copilot Bridge 按当前账号权限提供；切换模型后新建会话即可。</p>
             </div>
           )
           : (

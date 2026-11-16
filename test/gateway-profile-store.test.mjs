@@ -176,6 +176,47 @@ test("re-enabling Bridge tolerates ordinary settings but rejects a changed gatew
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("writes the per-user model catalog and removes it when restoring Original", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-model-catalog-config-"));
+  try {
+    const file = join(directory, "config.toml"), state = join(directory, "switch.json");
+    const catalog = join(directory, "bridge", "model-catalog.json");
+    const original = 'model = "gpt-6.1-sol"\n[features]\nfoo = true\n';
+    await writeFile(file, original);
+    const store = new GatewayProfileStore(directory, state, "node", ["helper"], "http://127.0.0.1:8787/v1", catalog);
+    await store.activate("bridge", "bailian/qwen4-max");
+    const active = parse(await readFile(file, "utf8"));
+    assert.equal(active.model, "bailian/qwen4-max");
+    assert.equal(active.model_catalog_json, catalog);
+    assert.equal(active.model_provider, "copilot_bridge_desktop");
+    await store.acknowledgeRestart();
+    await store.activate("original");
+    const restored = parse(await readFile(file, "utf8"));
+    assert.equal(restored.model, "gpt-6.1-sol");
+    assert.equal(restored.model_catalog_json, undefined);
+    assert.equal(restored.model_provider, undefined);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("accepts a model change made by the ChatGPT picker without losing the Bridge provider block", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-model-picker-change-"));
+  try {
+    const file = join(directory, "config.toml"), state = join(directory, "switch.json");
+    await writeFile(file, 'model = "gpt-6.1-sol"\n');
+    const store = new GatewayProfileStore(directory, state, "node", ["helper"], "http://127.0.0.1:8787/v1", join(directory, "catalog.json"));
+    await store.activate("bridge", "bailian/qwen4-max");
+    await store.acknowledgeRestart();
+    const edited = parse(await readFile(file, "utf8"));
+    edited.model = "bailian/kimi-k3.1-pro";
+    await writeFile(file, stringify(edited));
+    const status = await store.activate("bridge");
+    assert.equal(status.activeProfile, "bridge");
+    const config = parse(await readFile(file, "utf8"));
+    assert.equal(config.model, "bailian/kimi-k3.1-pro");
+    assert.equal(config.model_provider, "copilot_bridge_desktop");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("restores the original custom provider even if ChatGPT removed the provider table", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bridge-gateway-removed-table-"));
   try {

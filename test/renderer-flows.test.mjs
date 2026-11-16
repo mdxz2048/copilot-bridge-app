@@ -827,26 +827,12 @@ test("failed app restart leaves the configuration pending and allows retry", asy
   } finally {await app.dispose();}
 });
 
-test('Cloud reasoning uses only advertised modes and persists mode without effort', async () => {
-  const app = await mountApp({ initialSettings: { backendMode: 'REMOTE', onboardingCompleted: true, reasoningEffort: 'high' }, initialBridgeState: 'ready', initialCloudState: 'AUTHENTICATED', activeProfile: 'bridge', initialModels: [{ id: 'test-model', supportsReasoningEffort: true, reasoningModes: ['normal','thinking','auto'], defaultReasoningMode: 'auto' }] });
+test('Cloud model and reasoning selection is delegated to the ChatGPT picker', async () => {
+  const app = await mountApp({ initialSettings: { backendMode: 'REMOTE', onboardingCompleted: true }, initialBridgeState: 'ready', initialCloudState: 'AUTHENTICATED', activeProfile: 'bridge', initialModels: [{ id: 'bailian/qwen4-max', supportsReasoningEffort: true, reasoningModes: ['normal','thinking','auto'], defaultReasoningMode: 'auto' }] });
   try {
-    assert.ok(!app.text.includes('推理强度'));
-    await app.clickSelector('button[aria-label="思考模式"]');
-    const modes=[...app.document.querySelectorAll('[role="option"]')];
-    assert.deepEqual(modes.map(m=>m.textContent.replace('✓','').trim()),['普通','思考','自动']);
-    await app.act(async()=>modes[1].click());
-    assert.equal(app.settings.reasoningMode,'thinking');
-    assert.equal(app.settings.reasoningEffort,null);
-    assert.ok(!app.text.includes('我的 API'));
-    assert.ok(!app.text.includes('本地模型'));
-  } finally { await app.dispose(); }
-});
-
-test('Old Cloud metadata falls back to normal instead of invented effort controls', async () => {
-  const app=await mountApp({initialSettings:{backendMode:'REMOTE',onboardingCompleted:true,reasoningMode:'thinking'},initialBridgeState:'ready',initialCloudState:'AUTHENTICATED',activeProfile:'bridge'});
-  try {
-    await app.clickSelector('button[aria-label="思考模式"]');
-    assert.deepEqual([...app.document.querySelectorAll('[role="option"]')].map(m=>m.textContent.replace('✓','').trim()),['普通']);
+    assert.match(app.text, /模型与思考难度请在 ChatGPT 中选择/);
+    assert.ok(!app.document.querySelector('button[aria-label="模型"]'));
+    assert.ok(!app.document.querySelector('button[aria-label="思考模式"]'));
     assert.ok(!app.text.includes('推理强度'));
   } finally { await app.dispose(); }
 });
@@ -910,9 +896,9 @@ test("late pre-switch refresh cannot undo a single confirmed ON or OFF", async (
 });
 
 
-test("Cloud model dropdown hides unready models and switches only to an available model",async()=>{
- const app=await mountApp({activeProfile:'bridge',initialBridgeState:'ready',initialCloudState:'AUTHENTICATED',initialSettings:{onboardingCompleted:true,backendModel:'deepseek/deepseek-flash'},initialModels:[{id:'deepseek/deepseek-flash',availability:'READY',reasoningModes:['normal','auto']},{id:'openai/gpt-6-sol',availability:'READY',reasoningModes:['normal']},{id:'openai/gpt-6-luna',availability:'SETUP_REQUIRED',reasoningModes:['normal']}]});
- try{await app.clickSelector('button[aria-label="模型"]');const options=[...app.document.querySelectorAll('[role="option"]')];assert.equal(options.length,2);assert.ok(!options.some(o=>o.textContent.includes('Luna')));await app.click('GPT-6 Sol');assert.equal(app.settings.backendModel,'openai/gpt-6-sol');assert.equal(app.settings.reasoningMode,'normal');}finally{await app.dispose();}
+test("Cloud keeps the model list for availability but no longer renders a Bridge model selector",async()=>{
+ const app=await mountApp({activeProfile:'bridge',initialBridgeState:'ready',initialCloudState:'AUTHENTICATED',initialSettings:{onboardingCompleted:true,backendModel:'deepseek/deepseek-flash'},initialModels:[{id:'deepseek/deepseek-flash',availability:'READY'},{id:'openai/gpt-6-sol',availability:'READY'},{id:'openai/gpt-6-luna',availability:'SETUP_REQUIRED'}]});
+ try{assert.match(app.text,/模型与思考难度请在 ChatGPT 中选择/);assert.ok(!app.document.querySelector('button[aria-label="模型"]'));assert.ok(!app.document.querySelector('button[aria-label="思考模式"]'));}finally{await app.dispose();}
 });
 
 test("an exhausted wallet shows a distinct balance status while preserving the account", async () => {
@@ -931,9 +917,9 @@ test("authenticated account with failed listener offers recovery and can open Ch
     assert.ok(app.events.includes("launchChatGpt"));
     await app.click("重试连接");
     assert.ok(app.events.includes("refreshCloud"));
-    await app.clickSelector('button[aria-label="模型"]');
-    assert.ok(app.document.querySelector('[role="option"]'));
     assert.doesNotMatch(app.text,/本地连接未就绪/);
+    assert.match(app.text,/模型与思考难度请在 ChatGPT 中选择/);
+    assert.ok(!app.document.querySelector('button[aria-label="模型"]'));
   } finally { await app.dispose(); }
 });
 

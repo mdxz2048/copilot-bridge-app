@@ -159,6 +159,11 @@ contextBridge.exposeInMainWorld("copilotBridge", {
     ipcRenderer.on("bridge:models",listener);
     return ()=>ipcRenderer.removeListener("bridge:models",listener);
   },
+  onCatalogUpdated: (handler: (value: { restartRequired: boolean; count: number }) => void): (() => void) => {
+    const listener=(_event:Electron.IpcRendererEvent,value:{restartRequired:boolean;count:number})=>handler(value);
+    ipcRenderer.on("catalog:updated",listener);
+    return ()=>ipcRenderer.removeListener("catalog:updated",listener);
+  },
   onProfileStatus: (handler: (status: ProfileStatus) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: ProfileStatus) => handler(status);
     ipcRenderer.on("profile:status", listener);

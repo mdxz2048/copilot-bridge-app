@@ -30,6 +30,8 @@ function bridgeConfiguration(
   helperCommand: string,
   helperArgs: string[],
   endpoint: string,
+  catalogPath?: string,
+  selectedModel?: string | null,
 ): string {
   const parsed = parse(original);
   let baseline = original;
@@ -41,9 +43,10 @@ function bridgeConfiguration(
   const lines = baseline.split(/\r?\n/);
   const firstTable = lines.findIndex(line => /^\s*\[/.test(line));
   const rootEnd = firstTable < 0 ? lines.length : firstTable;
-  const root = lines.slice(0, rootEnd).filter(line => !/^\s*(?:model|model_provider)\s*=/.test(line));
-  const model = typeof parsed.model === "string" ? parsed.model : "gpt-5.5";
-  const applied = [`model = ${JSON.stringify(model)}`, `model_provider = ${JSON.stringify(providerId)}`, ...root,
+  const root = lines.slice(0, rootEnd).filter(line => !/^\s*(?:model|model_provider|model_catalog_json)\s*=/.test(line));
+  const model = selectedModel ?? (typeof parsed.model === "string" ? parsed.model : "gpt-5.5");
+  const applied = [`model = ${JSON.stringify(model)}`, `model_provider = ${JSON.stringify(providerId)}`,
+    ...(catalogPath ? [`model_catalog_json = ${JSON.stringify(catalogPath)}`] : []), ...root,
     ...lines.slice(rootEnd), "", `[model_providers.${JSON.stringify(providerId)}]`, 'name = "Copilot Bridge"',
     `base_url = ${JSON.stringify(endpoint)}`, 'wire_api = "responses"', 'supports_websockets = false', 'requires_openai_auth = false',
     'request_max_retries = 0', 'stream_max_retries = 0', 'stream_idle_timeout_ms = 300000',
@@ -69,6 +72,11 @@ function mergeConfigurationChanges(
   for (const key of keys) {
     const childPath = [...path, key];
     if (childPath.length === 1 && (key === "model" || key === "model_provider")) continue;
+    if (childPath.length === 1 && key === "model_catalog_json") {
+      if (Object.hasOwn(original, key)) merged[key] = original[key];
+      else delete merged[key];
+      continue;
+    }
     if (childPath.length === 2 && childPath[0] === "model_providers" && key === providerId) continue;
 
     const hadExpected = Object.hasOwn(expected, key);
@@ -110,8 +118,9 @@ export class GatewayProfileStore {
   private readonly helperCommand: string;
   private readonly helperArgs: string[];
   private readonly endpoint: string;
-  constructor(codexHome: string, statePath: string, helperCommand: string, helperArgs: string[], endpoint = "http://127.0.0.1:8787/v1") {
-    this.codexHome = codexHome; this.statePath = statePath; this.helperCommand = helperCommand; this.helperArgs = helperArgs; this.endpoint = endpoint;
+  private readonly catalogPath?: string;
+  constructor(codexHome: string, statePath: string, helperCommand: string, helperArgs: string[], endpoint = "http://127.0.0.1:8787/v1", catalogPath?: string) {
+    this.codexHome = codexHome; this.statePath = statePath; this.helperCommand = helperCommand; this.helperArgs = helperArgs; this.endpoint = endpoint; this.catalogPath = catalogPath;
   }
 
   async getStatus(): Promise<ProfileStatus> {
@@ -126,11 +135,11 @@ export class GatewayProfileStore {
       pendingProfile: snapshot?.pending ?? null, unrestrictedBridgeAccess: false };
   }
 
-  activate(target: ProfileId): Promise<ProfileStatus> {
-    return this.serialize(() => this.performActivate(target));
+  activate(target: ProfileId, selectedModel?: string | null): Promise<ProfileStatus> {
+    return this.serialize(() => this.performActivate(target, selectedModel));
   }
 
-  private async performActivate(target: ProfileId): Promise<ProfileStatus> {
+  private async performActivate(target: ProfileId, selectedModel?: string | null): Promise<ProfileStatus> {
     const previous = await this.snapshot();
     const current = await this.configuration();
     if (target === "original") {
@@ -152,7 +161,7 @@ export class GatewayProfileStore {
       const provider = selected ? (parsed.model_providers as Record<string, Record<string, unknown>> | undefined)?.[selected] : undefined;
       if (selected && provider && (provider.request_max_retries !== 0 || provider.stream_max_retries !== 0 || provider.stream_idle_timeout_ms !== 300000)) {
         const original = this.restoreConfiguration(previous, current.text);
-        const applied = bridgeConfiguration(original, selected, this.helperCommand, this.helperArgs, this.endpoint);
+        const applied = bridgeConfiguration(original, selected, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath, selectedModel);
         await this.save({ ...previous, original, appliedHash: hash(applied), pending: "bridge" });
         try { await this.writeConfiguration(applied); }
         catch (error) { await this.save(previous); throw error; }
@@ -164,7 +173,7 @@ export class GatewayProfileStore {
     const selectedProvider = typeof parsed.model_provider === "string" ? parsed.model_provider : "openai";
     const providerId = parsed.model_providers && typeof parsed.model_providers === "object" && selectedProvider in parsed.model_providers
       ? selectedProvider : "copilot_bridge_desktop";
-    const applied = bridgeConfiguration(current.text, providerId, this.helperCommand, this.helperArgs, this.endpoint);
+    const applied = bridgeConfiguration(current.text, providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath, selectedModel);
     await this.save({ original: current.text, existed: current.existed, appliedHash: hash(applied), active: true, pending: "bridge", providerId });
     try { await this.writeConfiguration(applied); }
     catch (error) {
@@ -179,6 +188,16 @@ export class GatewayProfileStore {
       const status = await this.getStatus();
       if (status.activeProfile === 'bridge' && status.pendingProfile === 'bridge') return this.performAcknowledgeRestart();
       return status;
+    });
+  }
+
+  /** The catalog file changed on disk; the running client must restart to reload it. */
+  markRestartRequired(): Promise<ProfileStatus> {
+    return this.serialize(async () => {
+      const snapshot = await this.snapshot();
+      if (!snapshot?.active) return this.getStatus();
+      await this.save({ ...snapshot, pending: "bridge" });
+      return this.getStatus();
     });
   }
 
@@ -204,7 +223,7 @@ export class GatewayProfileStore {
       throw new Error("无法安全恢复 ChatGPT 配置：缺少 Bridge 配置记录。");
     }
     const original = parse(snapshot.original);
-    const expected = parse(bridgeConfiguration(snapshot.original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint));
+      const expected = parse(bridgeConfiguration(snapshot.original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath));
     const current = parse(text);
     if (isDeepStrictEqual(current, expected)) return snapshot.original;
     const merged = mergeConfigurationChanges(original, expected, current, snapshot.providerId);
@@ -213,7 +232,7 @@ export class GatewayProfileStore {
   private checkConflict(snapshot: Snapshot, text: string) {
     if (hash(text) === snapshot.appliedHash) return;
     if (snapshot.providerId) {
-      const expected = bridgeConfiguration(snapshot.original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint);
+    const expected = bridgeConfiguration(snapshot.original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath);
       const current = parse(text);
       const applied = parse(expected);
       const currentProviders = current.model_providers as Record<string, unknown> | undefined;
@@ -224,7 +243,9 @@ export class GatewayProfileStore {
       for (const key of ["request_max_retries", "stream_max_retries", "stream_idle_timeout_ms"]) {
         if (currentProvider?.[key] === undefined) delete expectedProvider[key];
       }
-      if (current.model === applied.model && current.model_provider === applied.model_provider
+      // The ChatGPT model picker may legitimately change `model` while Bridge
+      // owns the provider block; only provider fields must stay untouched.
+      if (typeof current.model === "string" && current.model_provider === applied.model_provider
         && isDeepStrictEqual({ ...currentProvider }, expectedProvider)) return;
     }
     throw new Error("Bridge 模型连接配置在切换后被修改，已保留现有内容。请先恢复原账号再重新启用 Bridge。");

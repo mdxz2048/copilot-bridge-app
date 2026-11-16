@@ -13,6 +13,7 @@ import { BridgeManager } from "./bridge-manager.js";
 import { ChatGptManager, type ChatGptStatus } from "./chatgpt-manager.js";
 import { type ProfileId } from "./profile-store.js";
 import { GatewayProfileStore } from "./gateway-profile-store.js";
+import { syncModelCatalog } from "./model-catalog.js";
 import { SettingsStore, type AppSettings } from "./settings-store.js";
 import { requireCloudMode, requireCloudTarget, migrateCloudMode } from "./cloud-mode-policy.js";
 import {
@@ -61,8 +62,10 @@ let startupWarning:string|null=null;
 const helperPath = app.isPackaged
   ? join(process.resourcesPath, "gateway-runtime", "gateway-token-helper.mjs")
   : join(app.getAppPath(), "dist-electron", "gateway-token-helper.mjs");
+const modelCatalogPath = join(app.getPath("userData"), "bridge", "model-catalog.json");
 const profileStore = new GatewayProfileStore(effectiveCodexHome,
-  join(app.getPath("userData"), "gateway-switch.json"), nodePathForCurrentBuild(), [helperPath, localCredentialTarget]);
+  join(app.getPath("userData"), "gateway-switch.json"), nodePathForCurrentBuild(), [helperPath, localCredentialTarget],
+  "http://127.0.0.1:8787/v1", modelCatalogPath);
 const chatGptManager = new ChatGptManager(logDiagnostic, { offlineDirectory:join(app.getPath("userData"),"official-client") });
 function nodePathForCurrentBuild(): string {
   return app.isPackaged
@@ -168,7 +171,9 @@ const remoteBridge = new RemoteBridgeServer(
     trace: new BridgeTrace(join(app.getPath("userData"), "diagnostics")),
     getApiKey: async () => localGatewayKey,
     getModel: async () => (await settingsStore.read()).backendModel,
-    getReasoning: async () => (await settingsStore.read()).reasoningMode ?? "auto",
+    // Model and reasoning are chosen in the ChatGPT desktop picker. The saved
+    // Bridge mode is retained only for older clients that send no effort.
+    getReasoning: async () => null,
     failureFeedback:{appVersion:app.getVersion(),ownerUserId:()=>cloudClient.getCachedUserId(),submit:report=>{supportMail.record(report);failureFeedback.enqueue(report);}},
   },
 );
@@ -501,12 +506,23 @@ ipcMain.handle('update:status', () => updater.status);
   ipcMain.handle('update:install', () => installUpdate());
   ipcMain.handle("app:startup-warning",()=>startupWarning);
   ipcMain.handle("profile:activate", async (_event, target: ProfileId) => {
+    let selectedModel: string | null = null;
     if (target === 'bridge') {
       await requireInstalledChatGpt();
-      requireCloudMode(await settingsStore.read());
+      const current = await settingsStore.read();
+      requireCloudMode(current);
       await prepareBridgeEnvironment();
+      const models = await remoteBridge.models();
+      await syncModelCatalog(modelCatalogPath, models);
+      const ready = models.filter(model => !model.availability || model.availability === "READY");
+      selectedModel = current.backendModel && ready.some(model => model.id === current.backendModel)
+        ? current.backendModel : ready[0]?.id ?? null;
+      if (selectedModel !== current.backendModel) {
+        currentSettings = { ...current, backendModel: selectedModel };
+        await settingsStore.write(currentSettings);
+      }
     }
-    const status = await profileStore.activate(target);
+    const status = await profileStore.activate(target, selectedModel);
     broadcast("profile:status", status);
     return status;
   });
@@ -720,7 +736,14 @@ ipcMain.handle('update:status', () => updater.status);
   const modelTimer=setInterval(()=>{
     if(modelSyncInFlight||bridgeManager.getStatus().state!=="ready")return;
     modelSyncInFlight=true;
-    void bridgeManager.models().then(models=>{if(bridgeManager.getStatus().state==="ready")broadcast("bridge:models",models);}).catch(error=>{
+    void bridgeManager.models().then(async models=>{
+      if(bridgeManager.getStatus().state==="ready")broadcast("bridge:models",models);
+      const synced=await syncModelCatalog(modelCatalogPath,models);
+      if(synced.changed&&(await profileStore.getStatus()).activeProfile==="bridge"){
+        broadcast("profile:status",await profileStore.markRestartRequired());
+        broadcast("catalog:updated",{restartRequired:true,count:synced.count});
+      }
+    }).catch(error=>{
       const code=error&&typeof error==="object"&&"code" in error?String(error.code):"";
       if(["MODEL_NOT_ALLOWED","SUBSCRIPTION_REQUIRED","SUBSCRIPTION_EXPIRED","ACCOUNT_DISABLED","DEVICE_REVOKED"].includes(code))broadcast("bridge:models",[]);
     }).finally(()=>{modelSyncInFlight=false;});
@@ -741,7 +764,17 @@ ipcMain.handle('update:status', () => updater.status);
     createWindow();
   }
   void profileStore.getStatus().then(async (status) => {
-    const updated = !legacyRestoreFailed ? await profileStore.activate(status.activeProfile) : status;
+    let selectedModel: string | null = null;
+    if (status.activeProfile === "bridge") {
+      try {
+        const models = await bridgeManager.models();
+        await syncModelCatalog(modelCatalogPath, models);
+        const ready = models.filter(model => !model.availability || model.availability === "READY");
+        const current = await settingsStore.read();
+        selectedModel = current.backendModel && ready.some(model => model.id === current.backendModel) ? current.backendModel : ready[0]?.id ?? null;
+      } catch { /* Keep the previous model when the Cloud catalog is temporarily unavailable. */ }
+    }
+    const updated = !legacyRestoreFailed ? await profileStore.activate(status.activeProfile, selectedModel) : status;
     broadcast("profile:status", updated);
   }).catch(error => logDiagnostic(`Bridge profile refresh failed: ${error instanceof Error ? error.message : String(error)}`));
   if (settings.autoBridgeStart&&!legacyRestoreFailed) {

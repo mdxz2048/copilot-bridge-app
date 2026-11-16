@@ -159,6 +159,9 @@ export function App() {
     const online = () => { void window.copilotBridge.refreshCloud().then(setCloud).catch(() => undefined); };
     window.addEventListener('online', online);
     const removeModels = window.copilotBridge.onModels?.(setModels);
+    const removeCatalog = window.copilotBridge.onCatalogUpdated?.(value => {
+      if (value.restartRequired) setNotice(`模型权限已更新，共 ${value.count} 个可用模型；重启 ChatGPT 后生效。`);
+    });
     return () => {
       removeBridge();
       removeProfile();
@@ -167,6 +170,7 @@ export function App() {
       removeCredentialWarning?.();
       window.removeEventListener('online', online);
       removeModels?.();
+      removeCatalog?.();
     };
   }, []);
 
@@ -412,7 +416,6 @@ export function App() {
         })()}
         profile={profile}
         settings={settings}
-        onUpdateSettings={(next) => void persistSettings(next)}
       />
 
       </div>

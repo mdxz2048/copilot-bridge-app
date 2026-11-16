@@ -54,6 +54,11 @@ export interface BridgeModel {
   id: string;
   availability?: "READY" | "SETUP_REQUIRED" | "UNAVAILABLE";
   statusMessage?: string;
+  displayName?: string;
+  contextWindow?: number | null;
+  maxOutputTokens?: number | null;
+  effectiveContextWindowPercent?: number;
+  supportsVision?: boolean;
   supportsReasoningEffort: boolean;
   reasoningModes?: Array<"normal" | "thinking" | "auto">;
   defaultReasoningMode?: "normal" | "thinking" | "auto";
@@ -364,6 +369,7 @@ declare global {
       updateSettings(settings: AppSettings): Promise<AppSettings>;
       onBridgeStatus(handler: (status: BridgeStatus) => void): () => void;
       onModels(handler: (models: BridgeModel[]) => void): () => void;
+  onCatalogUpdated(handler: (value: { restartRequired: boolean; count: number }) => void): () => void;
       onProfileStatus(handler: (status: ProfileStatus) => void): () => void;
       getChatGptStatus(): Promise<ChatGptStatus>;
       installChatGpt(): Promise<void>;

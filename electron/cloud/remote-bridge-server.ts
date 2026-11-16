@@ -203,6 +203,11 @@ export class RemoteBridgeServer {
     id: string;
     availability?: "READY" | "SETUP_REQUIRED" | "UNAVAILABLE";
     statusMessage?: string;
+    displayName?: string;
+    contextWindow?: number | null;
+    maxOutputTokens?: number | null;
+    effectiveContextWindowPercent?: number;
+    supportsVision?: boolean;
     supportsReasoningEffort: boolean;
     reasoningModes: Array<"normal" | "thinking" | "auto">;
     defaultReasoningMode: "normal" | "thinking" | "auto";
@@ -212,6 +217,11 @@ export class RemoteBridgeServer {
       id: model.id,
       availability: model.availability,
       statusMessage: model.statusMessage,
+      displayName: model.display_name,
+      contextWindow: model.context_window,
+      maxOutputTokens: model.max_output_tokens,
+      effectiveContextWindowPercent: model.effective_context_window_percent,
+      supportsVision: model.capabilities.vision,
       supportsReasoningEffort: model.capabilities.reasoning,
       reasoningModes: model.capabilities.reasoningModes,
       defaultReasoningMode: model.capabilities.defaultReasoningMode,
@@ -264,6 +274,11 @@ export class RemoteBridgeServer {
             ? {
                 data: models.data.map((model) => ({
                   id: model.id,
+                  displayName: model.display_name,
+                  contextWindow: model.context_window,
+                  maxOutputTokens: model.max_output_tokens,
+                  effectiveContextWindowPercent: model.effective_context_window_percent,
+                  supportsVision: model.capabilities.vision,
                   supportsReasoningEffort: model.capabilities.reasoning,
       reasoningModes: model.capabilities.reasoningModes,
       defaultReasoningMode: model.capabilities.defaultReasoningMode,
@@ -310,14 +325,27 @@ export class RemoteBridgeServer {
     feedback?.capture.stats("desktop",{...requestStats(raw,bodyBytes),bodyLimitBytes:LOCAL_BODY_LIMIT,...declaredStats});
     const parseMs=Math.round(performance.now()-started);
     this.gatewayOptions?.trace?.write("desktop_request",traceId,{sessionId:incoming.headers["session_id"],conversationId:incoming.headers["conversation_id"],model:(raw as Record<string, unknown>).model,stream:(raw as Record<string, unknown>).stream,previousResponseId:(raw as Record<string, unknown>).previous_response_id,reasoning:(raw as Record<string, unknown>).reasoning},raw);
-    const selectedModel = (await this.gatewayOptions?.getModel?.()) ?? String((raw as Record<string, unknown>).model);
     const modelStarted=performance.now();
-    if(feedback&&this.gatewayOptions?.getModel)feedback.stage="cloud_http";
-    const models = this.gatewayOptions?.getModel ? await this.client.listModels() : { data: [] };
+    const hasCloudCatalog=Boolean(this.gatewayOptions?.getModel);
+    if(feedback&&hasCloudCatalog)feedback.stage="cloud_http";
+    const models = hasCloudCatalog ? await this.client.listModels() : { data: [] };
     if(feedback)feedback.stage="local_validation";
     const modelLookupMs=Math.round(performance.now()-modelStarted);
-    const catalogModel=models.data.find(model => model.id === selectedModel);
-    if(this.gatewayOptions?.getModel&&!catalogModel)throw new CloudError("MODEL_NOT_ALLOWED","当前模型已停用或权限已调整，请选择其他模型并新建会话。",{httpStatus:403});
+    let selectedModel=String((raw as Record<string, unknown>).model ?? "");
+    let catalogModel=undefined as (typeof models.data)[number]|undefined;
+    if(hasCloudCatalog){
+      const ready=(model:(typeof models.data)[number])=>!model.availability||model.availability==="READY";
+      const requested=models.data.find(model=>model.id===selectedModel);
+      const configuredModel=await this.gatewayOptions?.getModel?.();
+      const configured=configuredModel?models.data.find(model=>model.id===configuredModel):undefined;
+      // The desktop model picker is authoritative; the locally saved model is
+      // only a fallback for older conversations and pre-catalog clients.
+      if(requested)catalogModel=requested;
+      else if(/^(bailian|openai|deepseek)\//.test(selectedModel))throw new CloudError("MODEL_NOT_ALLOWED","当前模型未授权或已停用，请在模型列表中选择其他模型。",{httpStatus:403});
+      else catalogModel=configured??models.data.find(ready);
+      if(!catalogModel)throw new CloudError("MODEL_NOT_ALLOWED","当前模型已停用或权限已调整，请选择其他模型并新建会话。",{httpStatus:403});
+      selectedModel=catalogModel.id;
+    }
     if(catalogModel?.availability&&catalogModel.availability!=="READY")throw new CloudError("MODEL_UNAVAILABLE",catalogModel.statusMessage??"所选模型暂不可用，请联系管理员。",{httpStatus:503});
     const capabilities=catalogModel?.capabilities;
     const profile=capabilities?.responsesProfile??"deepseek";

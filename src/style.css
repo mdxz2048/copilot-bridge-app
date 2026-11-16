@@ -1115,6 +1115,9 @@ body { width:100%; height:100%; margin:0; overflow:hidden; background:linear-gra
 .service-state.state-danger { background:color-mix(in srgb,var(--danger) 8%,var(--panel)); color:var(--danger); }
 .service-state.state-neutral { background:var(--field); color:var(--sub); }
 .service-controls { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.service-controls-note { grid-template-columns:1fr; gap:6px; }
+.service-static-value { margin:0; color:var(--ink); font-size:12px; font-weight:600; }
+.service-hint { margin:0; color:var(--sub); font-size:11px; line-height:1.7; }
 .select-row { display:grid; gap:7px; min-width:0; font-size:12px; }
 .select-control { height:42px; width:100%; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--field); color:var(--ink); font-size:12px; font-weight:400; text-align:left; position:relative; padding-right:30px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .service-footer { display:flex; align-items:center; gap:20px; justify-content:space-between; margin-top:auto; }

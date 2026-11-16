@@ -34,6 +34,21 @@ test("pending GPT selection never generates and later catalog activation permits
   }finally{await bridge.stop();}
 });
 
+test("the ChatGPT picker selects an authorized model and unauthorized names are rejected",async()=>{
+  let forwarded,generations=0;
+  const model=(id)=>({id,availability:"READY",capabilities:{tools:true,vision:false,streaming:true,reasoning:true,nativeResponses:true,responsesProfile:"openai",reasoningModes:["normal","thinking","auto"],defaultReasoningMode:"auto"}});
+  const client={getMe:async()=>({id:'fixture-user'}),listModels:async()=>({data:[model('bailian/qwen4-max'),model('bailian/kimi-k3.1-pro')]}),createResponse:async(request)=>{forwarded=request;generations++;return {contentType:'application/json',response:Response.json({...responsePayload,model:request.model})};}};
+  const bridge=new RemoteBridgeServer(client,0,undefined,undefined,undefined,{getApiKey:async()=>'synthetic-local',getModel:async()=>'bailian/qwen4-max',getReasoning:async()=>null});
+  try{
+    const status=await bridge.start();
+    const send=(model)=>fetch(status.endpoint+'/v1/responses',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer synthetic-local'},body:JSON.stringify({model,input:'fixture',stream:false})});
+    const selected=await send('bailian/kimi-k3.1-pro');assert.equal(selected.status,200);await selected.json();
+    assert.equal(forwarded.model,'bailian/kimi-k3.1-pro');
+    const denied=await send('bailian/not-authorized');assert.equal(denied.status,403);assert.equal((await denied.json()).error.code,'MODEL_NOT_ALLOWED');
+    assert.equal(generations,1);
+  }finally{await bridge.stop();}
+});
+
 test("notifies settlement after a JSON response completes", async () => {
   const notifications = [];
   const client = new MockCloudClient()
