@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildModelCatalog, syncModelCatalog } from "../dist-electron/model-catalog.js";
+import { buildModelCatalog, syncModelCatalog, cloudActivationModel } from "../dist-electron/model-catalog.js";
 
 const ready=(id,extra={})=>({id,availability:"READY",supportsReasoningEffort:false,...extra});
 
@@ -45,4 +45,25 @@ test("writes only when the authorized catalog changes and stays idempotent",asyn
     const third=await syncModelCatalog(path,[ready("bailian/qwen4-max",{contextWindow:1000000,supportsReasoningEffort:true}),ready("bailian/kimi-k3.1-pro",{contextWindow:1000000,supportsReasoningEffort:true})]);
     assert.equal(third.changed,true);
   }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("Cloud activation prefers DeepSeek 1017 and falls back only to available authorized models", () => {
+  const preferred = "bailian/deepseek-v4.1-flash-1017";
+  assert.equal(cloudActivationModel([ready("bailian/qwen4-max"), ready(preferred)]), preferred);
+  assert.equal(cloudActivationModel([ready("bailian/qwen4-max")]), "bailian/qwen4-max");
+  assert.equal(cloudActivationModel([ready(preferred, { availability: "UNAVAILABLE" }), ready("other")]), "other");
+  assert.equal(cloudActivationModel([ready(preferred, { availability: "SETUP_REQUIRED" })]), null);
+  assert.equal(cloudActivationModel([]), null);
+});
+
+
+test("Cloud default uses official DeepSeek API unless this user can use 1017", () => {
+  const official = ready("deepseek/deepseek-flash");
+  const preferred = ready("bailian/deepseek-v4.1-flash-1017");
+  const other = ready("bailian/qwen4-max");
+  assert.equal(cloudActivationModel([other, official]), official.id);
+  assert.equal(cloudActivationModel([other, official, preferred]), preferred.id);
+  assert.equal(cloudActivationModel([other, { ...preferred, availability: "UNAVAILABLE" }, official]), official.id);
+  assert.equal(cloudActivationModel([other, { ...preferred, availability: "SETUP_REQUIRED" }, official]), official.id);
 });

@@ -267,6 +267,67 @@ test("restores the original custom provider even if ChatGPT removed the provider
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("ChatGPT launch-time runtime edits never re-arm the restart prompt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-launch-runtime-edit-"));
+  try {
+    const file = join(directory, "config.toml"), state = join(directory, "switch.json");
+    await writeFile(file, [
+      'model = "gpt-6.1-sol"',
+      "",
+      "[mcp_servers.node_repl.env]",
+      'SKY_CUA_NATIVE_PIPE_DIRECTORY = "\\\\\\\\.\\\\pipe\\\\codex-computer-use-old"',
+      "",
+    ].join("\n"));
+    const store = new GatewayProfileStore(directory, state, "node", ["helper"]);
+    await store.activate("bridge", "my-model");
+    await store.acknowledgeRestart();
+    assert.equal((await store.getStatus()).restartRequired, false);
+
+    // The official client regenerates this value on every launch.
+    const edited = parse(await readFile(file, "utf8"));
+    edited.mcp_servers.node_repl.env.SKY_CUA_NATIVE_PIPE_DIRECTORY = "\\\\.\\pipe\\codex-computer-use-new";
+    await writeFile(file, stringify(edited));
+    const first = await store.reconcile("my-model");
+    assert.equal(first.changed, false);
+    assert.equal(first.status.restartRequired, false);
+    const second = await store.reconcile("my-model");
+    assert.equal(second.changed, false);
+    assert.equal(second.status.restartRequired, false);
+    assert.equal(
+      parse(await readFile(file, "utf8")).mcp_servers.node_repl.env.SKY_CUA_NATIVE_PIPE_DIRECTORY,
+      "\\\\.\\pipe\\codex-computer-use-new",
+    );
+
+    // The accepted client edit is part of the original config when switching OFF.
+    await store.activate("original");
+    assert.equal(
+      parse(await readFile(file, "utf8")).mcp_servers.node_repl.env.SKY_CUA_NATIVE_PIPE_DIRECTORY,
+      "\\\\.\\pipe\\codex-computer-use-new",
+    );
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("Bridge-owned provider edits still require exactly one restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-owned-provider-edit-"));
+  try {
+    const file = join(directory, "config.toml"), state = join(directory, "switch.json");
+    await writeFile(file, 'model = "gpt-6.1-sol"\n[features]\nfoo = true\n');
+    const store = new GatewayProfileStore(directory, state, "node", ["helper"]);
+    await store.activate("bridge", "my-model");
+    await store.acknowledgeRestart();
+    const edited = parse(await readFile(file, "utf8"));
+    edited.model_providers.copilot_bridge_desktop.base_url = "https://changed.test/v1";
+    await writeFile(file, stringify(edited));
+    const reconciled = await store.reconcile("my-model");
+    assert.equal(reconciled.changed, true);
+    assert.equal(reconciled.status.restartRequired, true);
+    assert.equal(parse(await readFile(file, "utf8")).model_providers.copilot_bridge_desktop.base_url, "http://127.0.0.1:8787/v1");
+    assert.equal((await store.reconcile("my-model")).changed, false);
+    await store.acknowledgeRestart();
+    assert.equal((await store.reconcile("my-model")).changed, false);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 
 test("observed Bridge traffic clears its pending flag while original-mode restart stays pending", async () => {
  const directory=await mkdtemp(join(tmpdir(),"bridge-activity-"));
@@ -291,4 +352,60 @@ test("activity acknowledgement cannot overwrite a concurrent switch to the origi
   await Promise.all([store.acknowledgeBridgeActivity(),store.activate("original"),store.acknowledgeBridgeActivity()]);
   const result=await store.getStatus();assert.equal(result.activeProfile,"original");assert.equal(result.pendingProfile,"original");
  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("runtime edits require no snapshot synchronization and restore only connection fields", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-field-only-"));
+  try {
+    const file = join(directory, "config.toml"), state = join(directory, "switch.json");
+    await writeFile(file, 'model = "original-model"\n[features]\nold_setting = true\n');
+    const store = new GatewayProfileStore(directory, state, "node", ["helper"]);
+    await store.activate("bridge", "cloud-model");
+    await store.acknowledgeRestart();
+    const before = await readFile(state, "utf8");
+    assert.equal(Object.hasOwn(JSON.parse(before), "appliedHash"), false);
+    for (let launch = 0; launch < 3; launch++) {
+      const config = parse(await readFile(file, "utf8"));
+      config.features = { runtime_generation: launch };
+      config.model_providers.other = { base_url: "https://other.test/v1" };
+      await writeFile(file, stringify(config));
+      const result = await store.reconcile("cloud-model");
+      assert.equal(result.changed, false);
+      assert.equal(result.status.restartRequired, false);
+      assert.equal(await readFile(state, "utf8"), before);
+    }
+    // Restore must also work before a polling reconcile observes the latest edit.
+    const config = parse(await readFile(file, "utf8"));
+    config.features.runtime_generation = 99;
+    await writeFile(file, stringify(config));
+    // Old releases' hashes must not affect restoration, even if they match.
+    const legacy = JSON.parse(before);
+    legacy.appliedHash = createHash("sha256").update(await readFile(file, "utf8")).digest("hex");
+    await writeFile(state, JSON.stringify(legacy));
+    await store.activate("original");
+    const restored = parse(await readFile(file, "utf8"));
+    assert.equal(restored.model, "original-model");
+    assert.equal(restored.features.runtime_generation, 99);
+    assert.equal(Object.hasOwn(restored.features, "old_setting"), false);
+    assert.equal(restored.model_providers.other.base_url, "https://other.test/v1");
+    assert.equal(Object.hasOwn(restored, "model_catalog_json"), false);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("switching from Original to Cloud writes DeepSeek 1017 as the official client default", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bridge-cloud-default-"));
+  try {
+    const file = join(directory, "config.toml");
+    await writeFile(file, 'model = "original-model"\n');
+    const store = new GatewayProfileStore(directory, join(directory, "switch.json"), "node", ["helper"]);
+    const preferred = "bailian/deepseek-v4.1-flash-1017";
+    await store.activate("bridge", preferred);
+    assert.equal(parse(await readFile(file, "utf8")).model, preferred);
+    await store.activate("original");
+    assert.equal(parse(await readFile(file, "utf8")).model, "original-model");
+    await store.activate("bridge", preferred);
+    assert.equal(parse(await readFile(file, "utf8")).model, preferred);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

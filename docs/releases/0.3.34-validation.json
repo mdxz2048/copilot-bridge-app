@@ -1,0 +1,45 @@
+{
+  "artifact": {
+    "version": "0.3.34",
+    "size": 343599761,
+    "sha256": "afcaea6e17767579c8b893f07f3949b1038647480301768cd7dbe744c9397ae9",
+    "blockmapSha256": "c0a07ff8e759a13c69aacdcd061cbd45940918294971c0055e219498f3b1404d"
+  },
+  "compatibility": {
+    "apiSha256": "a7e37f9b10d63ca54483a45c50f920d8d43d889cd02acacd3de4a810b761302b",
+    "minimum": "0.3.28",
+    "matrix": [
+      {
+        "version": "0.3.27",
+        "status": 426
+      },
+      {
+        "version": "0.3.28",
+        "status": 200
+      },
+      {
+        "version": "0.3.33",
+        "status": 200
+      },
+      {
+        "version": "0.3.34",
+        "status": 200
+      }
+    ],
+    "scope": "isolated execution of the deployed version gate; not a full login or generation test"
+  },
+  "updater": {
+    "version": "0.3.34",
+    "previousVersion": "0.3.33",
+    "state": "READY",
+    "publicHttpsDownload": true,
+    "sha256Verified": true,
+    "automaticInstallTriggered": false,
+    "minimumCompatibleApp": "0.3.28"
+  },
+  "tests": {
+    "passed": 313,
+    "failed": 0
+  },
+  "officialClientGuiVerified": false
+}

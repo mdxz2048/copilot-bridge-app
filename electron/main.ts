@@ -13,7 +13,7 @@ import { BridgeManager } from "./bridge-manager.js";
 import { ChatGptManager, type ChatGptStatus } from "./chatgpt-manager.js";
 import { type ProfileId } from "./profile-store.js";
 import { GatewayProfileStore } from "./gateway-profile-store.js";
-import { syncModelCatalog } from "./model-catalog.js";
+import { cloudActivationModel, syncModelCatalog } from "./model-catalog.js";
 import { SettingsStore, type AppSettings } from "./settings-store.js";
 import { requireCloudMode, requireCloudTarget, migrateCloudMode } from "./cloud-mode-policy.js";
 import {
@@ -514,9 +514,7 @@ ipcMain.handle('update:status', () => updater.status);
       await prepareBridgeEnvironment();
       const models = await remoteBridge.models();
       await syncModelCatalog(modelCatalogPath, models);
-      const ready = models.filter(model => !model.availability || model.availability === "READY");
-      selectedModel = current.backendModel && ready.some(model => model.id === current.backendModel)
-        ? current.backendModel : ready[0]?.id ?? null;
+      selectedModel = cloudActivationModel(models);
       if (selectedModel !== current.backendModel) {
         currentSettings = { ...current, backendModel: selectedModel };
         await settingsStore.write(currentSettings);

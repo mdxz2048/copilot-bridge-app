@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -6,8 +6,7 @@ import { parse, stringify } from "smol-toml";
 import type { ProfileId, ProfileStatus } from "./profile-store.js";
 import { catalogModelIds } from "./model-catalog.js";
 
-type Snapshot = { original: string; existed: boolean; appliedHash: string; active: boolean; pending: ProfileId | null; providerId?: string };
-const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+type Snapshot = { original: string; existed: boolean; active: boolean; pending: ProfileId | null; providerId?: string };
 const BRIDGE_PROVIDER_ID = "copilot_bridge_desktop";
 
 /** Saved threads keep their provider ID. In Original mode resolve that ID with
@@ -61,54 +60,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function mergeConfigurationChanges(
-  original: Record<string, unknown>,
-  expected: Record<string, unknown>,
-  current: Record<string, unknown>,
-  providerId: string,
-  path: string[] = [],
-): Record<string, unknown> {
-  const merged = { ...original };
-  const keys = new Set([...Object.keys(expected), ...Object.keys(current)]);
-  for (const key of keys) {
-    const childPath = [...path, key];
-    if (childPath.length === 1 && (key === "model" || key === "model_provider")) continue;
-    if (childPath.length === 1 && key === "model_catalog_json") {
-      if (Object.hasOwn(original, key)) merged[key] = original[key];
-      else delete merged[key];
-      continue;
-    }
-    if (childPath.length === 2 && childPath[0] === "model_providers" && key === providerId) continue;
-
-    const hadExpected = Object.hasOwn(expected, key);
-    const hasCurrent = Object.hasOwn(current, key);
-    if (hadExpected === hasCurrent
-      && (!hadExpected || isDeepStrictEqual(expected[key], current[key]))) continue;
-
-    const originalValue = original[key];
-    const expectedValue = expected[key];
-    const currentValue = current[key];
-    if (childPath.length === 1 && key === "model_providers" && isRecord(expectedValue) && !hasCurrent) {
-      const providers = mergeConfigurationChanges(isRecord(originalValue) ? originalValue : {}, expectedValue, {}, providerId, childPath);
-      if (Object.keys(providers).length) merged[key] = providers;
-      else delete merged[key];
-      continue;
-    }
-    if (hasCurrent && isRecord(expectedValue) && isRecord(currentValue)) {
-      merged[key] = mergeConfigurationChanges(
-        isRecord(originalValue) ? originalValue : {},
-        expectedValue,
-        currentValue,
-        providerId,
-        childPath,
-      );
-    } else if (hasCurrent) {
-      merged[key] = currentValue;
-    } else {
-      delete merged[key];
-    }
-  }
-  return merged;
+/** Fields Bridge owns. Anything outside this projection belongs to ChatGPT or the user. */
+function ownedConfiguration(config: Record<string, unknown>, providerId: string) {
+  const providers = config.model_providers;
+  return {
+    model: config.model,
+    model_provider: config.model_provider,
+    model_catalog_json: config.model_catalog_json,
+    provider: isRecord(providers) ? providers[providerId] : undefined,
+  };
 }
 
 /** Switch only the model connection. Session storage and user environment stay intact. */
@@ -165,10 +125,10 @@ export class GatewayProfileStore {
     const providerId = parsed.model_providers && typeof parsed.model_providers === "object" && selectedProvider in parsed.model_providers
       ? selectedProvider : "copilot_bridge_desktop";
     const applied = bridgeConfiguration(current.text, providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath, selectedModel);
-    await this.save({ original: current.text, existed: current.existed, appliedHash: hash(applied), active: true, pending: "bridge", providerId });
+    await this.save({ original: current.text, existed: current.existed, active: true, pending: "bridge", providerId });
     try { await this.writeConfiguration(applied); }
     catch (error) {
-      await this.save({ original: current.text, existed: current.existed, appliedHash: hash(applied), active: false, pending: null, providerId });
+      await this.save({ original: current.text, existed: current.existed, active: false, pending: null, providerId });
       throw error;
     }
     return this.getStatus();
@@ -215,11 +175,14 @@ export class GatewayProfileStore {
     const catalogIds = this.catalogPath ? await catalogModelIds(this.catalogPath) : [];
     const model = currentModel && catalogIds.includes(currentModel) ? currentModel : selectedModel ?? currentModel;
     const applied = bridgeConfiguration(original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath, model);
-    if (isDeepStrictEqual(current, parse(applied))) {
-      if (snapshot.appliedHash !== hash(text)) await this.save({ ...snapshot, appliedHash: hash(text) });
-      return { text, changed: false };
-    }
-    await this.save({ ...snapshot, original, appliedHash: hash(applied), pending: "bridge" });
+    const parsedApplied = parse(applied);
+    // Only connection fields can require a restart. Runtime settings are owned by
+    // the official client and need neither rewriting nor snapshot synchronization.
+    if (isDeepStrictEqual(
+      ownedConfiguration(current, snapshot.providerId),
+      ownedConfiguration(parsedApplied, snapshot.providerId),
+    )) return { text, changed: false };
+    await this.save({ ...snapshot, pending: "bridge" });
     await this.writeConfiguration(applied);
     return { text: applied, changed: true };
   }
@@ -241,17 +204,28 @@ export class GatewayProfileStore {
   }
 
   private restoreConfiguration(snapshot: Snapshot, text: string): string {
-    if (hash(text) === snapshot.appliedHash) return snapshot.original;
     if (!snapshot.providerId) {
       throw new Error("无法安全恢复 ChatGPT 配置：缺少 Bridge 配置记录。");
     }
     const original = parse(snapshot.original);
-      const expected = parse(bridgeConfiguration(snapshot.original, snapshot.providerId, this.helperCommand, this.helperArgs, this.endpoint, this.catalogPath));
     const current = parse(text);
-    if (isDeepStrictEqual(current, expected)) return snapshot.original;
-    const merged = mergeConfigurationChanges(original, expected, current, snapshot.providerId);
-    return `${stringify(merged)}\n`;
+    const restored = current;
+    for (const key of ["model", "model_provider", "model_catalog_json"]) {
+      if (Object.hasOwn(original, key)) restored[key] = original[key];
+      else delete restored[key];
+    }
+    const providers = isRecord(current.model_providers) ? current.model_providers : Object.create(null) as Record<string, unknown>;
+    const originalProviders = isRecord(original.model_providers) ? original.model_providers : {};
+    if (Object.hasOwn(originalProviders, snapshot.providerId)) providers[snapshot.providerId] = originalProviders[snapshot.providerId];
+    else delete providers[snapshot.providerId];
+    if (Object.keys(providers).length || Object.hasOwn(current, "model_providers") && Object.hasOwn(original, "model_providers")) {
+      restored.model_providers = providers as typeof original.model_providers;
+    } else delete restored.model_providers;
+    // Keep the original formatting when all other fields are unchanged. Legacy
+    // snapshots remain readable; their whole-file hash is deliberately ignored.
+    return isDeepStrictEqual(restored, original) ? snapshot.original : `${stringify(restored)}\n`;
   }
+
   private async configuration() {
     try { return { text: await readFile(join(this.codexHome, "config.toml"), "utf8"), existed: true }; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return { text: "", existed: false }; throw error; }

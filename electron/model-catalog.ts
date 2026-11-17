@@ -15,6 +15,14 @@ export type CatalogSourceModel = {
   supportsReasoningEffort: boolean;
 };
 
+/** A new switch to Cloud starts with the requested default, when authorized. */
+export function cloudActivationModel(models: CatalogSourceModel[]): string | null {
+  const ready = models.filter(model => !model.availability || model.availability === "READY");
+  return ready.find(model => model.id === "bailian/deepseek-v4.1-flash-1017")?.id
+    ?? ready.find(model => model.id === "deepseek/deepseek-flash")?.id
+    ?? ready[0]?.id ?? null;
+}
+
 const BASE_INSTRUCTIONS = "You are a careful coding assistant running in a desktop workspace. Help the user complete their task. Follow the applicable system and developer instructions and repository guidance. Use available tools to inspect, edit, and verify work when requested. Protect credentials. Report results and material limitations clearly. Answer in the user's language.";
 
 const fallbackContextWindow = (id: string) => id.startsWith("bailian/") ? 1_000_000
